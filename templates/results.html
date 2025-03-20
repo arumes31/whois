@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WHOIS Results</title>
+</head>
+<body>
+    <h1>WHOIS Results</h1>
+    <ul>
+        {% for ip, result in results.items() %}
+            <li><strong>{{ ip }}:</strong><pre>{{ result }}</pre></li>
+        {% endfor %}
+    </ul>
+    <a href="/">Query more IPs</a>
+</body>
+</html>
+

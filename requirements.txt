@@ -1,0 +1,8 @@
+Flask
+python-whois
+gunicorn
+Flask-Limiter
+redis
+apscheduler
+requests
+dnspython
