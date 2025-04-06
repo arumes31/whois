@@ -13,6 +13,9 @@ COPY . /app
 # Install Python dependencies
 RUN pip install -r requirements.txt
 
+#Update
+RUN apt update && apt upgrade -y
+
 # Expose the port Gunicorn will run on
 EXPOSE 5000
 
