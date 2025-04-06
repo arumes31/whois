@@ -259,186 +259,153 @@ def store_dns_history(item, result):
 def index():
     if request.method == 'POST':
         ips_and_domains = request.form.get("ips_and_domains", "")
-        advanced = request.form.get("advanced", "off") == "on"
+        whois_enabled = request.form.get("whois", "off") == "on"  # Check if WHOIS is enabled
+        advanced = request.form.get("advanced", "off") == "on"    # Check if DNS is enabled
         items = [item.strip() for item in ips_and_domains.replace(',', '\n').splitlines() if item.strip()]
 
         client_ip = get_client_ip()
         results = {}
         
         for item in items:
+            results[item] = {}  # Initialize an empty dict for each item
             cache_key_whois = f"whois:{item}"
             cache_key_dns = f"dns:{item}"
 
-            # Check Redis cache first for WHOIS
-            cached_data_whois = r.get(cache_key_whois)
-            if cached_data_whois:
-                app.logger.info("Src: %s - Cache hit for WHOIS %s", client_ip, item)
-                results[item] = {"whois": cached_data_whois.decode('utf-8')}
-            else:
-                try:
-                    # Query WHOIS
-                    whois_info = whois.whois(item)
+            # Perform WHOIS query only if enabled
+            if whois_enabled:
+                cached_data_whois = r.get(cache_key_whois)
+                if cached_data_whois:
+                    app.logger.info("Src: %s - Cache hit for WHOIS %s", client_ip, item)
+                    results[item]["whois"] = cached_data_whois.decode('utf-8')
+                else:
+                    try:
+                        whois_info = whois.whois(item)
+                        r.setex(cache_key_whois, timedelta(hours=24), whois_info.text)
+                        app.logger.info("Src: %s - WHOIS query successful for: %s", client_ip, item)
+                        results[item]["whois"] = whois_info.text
+                    except Exception as e:
+                        results[item]["whois"] = f"Error: {str(e)}"
 
-                    # Save the WHOIS data to Redis with a 24-hour expiration
-                    r.setex(cache_key_whois, timedelta(hours=24), whois_info.text)
-                    app.logger.info("Src: %s - WHOIS query successful for: %s", client_ip, item)
-                    results[item] = {"whois": whois_info.text}
-                except Exception as e:
-                    results[item] = {"whois": f"Error: {str(e)}"}
-
-            # Cache DNS data for 10 minutes if advanced option is enabled
+            # Perform DNS query only if advanced is enabled
             if advanced:
-                # First check if DNS data exists in cache
                 cached_data_dns = r.get(cache_key_dns)
                 if cached_data_dns:
                     app.logger.info(f"Src: %s - Cache hit for DNS  %s", client_ip, item)
                     try:
-                        # Attempt to parse cached DNS data (it may have been cached as a string)
-                        results[item]["dns"] = eval(cached_data_dns.decode('utf-8'))  # Convert string back to dict/list
+                        results[item]["dns"] = eval(cached_data_dns.decode('utf-8'))
                     except Exception as e:
                         app.logger.error(f"Src: %s - Error parsing cached DNS data for %s", client_ip, item)
                         results[item]["dns"] = {"error": "Invalid cached data format."}
                 else:
                     try:
-                        # Query DNS
-                        dns_results = query_dns(item, advanced=advanced)
-
-                        # Log the DNS query results
+                        dns_results = query_dns(item, advanced=True)
                         app.logger.info(f"Src: %s - DNS query results for %s", client_ip, item)
-
-                        # Save the DNS data to Redis with a 10-minute expiration
                         r.setex(cache_key_dns, timedelta(minutes=10), str(dns_results))
                         results[item]["dns"] = dns_results
-                        
-                        # Store DNS history in Redis
                         store_dns_history(item, dns_results)
                         app.logger.info("Src: %s - Dns history updated, entries changed: %s", client_ip, item)
-                        
                     except Exception as e:
                         app.logger.error(f"Src: %s - Error querying DNS for %s", client_ip, item)
                         results[item]["dns"] = {"error": str(e)}
-                # Fetch DNS history for the current item
+
+                # Fetch DNS history
                 history_key = f"dns_history:{item}"
                 history_data = []
-
-                # Fetch all entries in the Redis list
                 raw_history = r.lrange(history_key, 0, -1)
-                # Reverse the raw history to change the order
                 raw_history.reverse()
                 for entry in raw_history:
                     try:
                         history_data.append(json.loads(entry))
                     except Exception as e:
                         app.logger.error(f"Error parsing DNS history for {item}: {str(e)}")
-
-                results[item]["history"] = history_data  # Include history for the current item
+                results[item]["history"] = history_data
         
-        return render_template('index.html', results=results, advanced=advanced)
+        return render_template('index.html', results=results, whois_enabled=whois_enabled, advanced=advanced)
 
-    return render_template('index.html', advanced=False)
-
-@app.route('/static/<path:filename>')
-def static_files(filename):
-    response = make_response(send_from_directory('static', filename))
-    response.headers['Cache-Control'] = 'public, max-age=10800'  # Cache for 3 hours
-    return response
+    return render_template('index.html', whois_enabled=False, advanced=False)
 
 @app.route('/query', methods=['GET'])
-@app.route('/query/<string:item>', methods=['GET'])  # Handle both path and query parameter
-@limiter.limit("5 per minute")  # Apply rate limit to this route
+@app.route('/query/<string:item>', methods=['GET'])
+@limiter.limit("5 per minute")
 def query_ip(item=None):
-    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+    client_ip = get_client_ip()
 
-    # First, check if the item is passed as part of the URL path (e.g., /query/192.168.1.1)
     if item:
         item = item
     else:
-        # If the query string is like `?item=192.168.1.1`, use the `item` parameter
         item = request.args.get('item')
-
-        # If no item= query parameter, check if the query string contains just the IP/domain
         if not item:
             query_string = request.query_string.decode('utf-8')
             if query_string:
-                # If the query string is just an IP/domain (like `?192.168.1.1`), treat it as the item
                 item = query_string.strip()
 
     if not item:
         return "Error: No IP address or domain provided. Use /query/<IP_or_Domain> or /query?item=<IP_or_Domain>", 400
 
-    cache_key = f"whois:{item}"
+    whois_enabled = request.args.get('whois', 'off') == 'on'  # Check if WHOIS is enabled via query param
+    advanced = request.args.get('advanced', 'off') == 'on'    # Check if DNS is enabled via query param
+    cache_key_whois = f"whois:{item}"
     cache_key_dns = f"dns:{item}"
-    results = {}
+    results = {item: {}}
 
-    # Check Redis cache first for WHOIS
-    cached_data_whois = r.get(cache_key)
-    if cached_data_whois:
-        app.logger.info(f"Src: %s - Cache hit for WHOIS : %s", client_ip, item)
-        results[item] = {"whois": cached_data_whois.decode('utf-8')}
-    else:
-        try:
-            # Query WHOIS
-            whois_info = whois.whois(item)
-            result = whois_info.text
+    # Perform WHOIS query only if enabled
+    if whois_enabled:
+        cached_data_whois = r.get(cache_key_whois)
+        if cached_data_whois:
+            app.logger.info(f"Src: %s - Cache hit for WHOIS : %s", client_ip, item)
+            results[item]["whois"] = cached_data_whois.decode('utf-8')
+        else:
+            try:
+                whois_info = whois.whois(item)
+                result = whois_info.text
+                r.setex(cache_key_whois, timedelta(hours=24), result)
+                app.logger.info("Src: %s - WHOIS query successful for: %s", client_ip, item)
+                results[item]["whois"] = result
+            except Exception as e:
+                app.logger.error("Src: %s - Error querying WHOIS for %s: %s", client_ip, item, str(e))
+                results[item]["whois"] = f"Error: {str(e)}"
 
-            # Save to Redis with a 24-hour expiration
-            r.setex(cache_key, timedelta(hours=24), result)
-            app.logger.info("Src: %s - WHOIS query successful for: %s", client_ip, item)
-            results[item] = {"whois": result}
-        except Exception as e:
-            result = f"Error: {str(e)}"
-            app.logger.error("Src: %s - Error querying WHOIS for %s: %s", client_ip, item, str(e))
-            results[item] = {"whois": result}
-
-    # Cache DNS data for 10 minutes if advanced option is enabled
-    advanced = request.args.get('advanced', 'on') == 'on'  # Read advanced flag from query
+    # Perform DNS query only if advanced is enabled
     if advanced:
-        # First check if DNS data exists in cache
         cached_data_dns = r.get(cache_key_dns)
         if cached_data_dns:
             app.logger.info(f"Src: %s - Cache hit for DNS  %s", client_ip, item)
             try:
-                # Attempt to parse cached DNS data (it may have been cached as a string)
-                results[item]["dns"] = eval(cached_data_dns.decode('utf-8'))  # Convert string back to dict/list
+                results[item]["dns"] = eval(cached_data_dns.decode('utf-8'))
             except Exception as e:
                 app.logger.error(f"Src: %s - Error parsing cached DNS data for %s", client_ip, item)
                 results[item]["dns"] = {"error": "Invalid cached data format."}
         else:
             try:
-                # Query DNS
-                dns_results = query_dns(item, advanced=advanced)
-
-                # Log the DNS query results
+                dns_results = query_dns(item, advanced=True)
                 app.logger.info(f"Src: %s - DNS query results for %s", client_ip, item)
-
-                # Save the DNS data to Redis with a 10-minute expiration
                 r.setex(cache_key_dns, timedelta(minutes=10), str(dns_results))
                 results[item]["dns"] = dns_results
-                
-                # Store DNS history in Redis
                 store_dns_history(item, dns_results)
                 app.logger.info("Src: %s - Dns history updated, entries changed: %s", client_ip, item)
             except Exception as e:
                 app.logger.error(f"Src: %s - Error querying DNS for %s", client_ip, item)
                 results[item]["dns"] = {"error": str(e)}
 
-        # Fetch DNS history for the current item
+        # Fetch DNS history
         history_key = f"dns_history:{item}"
         history_data = []
-
-        # Fetch all entries in the Redis list
         raw_history = r.lrange(history_key, 0, -1)
-        # Reverse the raw history to change the order
         raw_history.reverse()
         for entry in raw_history:
             try:
                 history_data.append(json.loads(entry))
             except Exception as e:
                 app.logger.error(f"Error parsing DNS history for {item}: {str(e)}")
+        results[item]["history"] = history_data
 
-        results[item]["history"] = history_data  # Include history for the current item
+    return render_template('index.html', results=results, whois_enabled=whois_enabled, advanced=advanced)
 
-    return render_template('index.html', results=results, advanced=advanced)
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    response = make_response(send_from_directory('static', filename))
+    response.headers['Cache-Control'] = 'public, max-age=10800'  # Cache for 3 hours
+    return response
 
 def download_image():
     """Download image from Unsplash and save it to the local directory"""

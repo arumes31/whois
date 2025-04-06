@@ -73,13 +73,11 @@
             transform: translate(-50%, -50%);
             z-index: 999;
         }
-
         .win10-spinner {
             position: relative;
             width: 64px;
             height: 64px;
         }
-
         .dot {
             position: absolute;
             width: 10px;
@@ -88,63 +86,54 @@
             border-radius: 50%;
             animation: dot-spin 1.2s linear infinite;
         }
-
         .dot:nth-child(1) {
             top: 0%;
             left: 50%;
             transform: translate(-50%, -50%);
             animation-delay: -1.05s;
         }
-
         .dot:nth-child(2) {
             top: 14.6%;
             left: 85.4%;
             transform: translate(-50%, -50%);
             animation-delay: -0.9s;
         }
-
         .dot:nth-child(3) {
             top: 50%;
             left: 100%;
             transform: translate(-50%, -50%);
             animation-delay: -0.75s;
         }
-
         .dot:nth-child(4) {
             top: 85.4%;
             left: 85.4%;
             transform: translate(-50%, -50%);
             animation-delay: -0.6s;
         }
-
         .dot:nth-child(5) {
             top: 100%;
             left: 50%;
             transform: translate(-50%, -50%);
             animation-delay: -0.45s;
         }
-
         .dot:nth-child(6) {
             top: 85.4%;
             left: 14.6%;
             transform: translate(-50%, -50%);
             animation-delay: -0.3s;
         }
-
         .dot:nth-child(7) {
             top: 50%;
             left: 0%;
             transform: translate(-50%, -50%);
             animation-delay: -0.15s;
         }
-
         .dot:nth-child(8) {
             top: 14.6%;
             left: 14.6%;
             transform: translate(-50%, -50%);
             animation-delay: 0s;
         }
-
         @keyframes dot-spin {
             0% {
                 transform: scale(1);
@@ -176,8 +165,8 @@
             max-height: 80vh;
             font-size: 16px;
             color: #333;
-			min-width: 30%;
-			max-width: 45%;
+            min-width: 30%;
+            max-width: 45%;
         }
         .results-container h2 {
             margin-top: 0;
@@ -221,133 +210,126 @@
             padding: 10px;
             border-radius: 6px;
         }
-		#toggleHistory {
-			margin-left: 10px;
-			padding: 5px 10px;
-			cursor: pointer;
-		}		
+        #toggleHistory {
+            margin-left: 10px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <div class="form-container">
-        <h1>WHOIS and DNS Query</h1>
+        <h1>Query</h1>
         <form id="queryForm" action="/" method="post">
             <label for="ips_and_domains">Enter IPs or Domain Names (comma-separated):</label><br>
             <textarea id="ips_and_domains" name="ips_and_domains" rows="4" cols="50">{{ request.form.get("ips_and_domains", "") }}</textarea><br><br>
-            <input type="checkbox" id="advanced" name="advanced" {% if advanced is not none or advanced %}checked{% endif %}>
+            <input type="checkbox" id="whois" name="whois" {% if request.form.get("whois", "off") == "on" %}checked{% endif %}>
+            <label for="whois">WHOIS Query</label><br>
+            <input type="checkbox" id="advanced" name="advanced" {% if advanced %}checked{% endif %}>
             <label for="advanced">DNS Queries</label><br><br>
             <input type="submit" value="Submit">
         </form>
     </div>
 
-    {% if results %}
+    {% if results and whois_enabled %}
     <div class="results-container">
         <h2>Query Results:</h2>
         {% for item, result in results.items() %}
+            {% if result['whois'] %}
             <div>
                 <h3>{{ item }}</h3>
                 <h4>WHOIS Data:</h4>
                 <pre>{{ result['whois'] }}</pre>
             </div>
+            {% endif %}
         {% endfor %}
     </div>
     {% endif %}
-	
-<!-- Advanced DNS Query Results Container -->
-{% if advanced %}
-<div class="advanced-container">
-    <h3>DNS Query Results:</h3>
-	<button id="toggleHistory" onclick="toggleHistory()">Show History</button>
-    {% if results %}
-        <ul>
-            {% for item, result in results.items() %}
-                <li>
-                    <strong>{{ item }}</strong><br>
-                    
-                    {% if result['dns']['PTR'] %}
-                        <h4>PTR Record:</h4>
-                        <pre>{{ result['dns']['PTR'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['NS'] %}
-                        <h4>NS Record:</h4>
-                        <pre>{{ result['dns']['NS'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['MX'] %}
-                        <h4>MX Records:</h4>
-                        <pre>{{ result['dns']['MX'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['DMARC'] %}
-                        <h4>DMARC Records:</h4>
-                        <pre>{{ result['dns']['DMARC'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['DKIM'] %}
-                        <h4>DKIM Records:</h4>
-                        <pre>{{ result['dns']['DKIM'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['A'] %}
-                        <h4>A Record:</h4>
-                        <pre>{{ result['dns']['A'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['AAAA'] %}
-                        <h4>AAAA Record:</h4>
-                        <pre>{{ result['dns']['AAAA'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['CNAME'] %}
-                        <h4>CNAME Record:</h4>
-                        <pre>{{ result['dns']['CNAME'] }}</pre>
-                    {% endif %}
-                    
-                    {% if result['dns']['TXT'] %}
-                        <h4>TXT Record:</h4>
-                        <pre>{{ result['dns']['TXT'] }}</pre>
-                    {% endif %}
 
-                    {% if result['dns']['WWW'] %}
-                        <h4>WWW Record:</h4>
-                        <pre>{{ result['dns']['WWW'] }}</pre>
-                    {% endif %}
-					
-                    {% if result['dns']['MAIL'] %}
-                        <h4>MAIL Record:</h4>
-                        <pre>{{ result['dns']['MAIL'] }}</pre>
-                    {% endif %}	
-
-                    {% if result['dns']['FTP'] %}
-                        <h4>FTP Record:</h4>
-                        <pre>{{ result['dns']['FTP'] }}</pre>
-                    {% endif %}						
-					
-                </li>
-            {% endfor %}
-        </ul>
+    <!-- Advanced DNS Query Results Container -->
+    {% if advanced %}
+    <div class="advanced-container">
+        <h3>DNS Query Results:</h3>
+        <button id="toggleHistory" onclick="toggleHistory()">Show History</button>
+        {% if results %}
+            <ul>
+                {% for item, result in results.items() %}
+                    <li>
+                        <strong>{{ item }}</strong><br>
+                        {% if result['dns']['PTR'] %}
+                            <h4>PTR Record:</h4>
+                            <pre>{{ result['dns']['PTR'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['NS'] %}
+                            <h4>NS Record:</h4>
+                            <pre>{{ result['dns']['NS'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['MX'] %}
+                            <h4>MX Records:</h4>
+                            <pre>{{ result['dns']['MX'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['DMARC'] %}
+                            <h4>DMARC Records:</h4>
+                            <pre>{{ result['dns']['DMARC'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['DKIM'] %}
+                            <h4>DKIM Records:</h4>
+                            <pre>{{ result['dns']['DKIM'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['A'] %}
+                            <h4>A Record:</h4>
+                            <pre>{{ result['dns']['A'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['AAAA'] %}
+                            <h4>AAAA Record:</h4>
+                            <pre>{{ result['dns']['AAAA'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['CNAME'] %}
+                            <h4>CNAME Record:</h4>
+                            <pre>{{ result['dns']['CNAME'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['TXT'] %}
+                            <h4>TXT Record:</h4>
+                            <pre>{{ result['dns']['TXT'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['WWW'] %}
+                            <h4>WWW Record:</h4>
+                            <pre>{{ result['dns']['WWW'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['MAIL'] %}
+                            <h4>MAIL Record:</h4>
+                            <pre>{{ result['dns']['MAIL'] }}</pre>
+                        {% endif %}
+                        {% if result['dns']['FTP'] %}
+                            <h4>FTP Record:</h4>
+                            <pre>{{ result['dns']['FTP'] }}</pre>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
     {% endif %}
-</div>
-{% endif %}	
-{% if advanced %}
-	<!-- Query History Container -->
-	{% for item, data in results.items() %}
-		{% if data.history %}
-			<div class="history-container" style="display: none;" id="history-container">
-				<h3>History for {{ item }}:</h3>
-				<ul>
-					{% for entry in data.history %}
-						<li>
-							<strong>{{ entry.timestamp }}</strong>
-							<pre>{{ entry.result | tojson }}</pre>
-						</li>
-					{% endfor %}
-				</ul>
-			</div>
-		{% endif %}
-	{% endfor %}
-{% endif %}	
+
+    <!-- Query History Container -->
+    {% if advanced %}
+        {% for item, data in results.items() %}
+            {% if data.history %}
+                <div class="history-container" style="display: none;" id="history-container">
+                    <h3>History for {{ item }}:</h3>
+                    <ul>
+                        {% for entry in data.history %}
+                            <li>
+                                <strong>{{ entry.timestamp }}</strong>
+                                <pre>{{ entry.result | tojson }}</pre>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            {% endif %}
+        {% endfor %}
+    {% endif %}
+
     <div class="loading-spinner">
         <div class="win10-spinner">
             <div class="dot"></div>
@@ -369,21 +351,22 @@
             spinner.style.display = 'block';
         });
     </script>
-	
-	<script>
-		function toggleHistory() {
-			const historyContainer = document.getElementById('history-container');
-			const toggleButton = document.getElementById('toggleHistory');
-			
-			if (historyContainer.style.display === 'none') {
-				historyContainer.style.display = 'block';
-				toggleButton.textContent = 'Hide History';
-			} else {
-				historyContainer.style.display = 'none';
-				toggleButton.textContent = 'Show History';
-			}
-		}
-	</script>
-	
+
+    <script>
+        function toggleHistory() {
+            const historyContainer = document.getElementById('history-container');
+            const toggleButton = document.getElementById('toggleHistory');
+            
+            if (historyContainer.style.display === 'none') {
+                historyContainer.style.display = 'block';
+                toggleButton.textContent = 'Hide History';
+            } else {
+                historyContainer.style.display = 'none';
+                toggleButton.textContent = 'Show History';
+            }
+        }
+    </script>
+
+    <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9260b438e8fdbfbb',t:'MTc0MjkyOTc4MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
 </body>
 </html>
