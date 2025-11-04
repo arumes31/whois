@@ -1,382 +1,202 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WHOIS and DNS Query</title>
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
-    <style>
-        body {
-            background-image: url('/static/background.jpg');
-            background-size: cover;
-            background-position: top center;
-            margin: 0;
-            padding: 0;
-            font-family: Arial, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
-            color: #333;
-        }
-        .form-container {
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(10px);
-            padding: 40px;
-            border-radius: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            text-align: center;
-            width: 90%;
-            max-width: 500px;
-        }
-        .form-container h1 {
-            color: #0a0a0a;
-            font-weight: bold;
-            font-size: 28px;
-            margin-bottom: 10px;
-        }
-        label {
-            font-size: 16px;
-            font-weight: 500;
-            color: #171616;
-        }
-        textarea {
-            width: 100%;
-            padding: 10px;
-            border-radius: 8px;
-            border: 1px solid #ddd;
-            font-size: 16px;
-            margin-top: 8px;
-        }
-        input[type="submit"] {
-            background: linear-gradient(90deg, #6a11cb, #2575fc);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            padding: 12px 24px;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        input[type="submit"]:hover {
-            background: linear-gradient(90deg, #2575fc, #6a11cb);
-        }
-        /* Loading spinner styles */
-        .loading-spinner {
-            display: none;
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 999;
-        }
-        .win10-spinner {
-            position: relative;
-            width: 64px;
-            height: 64px;
-        }
-        .dot {
-            position: absolute;
-            width: 10px;
-            height: 10px;
-            background-color: #2575fc;
-            border-radius: 50%;
-            animation: dot-spin 1.2s linear infinite;
-        }
-        .dot:nth-child(1) {
-            top: 0%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            animation-delay: -1.05s;
-        }
-        .dot:nth-child(2) {
-            top: 14.6%;
-            left: 85.4%;
-            transform: translate(-50%, -50%);
-            animation-delay: -0.9s;
-        }
-        .dot:nth-child(3) {
-            top: 50%;
-            left: 100%;
-            transform: translate(-50%, -50%);
-            animation-delay: -0.75s;
-        }
-        .dot:nth-child(4) {
-            top: 85.4%;
-            left: 85.4%;
-            transform: translate(-50%, -50%);
-            animation-delay: -0.6s;
-        }
-        .dot:nth-child(5) {
-            top: 100%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            animation-delay: -0.45s;
-        }
-        .dot:nth-child(6) {
-            top: 85.4%;
-            left: 14.6%;
-            transform: translate(-50%, -50%);
-            animation-delay: -0.3s;
-        }
-        .dot:nth-child(7) {
-            top: 50%;
-            left: 0%;
-            transform: translate(-50%, -50%);
-            animation-delay: -0.15s;
-        }
-        .dot:nth-child(8) {
-            top: 14.6%;
-            left: 14.6%;
-            transform: translate(-50%, -50%);
-            animation-delay: 0s;
-        }
-        @keyframes dot-spin {
-            0% {
-                transform: scale(1);
-                opacity: 1;
-            }
-            100% {
-                transform: scale(0.3);
-                opacity: 0.3;
-            }
-        }
-        .advanced-container {
-            margin-top: 20px;
-            background: rgba(255, 255, 255, 0.85);
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            overflow-y: auto;
-            max-height: 85vh;
-            font-size: 16px;
-            color: #333;
-        }
-        .results-container {
-            margin-top: 20px;
-            background: rgba(255, 255, 255, 0.85);
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            overflow-y: auto;
-            max-height: 80vh;
-            font-size: 16px;
-            color: #333;
-            min-width: 30%;
-            max-width: 45%;
-        }
-        .results-container h2 {
-            margin-top: 0;
-            font-weight: bold;
-            font-size: 22px;
-        }
-        pre {
-            background-color: #f4f4f4;
-            padding: 12px;
-            border-radius: 6px;
-            font-size: 14px;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        .history-container {
-            margin-top: 40px;
-            background: rgba(255, 255, 255, 0.85);
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-            font-size: 16px;
-            color: #333;
-            max-height: 50vh;
-            overflow-y: auto;
-        }
-        .history-container h3 {
-            font-size: 22px;
-            margin-bottom: 10px;
-        }
-        .history-item {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-        }
-        .history-item h4 {
-            margin: 0;
-            font-size: 18px;
-            color: #444;
-        }
-        .history-item pre {
-            background-color: #f4f4f4;
-            padding: 10px;
-            border-radius: 6px;
-        }
-        #toggleHistory {
-            margin-left: 10px;
-            padding: 5px 10px;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-    <body onload="document.getElementById('query-input').value = '';">
-    <div class="form-container">
-        <h1>Query</h1>
-        <form id="queryForm" action="/" method="post">
-            <label for="ips_and_domains">Enter IPs or Domain Names (comma-separated):</label><br>
-            <textarea id="ips_and_domains" name="ips_and_domains" rows="4" cols="50">{{ request.form.get("ips_and_domains", "") }}</textarea><br><br>
-            <input type="checkbox" id="whois" name="whois" {% if request.form.get("whois", "off") == "on" %}checked{% endif %}>
-            <label for="whois">WHOIS Query</label><br>
-            <input type="checkbox" id="advanced" name="advanced" {% if advanced %}checked{% endif %}>
-            <label for="advanced">DNS Queries</label><br><br>
-            <input type="submit" value="Submit">
+{% extends "base.html" %}
+
+{% block title %}Query Tool{% endblock %}
+
+{% block content %}
+<div class="row">
+  <!-- Query Form -->
+  <div class="col-md-5">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h3 class="card-title">Query Domains / IPs</h3>
+        <form method="post" id="queryForm">
+          <div class="mb-3">
+            <textarea class="form-control" name="ips_and_domains" rows="5"
+                      placeholder="example.com, 8.8.8.8" required>{{ request.form.get('ips_and_domains', '') }}</textarea>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="whois" id="whois" {% if whois_enabled %}checked{% endif %}>
+            <label class="form-check-label" for="whois">WHOIS</label>
+          </div>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="checkbox" name="dns" id="dns" {% if dns_enabled %}checked{% endif %}>
+            <label class="form-check-label" for="dns">DNS</label>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" name="ct" id="ct" {% if ct_enabled %}checked{% endif %}>
+            <label class="form-check-label" for="ct">Certificate Transparency</label>
+          </div>
+          <button type="submit" class="btn btn-primary">Query</button>
+          <button type="submit" name="export" value="csv" class="btn btn-outline-secondary ms-2">CSV</button>
         </form>
-    </div>
-
-    {% if results and whois_enabled %}
-    <div class="results-container">
-        <h2>Query Results:</h2>
-        {% for item, result in results.items() %}
-            {% if result['whois'] %}
-            <div>
-                <h3>{{ item }}</h3>
-                <h4>WHOIS Data:</h4>
-                <pre>{{ result['whois'] }}</pre>
-            </div>
-            {% endif %}
-        {% endfor %}
-    </div>
-    {% endif %}
-
-	<!-- Advanced DNS Query Results Container -->
-	{% if advanced %}
-	<div class="advanced-container">
-		<h3>DNS Query Results:</h3>
-		<button id="toggleHistory" onclick="toggleHistory()">Show History</button>
-		{% if results %}
-			<ul>
-				{% for item, result in results.items() %}
-					<li>
-						<strong>{{ item }}</strong><br>
-						{% if result['dns']['PTR'] %}
-							<h4>PTR Record:</h4>
-							<pre>{{ result['dns']['PTR'] }}</pre>
-						{% endif %}
-						{% if result['dns']['NS'] %}
-							<h4>NS Record:</h4>
-							<pre>{{ result['dns']['NS'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['MX'] %}
-							<h4>MX Records:</h4>
-							<pre>{{ result['dns']['MX'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['DMARC'] %}
-							<h4>DMARC Records:</h4>
-							<pre>{{ result['dns']['DMARC'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['DKIM'] %}
-							<h4>DKIM Records:</h4>
-							<pre>{% for prefix, records in result['dns']['DKIM'].items() %}{{ prefix }}: {{ records | join(', ') }}{% if not loop.last %}{{ '\n' }}{% endif %}{% endfor %}</pre>
-						{% endif %}
-						{% if result['dns']['A'] %}
-							<h4>A Record:</h4>
-							<pre>{{ result['dns']['A'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['AAAA'] %}
-							<h4>AAAA Record:</h4>
-							<pre>{{ result['dns']['AAAA'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['CNAME'] %}
-							<h4>CNAME Record:</h4>
-							<pre>{{ result['dns']['CNAME'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['TXT'] %}
-							<h4>TXT Record:</h4>
-							<pre>{{ result['dns']['TXT'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['WWW'] %}
-							<h4>WWW Record:</h4>
-							<pre>{{ result['dns']['WWW'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['MAIL'] %}
-							<h4>MAIL Record:</h4>
-							<pre>{{ result['dns']['MAIL'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['FTP'] %}
-							<h4>FTP Record:</h4>
-							<pre>{{ result['dns']['FTP'] | join('\n') }}</pre>
-						{% endif %}
-						{% if result['dns']['CT'] %}
-							<h4>CT Subdomains: (A/CNAME)</h4>
-							<pre>{% for subdomain, records in result['dns']['CT'].items() %}{% if subdomain != 'error' %}{{ subdomain }}{% if records['A'] %} (A: {{ records['A'] | join(', ') }}){% endif %}{% if records['CNAME'] %} (CNAME: {{ records['CNAME'] | join(', ') }}){% endif %}{% if not loop.last %}{{ '\n' }}{% endif %}{% else %}{{ records }}{% endif %}{% endfor %}</pre>
-						{% endif %}
-						{% if result['dns']['error'] %}
-							<h4>Error:</h4>
-							<pre>{{ result['dns']['error'] }}</pre>
-						{% endif %}
-					</li>
-				{% endfor %}
-			</ul>
-		{% endif %}
-	</div>
-	{% endif %}
-
-    <!-- Query History Container -->
-    {% if advanced %}
-        {% for item, data in results.items() %}
-            {% if data.history %}
-                <div class="history-container" style="display: none;" id="history-container">
-                    <h3>History for {{ item }}:</h3>
-                    <ul>
-                        {% for entry in data.history %}
-                            <li>
-                                <strong>{{ entry.timestamp }}</strong>
-                                <pre>{{ entry.result | tojson }}</pre>
-                            </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            {% endif %}
-        {% endfor %}
-    {% endif %}
-
-    <div class="loading-spinner">
-        <div class="win10-spinner">
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
-            <div class="dot"></div>
+        <div class="mt-3" id="progress" style="display:none;">
+          <div class="progress">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+          </div>
         </div>
+      </div>
     </div>
+  </div>
 
-    <script>
-        const form = document.getElementById('queryForm');
-        const spinner = document.querySelector('.loading-spinner');
+  <!-- Results Tabs -->
+  <div class="col-md-7">
+    {% if results %}
+      <!-- Tabs -->
+      <ul class="nav nav-tabs mb-3" id="resultTabs" role="tablist">
+        {% for item in ordered_items %}
+          <li class="nav-item" role="presentation">
+            <button class="nav-link {% if loop.first %}active{% endif %}"
+                    id="tab-{{ loop.index }}" data-bs-toggle="tab"
+                    data-bs-target="#pane-{{ loop.index }}" role="tab">
+              {{ item }}
+            </button>
+          </li>
+        {% endfor %}
+      </ul>
 
-        form.addEventListener('submit', () => {
-            spinner.style.display = 'block';
-        });
-    </script>
+      <!-- Tab Content -->
+      <div class="tab-content">
+        {% for item in ordered_items %}
+          {% set data = results[item] %}
+          <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
+               id="pane-{{ loop.index }}" role="tabpanel">
 
-    <script>
-        function toggleHistory() {
-            const historyContainer = document.getElementById('history-container');
-            const toggleButton = document.getElementById('toggleHistory');
-            
-            if (historyContainer.style.display === 'none') {
-                historyContainer.style.display = 'block';
-                toggleButton.textContent = 'Hide History';
-            } else {
-                historyContainer.style.display = 'none';
-                toggleButton.textContent = 'Show History';
-            }
-        }
-    </script>
+            <div class="card shadow-sm mb-3">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>{{ item }}</strong>
+                <button class="btn btn-sm btn-outline-info" onclick="showHistory('{{ item }}')">
+                  History
+                </button>
+              </div>
+              <div class="card-body">
 
-    <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9260b438e8fdbfbb',t:'MTc0MjkyOTc4MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-    <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9299f87abfa9adcc',t:'MTc0MzUzMDI2NC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script>
-</body>
-</html>
+                <!-- WHOIS -->
+                {% if data.whois %}
+                  <details open>
+                    <summary><strong>WHOIS</strong></summary>
+                    <pre><code class="language-text">{{ data.whois }}</code></pre>
+                  </details>
+                {% endif %}
+
+                <!-- DNS -->
+                {% if data.dns %}
+                  {% macro render_list(title, items) %}
+                    {% if items %}
+                      <details open>
+                        <summary><strong>{{ title }}</strong></summary>
+                        <pre><code class="language-text">{{ items | join('\n') }}</code></pre>
+                      </details>
+                    {% endif %}
+                  {% endmacro %}
+
+                  {{ render_list('A', data.dns.get('A')) }}
+                  {{ render_list('AAAA', data.dns.get('AAAA')) }}
+                  {{ render_list('CNAME', data.dns.get('CNAME')) }}
+                  {{ render_list('NS', data.dns.get('NS')) }}
+                  {{ render_list('MX', data.dns.get('MX')) }}
+                  {{ render_list('TXT', data.dns.get('TXT')) }}
+                    {% if data.dns.get('SPF') %}
+                      <details open>
+                        <summary><strong>SPF</strong></summary>
+                        <pre><code class="language-text">{{ data.dns.SPF | join('\n') }}</code></pre>
+
+                        {% set v = data.dns.get('SPF_validation') %}
+                        {% if v %}
+                          {% if v.global_errors %}
+                            <div class="alert alert-danger mt-2">
+                              <strong>Global Errors:</strong><br>
+                              {{ v.global_errors | join('<br>') | safe }}
+                            </div>
+                          {% endif %}
+
+                          {% for rec in v.validations %}
+                            {% if not rec.valid %}
+                              <div class="alert alert-danger mt-2">
+                                <strong>Errors in "{{ rec.record[:60] }}{% if rec.record|length > 60 %}..."{% endif %}"</strong>:<br>
+                                {{ rec.errors | join('<br>') | safe }}
+                              </div>
+                            {% elif rec.warnings %}
+                              <div class="alert alert-warning mt-2">
+                                <strong>Warnings in "{{ rec.record[:60] }}{% if rec.record|length > 60 %}..."{% endif %}"</strong>:<br>
+                                {{ rec.warnings | join('<br>') | safe }}
+                              </div>
+                            {% endif %}
+                            {% if rec.dns_lookups is not none %}
+                              <small class="text-muted d-block mt-1">
+                                <strong>DNS Lookups:</strong> {{ rec.dns_lookups }}
+                                {% if rec.dns_lookups > 10 %} <span class="text-danger">(exceeds RFC limit)</span>{% endif %}
+                              </small>
+                            {% endif %}
+                          {% endfor %}
+                        {% endif %}
+                      </details>
+                    {% endif %}
+                  {{ render_list('DMARC', data.dns.get('DMARC')) }}
+                  {{ render_list('BIMI', data.dns.get('BIMI')) }}
+
+                  {% if data.dns.get('blacklist') %}
+                    <details open>
+                      <summary><strong>Blacklist</strong></summary>
+                      <pre><code class="language-json">{{ data.dns.blacklist | tojson }}</code></pre>
+                    </details>
+                  {% endif %}
+
+                  <!-- Well-Known Subdomains -->
+                  {% if data.dns.get('Well-Known') %}
+                    <details open>
+                      <summary><strong>Well-Known Subdomains ({{ data.dns['Well-Known']|length }})</strong></summary>
+                      {% for fqdn, recs in data.dns['Well-Known'].items() %}
+                        <details>
+                          <summary><strong>{{ fqdn }}</strong></summary>
+                          <ul class="list-group list-group-flush">
+                            {% if recs.get('A') %}<li class="list-group-item">A: {{ recs.A | join(', ') }}</li>{% endif %}
+                            {% if recs.get('AAAA') %}<li class="list-group-item">AAAA: {{ recs.AAAA | join(', ') }}</li>{% endif %}
+                            {% if recs.get('CNAME') %}<li class="list-group-item">CNAME: {{ recs.CNAME | join(', ') }}</li>{% endif %}
+                          </ul>
+                        </details>
+                      {% endfor %}
+                    </details>
+                  {% endif %}
+                {% endif %}
+
+                <!-- CT -->
+                {% if data.ct %}
+                  {% if 'error' in data.ct %}
+                    <details>
+                      <summary><strong>CT Error</strong></summary>
+                      <div class="alert alert-danger">
+                        <strong>Error:</strong> {{ data.ct.error }}
+                      </div>
+                    </details>
+                  {% else %}
+                    <details open>
+                      <summary><strong>CT Subdomains ({{ data.ct | length }})</strong></summary>
+                      <ul class="list-group">
+                        {% for sub, rec in data.ct.items() %}
+                          <li class="list-group-item">
+                            <strong>{{ sub }}</strong>
+                            {% if rec.A %} (A: {{ rec.A | join(', ') }}) {% endif %}
+                            {% if rec.CNAME %} (CNAME: {{ rec.CNAME | join(', ') }}) {% endif %}
+                          </li>
+                        {% endfor %}
+                      </ul>
+                    </details>
+                  {% endif %}
+                {% endif %}
+
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+  // Show progress bar on submit
+  document.getElementById('queryForm').onsubmit = () => {
+    document.getElementById('progress').style.display = 'block';
+  };
+</script>
+{% endblock %}

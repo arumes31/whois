@@ -6,21 +6,41 @@ import redis
 import os
 import socket
 import logging
-from flask import Flask, request, render_template, send_from_directory, make_response
+import json
+import csv
+import signal
+from io import StringIO, BytesIO
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from flask import Flask, request, render_template, send_file, jsonify, flash, redirect, url_for
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from datetime import datetime, timedelta
+from flask_caching import Cache
 from apscheduler.schedulers.background import BackgroundScheduler
 import requests
-import json
+import aiohttp
+import asyncio
+from tenacity import retry, stop_after_attempt, wait_exponential
+import pandas as pd
+import ipinfo
+import abuseipdb_wrapper
+from flask_htmx import HTMX
 
+# === Flask App ===
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'supersecretkey')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'supersecretkey')
+app.config['CACHE_TYPE'] = 'redis'
+app.config['CACHE_REDIS_URL'] = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', 6379)}/2"
 
-# Configure logging
-log_level = logging.INFO if os.getenv('LOGWEB', 'false').lower() == 'true' else logging.WARNING
-log_level = logging.DEBUG
-app.logger.setLevel(log_level)
+cache = Cache(app)
+htmx = HTMX(app)
+limiter = Limiter(key_func=get_remote_address, app=app, storage_uri=f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', 6379)}/1")
+r = redis.StrictRedis(host=os.getenv('REDIS_HOST', 'redis'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
+
+# === Logging ===
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+logger = logging.getLogger('whois-app')
+logger.debug("Application starting...")
 
 app.logger.info(" ____    ____   ")
 app.logger.info("|   _\\  |  _ \\  ╔═════════════════════════╗")
@@ -29,28 +49,14 @@ app.logger.info("| |_| | |  _ <  ║    app                  ║")
 app.logger.info("|____/  |_| \\_\\ ╚═════════════════════════╝")
 app.logger.info("starting.....")
 
-# Connect to Redis
-redis_host = os.getenv('REDIS_HOST', 'redis')
-redis_port = int(os.getenv('REDIS_PORT', 6379))
-redis_db = int(os.getenv('REDIS_DB', 0))
-r = redis.StrictRedis(host=redis_host, port=redis_port, db=redis_db)
+# === Async Session ===
+async def get_async_session():
+    timeout = aiohttp.ClientTimeout(total=70)
+    session = aiohttp.ClientSession(timeout=timeout)
+    logger.debug("Created new aiohttp session")
+    return session
 
-# Connect to Redis for rate limiter storage
-limiter_redis = redis.StrictRedis(host=os.getenv('REDIS_HOST', 'redis'),
-                                  port=int(os.getenv('REDIS_PORT', 6379)),
-                                  db=int(os.getenv('REDIS_LIM_DB', 1)))
-
-def get_client_ip():
-    return request.headers.get('X-Forwarded-For', request.remote_addr)
-
-# Initialize Flask-Limiter
-limiter = Limiter(
-    key_func=get_client_ip,
-    app=app,
-    storage_uri=f"redis://{os.getenv('REDIS_HOST', 'localhost')}:{os.getenv('REDIS_PORT', 6379)}/{os.getenv('REDIS_LIM_DB', 1)}",
-    default_limits=["100 per minute"]
-)
-
+# === Helper: IP Check ===
 def is_ip_address(value):
     try:
         socket.inet_pton(socket.AF_INET, value)
@@ -62,321 +68,440 @@ def is_ip_address(value):
         except socket.error:
             return False
 
-def query_dkim_for_prefix(prefix, item):
-    dkim_records = []
-    try:
-        if prefix in ['google.', 'selector1.', 'selector2.', 'mlwrx.', 'zoho.', 's1.', 's2.', 'dkim.', 'dkim1.', 'google.']:
-            dkim_record = f"{prefix}_domainkey.{item}"
-            try:
-                dkim_records = [str(r) for r in dns.resolver.resolve(dkim_record, 'TXT', raise_on_no_answer=False)]
-                if not dkim_records:
-                    return []
-            except dns.resolver.NoAnswer:
-                return []
-        else:
-            return []
-    except Exception:
-        return []
-    return dkim_records
-
-def fetch_ct_subdomains(domain):
-    """Fetch subdomains from crt.sh, ignoring expired certificates, and lookup A/CNAME."""
-    try:
-        app.logger.info(f"Starting CT lookup for domain: {domain}")
-        url = f"https://crt.sh/?q={domain}&output=json"
-        app.logger.debug(f"Sending request to: {url}")
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        data = response.json()
-        app.logger.debug(f"Received {len(data)} entries from crt.sh for {domain}")
-
-        subdomains = {}
-        current_date = datetime.now()
-
-        # Supported date formats
-        date_formats = [
-            "%Y-%m-%dT%H:%M:%SZ",    # e.g., 2025-06-01T12:00:00Z
-            "%Y-%m-%dT%H:%M:%S",     # e.g., 2013-06-07T19:43:27
-            "%Y-%m-%d",              # e.g., 2025-06-01 (fallback for simpler formats)
-        ]
-
-        for entry in data:
-            name_value = entry.get('name_value', '').strip()
-            not_after = entry.get('not_after', '')
-            if not name_value or not not_after:
-                app.logger.debug(f"Skipping entry with missing name_value or not_after: {entry}")
-                continue
-
-            # Try parsing the date with multiple formats
-            expiry_date = None
-            for fmt in date_formats:
-                try:
-                    expiry_date = datetime.strptime(not_after, fmt)
-                    break
-                except ValueError:
-                    continue
-
-            # Handle unparsable dates
-            if expiry_date is None:
-                app.logger.warning(f"Could not parse not_after date for {name_value}: {not_after}. Including anyway.")
-            elif expiry_date < current_date:
-                app.logger.debug(f"Skipping expired certificate for {name_value}, expired on {not_after}")
-                continue
-
-            # Process subdomains
-            for subdomain in name_value.split('\n'):
-                subdomain = subdomain.strip()
-                if subdomain and subdomain.endswith(domain):
-                    if subdomain not in subdomains:
-                        subdomains[subdomain] = {'A': [], 'CNAME': []}
-                        app.logger.debug(f"New subdomain found: {subdomain}")
-                    try:
-                        a_records = [str(r) for r in dns.resolver.resolve(subdomain, 'A', raise_on_no_answer=False)]
-                        if a_records:
-                            subdomains[subdomain]['A'] = a_records
-                            app.logger.debug(f"A records for {subdomain}: {a_records}")
-                    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
-                        app.logger.debug(f"No A records for {subdomain}")
-                    try:
-                        cname_records = [str(r) for r in dns.resolver.resolve(subdomain, 'CNAME', raise_on_no_answer=False)]
-                        if cname_records:
-                            subdomains[subdomain]['CNAME'] = cname_records
-                            app.logger.debug(f"CNAME records for {subdomain}: {cname_records}")
-                    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN):
-                        app.logger.debug(f"No CNAME records for {subdomain}")
-
-        app.logger.info(f"CT lookup completed for {domain}: {len(subdomains)} subdomains found")
-        return subdomains
-    except requests.RequestException as e:
-        app.logger.error(f"CT lookup failed for {domain}: {str(e)}")
-        return {'error': f"Error: {str(e)}"}
-
-def query_dns(item, advanced=False):
+# === Parallel DNS Lookup ===
+def parallel_dns_lookup(domain, record_types):
+    logger.debug(f"Starting parallel DNS lookup for {domain}: {record_types}")
     results = {}
+    def lookup(rt):
+        try:
+            answers = dns.resolver.resolve(domain, rt, raise_on_no_answer=False)
+            recs = [str(r) for r in answers]
+            logger.debug(f"DNS {rt} for {domain}: {recs}")
+            return rt, recs
+        except Exception as e:
+            logger.debug(f"DNS {rt} failed for {domain}: {e}")
+            return rt, []
     
-    # PTR for IPs
-    if is_ip_address(item):
-        try:
-            ptr_record = dns.reversename.from_address(item)
-            ptr_result = str(dns.resolver.resolve(ptr_record, 'PTR')[0])
-            results['PTR'] = ptr_result
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"PTR lookup failed for {item}: {str(e)}")
-    
-    # Domain lookups
-    else:
-        # MX Records
-        if advanced:
-            try:
-                mx_records = [str(r.exchange) for r in dns.resolver.resolve(item, 'MX')]
-                if mx_records:
-                    results['MX'] = mx_records
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-                app.logger.debug(f"MX lookup failed for {item}: {str(e)}")
-
-            # DMARC Records
-            try:
-                dmarc_records = [str(r) for r in dns.resolver.resolve('_dmarc.' + item, 'TXT', raise_on_no_answer=False)]
-                if dmarc_records:
-                    results['DMARC'] = dmarc_records
-            except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-                app.logger.debug(f"DMARC lookup failed for {item}: {str(e)}")
-
-            # DKIM Records
-            dkim_records = {}
-            for prefix in ['google.', 'selector1.', 'selector2.', 'mlwrx.', 'zoho.', 's1.', 's2.', 'dkim.', 'dkim1.', 'google.']:
-                try:
-                    dkim_result = query_dkim_for_prefix(prefix, item)
-                    if dkim_result:
-                        dkim_records[prefix] = dkim_result
-                except Exception as e:
-                    app.logger.debug(f"DKIM lookup failed for {prefix}{item}: {str(e)}")
-            if dkim_records:
-                results['DKIM'] = dkim_records
-
-        # A Records
-        try:
-            a_records = [str(r) for r in dns.resolver.resolve(item, 'A')]
-            if a_records:
-                results['A'] = a_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"A lookup failed for {item}: {str(e)}")
-
-        # AAAA Records
-        try:
-            aaaa_records = [str(r) for r in dns.resolver.resolve(item, 'AAAA')]
-            if aaaa_records:
-                results['AAAA'] = aaaa_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"AAAA lookup failed for {item}: {str(e)}")
-
-        # CNAME Records
-        try:
-            cname_records = [str(r) for r in dns.resolver.resolve(item, 'CNAME')]
-            if cname_records:
-                results['CNAME'] = cname_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"CNAME lookup failed for {item}: {str(e)}")
-
-        # NS Records
-        try:
-            ns_records = [str(r) for r in dns.resolver.resolve(item, 'NS')]
-            if ns_records:
-                results['NS'] = ns_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"NS lookup failed for {item}: {str(e)}")
-
-        # TXT Records
-        try:
-            txt_records = [str(r) for r in dns.resolver.resolve(item, 'TXT')]
-            if txt_records:
-                results['TXT'] = txt_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"TXT lookup failed for {item}: {str(e)}")
-
-        # WWW Records
-        try:
-            www_records = [str(r) for r in dns.resolver.resolve('www.' + item, 'CNAME') or dns.resolver.resolve('www.' + item, 'A')]
-            if www_records:
-                results['WWW'] = www_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"WWW lookup failed for {item}: {str(e)}")
-
-        # MAIL Records
-        try:
-            mail_records = [str(r) for r in dns.resolver.resolve('mail.' + item, 'CNAME') or dns.resolver.resolve('mail.' + item, 'A')]
-            if mail_records:
-                results['MAIL'] = mail_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"MAIL lookup failed for {item}: {str(e)}")
-
-        # FTP Records
-        try:
-            ftp_records = [str(r) for r in dns.resolver.resolve('ftp.' + item, 'CNAME') or dns.resolver.resolve('ftp.' + item, 'A')]
-            if ftp_records:
-                results['FTP'] = ftp_records
-        except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, Exception) as e:
-            app.logger.debug(f"FTP lookup failed for {item}: {str(e)}")
-
-        # Certificate Transparency
-        if advanced:
-            ct_key = f"ct:{item}"
-            try:
-                cached_ct = r.get(ct_key)
-                if cached_ct:
-                    results['CT'] = json.loads(cached_ct.decode('utf-8'))
-                else:
-                    ct_results = fetch_ct_subdomains(item)
-                    r.setex(ct_key, timedelta(hours=24), json.dumps(ct_results))
-                    results['CT'] = ct_results
-            except Exception as e:
-                app.logger.error(f"CT lookup or caching failed for {item}: {str(e)}")
-                results['CT'] = {'error': str(e)}
-
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(lookup, rt): rt for rt in record_types}
+        for future in as_completed(futures):
+            rt, recs = future.result()
+            if recs:
+                results[rt] = recs
+    logger.debug(f"Parallel DNS complete for {domain}: {list(results.keys())}")
     return results
 
-def sort_dict_values(data):
-    if isinstance(data, dict):
-        return {key: sort_dict_values(value) for key, value in sorted(data.items())}
-    elif isinstance(data, list):
-        return sorted(data)
-    else:
-        return data
+# === Well-known subdomains ===
+def query_well_known(domain):
+    well_known = {}
+    subs = [
+        'www', 'mail', 'ftp', 'webmail', 'admin', 'cpanel', 'login', 'secure',
+        'smtp', 'pop', 'imap', 'autodiscover', 'autoconfig', 'mta-sts',
+        'vpn', 'remote', 'gateway', 'portal', 'cloud', 'api', 'dev', 'test',
+        'staging', 'beta', 'demo', 'status', 'monitor', 'metrics', 'health',
+        'shop', 'store', 'blog', 'forum', 'wiki', 'docs', 'support', 'help',
+        'cdn', 'static', 'assets', 'media', 'images', 'files', 'download'
+    ]
+    record_types = ['A', 'AAAA', 'CNAME']
+    
+    for sub in subs:
+        fqdn = f"{sub}.{domain}"
+        try:
+            result = parallel_dns_lookup(fqdn, record_types)
+            if result:
+                well_known[fqdn] = result
+                logger.debug(f"Well-known {fqdn}: {result}")
+        except Exception as e:
+            logger.debug(f"Well-known {fqdn} failed: {e}")
+    
+    return well_known
 
-def store_dns_history(item, result):
-    history_key = f"dns_history:{item}"
-    timestamp = datetime.now().isoformat()
-    sorted_result = json.dumps(sort_dict_values(result), sort_keys=True)
-    history_entry = {"result": sorted_result, "timestamp": timestamp}
-    latest_entry = r.lindex(history_key, -1)
-    if latest_entry:
-        latest_entry = json.loads(latest_entry)
-        if latest_entry["result"] == sorted_result:
-            app.logger.info("Src: %s - DNS history update skipped, entries unchanged: %s", item, sorted_result)
-            return
-    r.rpush(history_key, json.dumps(history_entry))
-    r.ltrim(history_key, -50, -1)
+# === CT Subdomains ===
+async def fetch_ct_subdomains_async(domain):
+    cache_key = f"ct:{domain}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        logger.debug(f"CT cache hit for {domain}")
+        return cached
 
+    logger.debug(f"Fetching CT logs for {domain}")
+    url = f"https://crt.sh/?q={domain}&output=json"
+    try:
+        session = await get_async_session()
+        logger.debug(f"GET {url}")
+        async with session.get(url, timeout=60) as resp:
+            if resp.status != 200:
+                raise Exception(f"HTTP {resp.status}: {resp.reason}")
+            text = await resp.text()
+            if not text.strip():
+                raise Exception("Empty response from crt.sh")
+            logger.debug(f"CT response size: {len(text)} bytes")
+            data = json.loads(text)
+    except asyncio.TimeoutError:
+        error_msg = "CT request timed out after 60 seconds"
+        logger.error(error_msg)
+        result = {'error': error_msg}
+        cache.set(cache_key, result, timeout=3600)
+        return result
+    except json.JSONDecodeError as e:
+        error_msg = f"Invalid JSON from crt.sh: {str(e)}"
+        logger.error(error_msg)
+        result = {'error': error_msg}
+        cache.set(cache_key, result, timeout=3600)
+        return result
+    except Exception as e:
+        error_msg = f"CT request failed: {str(e)}"
+        logger.error(error_msg)
+        result = {'error': error_msg}
+        cache.set(cache_key, result, timeout=3600)
+        return result
+
+    subdomains = {}
+    for entry in data:
+        name = entry.get('name_value', '').strip()
+        if not name:
+            continue
+        for sub in name.split('\n'):
+            sub = sub.strip().lstrip('*')
+            if sub and sub != domain and sub.endswith('.' + domain):
+                subdomains[sub] = subdomains.get(sub, {})
+    result = subdomains or {'error': 'No subdomains found in CT logs'}
+    cache.set(cache_key, result, timeout=3600)
+    return result
+
+# === Timeout handler ===
+def timeout_handler(signum, frame):
+    raise TimeoutError("CT lookup timed out")
+
+# === Store DNS history ===
+def store_dns_history(item, dns_result):
+    entry = {
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'result': json.dumps(dns_result, sort_keys=True)
+    }
+    r.lpush(f"dns_history:{item}", json.dumps(entry))
+    r.ltrim(f"dns_history:{item}", 0, 99)
+
+# === Parse SPF from TXT records ===
+def parse_spf(txt_records):
+    spf = []
+    for txt in txt_records:
+        clean = txt.strip('"\'')
+        if clean.lower().startswith('v=spf1'):
+            clean = ' '.join(clean.split())
+            spf.append(clean)
+    spf = sorted(spf, key=str.lower)
+    logger.debug(f"SPF records found ({len(spf)}): {spf}")
+    return spf or None
+
+# === MANUAL SPF VALIDATION ===
+def validate_spf_record(record, domain):
+    val = {'record': record, 'valid': True, 'warnings': [], 'dns_lookups': 0}
+    
+    try:
+        tokens = record.split()
+        if not tokens or tokens[0].lower() != 'v=spf1':
+            raise ValueError("Missing or invalid v=spf1")
+        
+        i = 1
+        while i < len(tokens):
+            token = tokens[i]
+            if ':' in token:
+                mech, target = token.split(':', 1)
+            elif '=' in token:
+                mech, target = token.split('=', 1)
+            else:
+                mech, target = token, None
+            
+            mech = mech.lower()
+            
+            # Count DNS lookups
+            if mech in ['a', 'mx', 'include', 'ptr', 'exists']:
+                val['dns_lookups'] += 1
+            elif mech == 'redirect':
+                val['dns_lookups'] += 1
+            
+            # Validate mechanism
+            if mech not in ['+a', '-a', '~a', '?a', 'a',
+                           '+mx', '-mx', '~mx', '?mx', 'mx',
+                           '+ip4', '-ip4', '~ip4', '?ip4', 'ip4',
+                           '+ip6', '-ip6', '~ip6', '?ip6', 'ip6',
+                           '+include', '-include', '~include', '?include', 'include',
+                           '+ptr', '-ptr', '~ptr', '?ptr', 'ptr',
+                           '+exists', '-exists', '~exists', '?exists', 'exists',
+                           '+all', '-all', '~all', '?all', 'all',
+                           'redirect']:
+                val['valid'] = False
+                val['warnings'].append(f"Unknown mechanism: {mech}")
+            
+            i += 1
+        
+        if val['dns_lookups'] > 10:
+            val['valid'] = False
+            val['warnings'].append(f"Too many DNS lookups ({val['dns_lookups']} > 10)")
+    
+    except Exception as e:
+        val['valid'] = False
+        val['errors'] = [f"Parse error: {str(e)}"]
+        val['dns_lookups'] = None
+        val['warnings'] = []
+    
+    return val
+
+# === Query single item ===
+def query_item(item, dns_enabled=True, whois_enabled=True, ct_enabled=True):
+    cache_key = f"query:{item}:{dns_enabled}:{whois_enabled}:{ct_enabled}"
+    cached = cache.get(cache_key)
+    if cached is not None:
+        logger.debug(f"Cache hit for {item}")
+        return cached
+
+    result = {'whois': None, 'dns': None, 'ct': None}
+
+    # WHOIS
+    if whois_enabled and not is_ip_address(item):
+        try:
+            w = whois.whois(item)
+            result['whois'] = str(w)
+        except Exception as e:
+            result['whois'] = f"WHOIS error: {str(e)}"
+
+    # DNS
+    if dns_enabled:
+        dns_result = {}
+        if is_ip_address(item):
+            try:
+                rev = dns.reversename.from_address(item)
+                ptr = str(dns.resolver.resolve(rev, 'PTR')[0]).rstrip('.')
+                dns_result['PTR'] = [ptr]
+            except Exception as e:
+                logger.debug(f"PTR lookup failed for {item}: {e}")
+        else:
+            record_types = ['A', 'AAAA', 'CNAME', 'NS', 'TXT', 'MX']
+            dns_result.update(parallel_dns_lookup(item, record_types))
+
+            # Clean and sort TXT
+            if 'TXT' in dns_result:
+                dns_result['TXT'] = [t.strip('"\'') for t in dns_result['TXT']]
+                dns_result['TXT'] = sorted(dns_result['TXT'], key=str.lower)
+
+            # SPF
+            dns_result['SPF'] = parse_spf(dns_result.get('TXT', []))
+
+            # MANUAL SPF VALIDATION
+            if dns_result.get('SPF'):
+                validations = []
+                global_errors = []
+
+                for spf_record in dns_result['SPF']:
+                    val = validate_spf_record(spf_record, item)
+                    validations.append(val)
+
+                if len(dns_result['SPF']) > 1:
+                    global_errors.append("Multiple SPF records found (RFC 7208 permits only one)")
+
+                dns_result['SPF_validation'] = {
+                    'validations': validations,
+                    'global_errors': global_errors
+                }
+                logger.debug(f"SPF validation complete for {item}: {len(validations)} record(s)")
+
+            # DMARC
+            try:
+                dmarc = [str(r) for r in dns.resolver.resolve('_dmarc.' + item, 'TXT', raise_on_no_answer=False)]
+                dns_result['DMARC'] = dmarc
+            except Exception as e:
+                logger.debug(f"DMARC failed: {e}")
+
+            # Well-known
+            well_known = query_well_known(item)
+            if well_known:
+                dns_result['Well-Known'] = well_known
+
+        result['dns'] = dns_result
+        store_dns_history(item, dns_result)
+
+    # CT
+    if ct_enabled:
+        old_handler = signal.getsignal(signal.SIGALRM)
+        try:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(60)
+            ct_result = asyncio.run(fetch_ct_subdomains_async(item))
+            result['ct'] = ct_result
+            signal.alarm(0)
+        except TimeoutError:
+            logger.warning(f"CT lookup timed out for {item}")
+            result['ct'] = {'error': 'CT lookup timed out after 60 seconds'}
+        except Exception as e:
+            logger.error(f"CT lookup failed for {item}: {e}")
+            result['ct'] = {'error': f"CT failed: {str(e)}"}
+        finally:
+            signal.signal(signal.SIGALRM, old_handler)
+
+    cache.set(cache_key, result, timeout=600)
+    logger.debug(f"Query complete for {item}")
+    return result
+    
+# === EXPORT TO CSV ===
+def export_csv(results):
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        'Domain/IP', 'Type', 'Record', 'Value'
+    ])
+    
+    for item, data in results.items():
+        # WHOIS
+        if data.get('whois'):
+            lines = data['whois'].strip().split('\n')
+            for line in lines:
+                if ':' in line:
+                    k, v = line.split(':', 1)
+                    writer.writerow([item, 'WHOIS', k.strip(), v.strip()])
+        
+        # DNS
+        if data.get('dns'):
+            dns = data['dns']
+            for rtype, values in dns.items():
+                if rtype in ['SPF_validation', 'Well-Known']:
+                    continue
+                if isinstance(values, list):
+                    for val in values:
+                        writer.writerow([item, 'DNS', rtype, val])
+                else:
+                    writer.writerow([item, 'DNS', rtype, values])
+            
+            # SPF Validation
+            if dns.get('SPF_validation'):
+                val = dns['SPF_validation']
+                for rec in val.get('validations', []):
+                    status = "VALID" if rec['valid'] else "INVALID"
+                    lookups = rec.get('dns_lookups', 'N/A')
+                    writer.writerow([item, 'SPF', f"{status} ({lookups} lookups)", rec['record']])
+                
+                for err in val.get('global_errors', []):
+                    writer.writerow([item, 'SPF_ERROR', '', err])
+            
+            # Well-Known
+            if dns.get('Well-Known'):
+                for fqdn, recs in dns['Well-Known'].items():
+                    for rtype, values in recs.items():
+                        for val in values:
+                            writer.writerow([item, 'WELL_KNOWN', f"{fqdn} {rtype}", val])
+        
+        # CT
+        if data.get('ct') and 'error' not in data['ct']:
+            for sub in data['ct'].keys():
+                writer.writerow([item, 'CT', 'SUBDOMAIN', sub])
+    
+    return output.getvalue()
+
+# === Routes ===
 @app.route('/', methods=['GET', 'POST'])
-@limiter.limit("10 per minute")
+@limiter.limit("15 per minute")
 def index():
     if request.method == 'POST':
-        ips_and_domains = request.form.get("ips_and_domains", "")
-        whois_enabled = request.form.get("whois", "off") == "on"
-        advanced = request.form.get("advanced", "off") == "on"
-        items = [item.strip() for item in ips_and_domains.replace(',', '\n').splitlines() if item.strip()]
-        client_ip = get_client_ip()
+        raw_input = request.form.get("ips_and_domains", "")
+        items = [i.strip() for i in raw_input.replace(',', '\n').splitlines() if i.strip()]
+        whois_enabled = 'whois' in request.form
+        dns_enabled = 'dns' in request.form
+        ct_enabled = 'ct' in request.form
+        export_type = request.form.get('export')
+
+        logger.info(f"POST query | Items: {len(items)} | WHOIS: {whois_enabled} | DNS: {dns_enabled} | CT: {ct_enabled}")
+
         results = {}
-
+        ordered_items = []
         for item in items:
-            results[item] = {}
-            cache_key_whois = f"whois:{item}"
-            cache_key_dns = f"dns:{item}"
+            results[item] = query_item(item, dns_enabled=dns_enabled, whois_enabled=whois_enabled, ct_enabled=ct_enabled)
+            ordered_items.append(item)
 
-            if whois_enabled:
-                try:
-                    cached_data_whois = r.get(cache_key_whois)
-                    if cached_data_whois:
-                        app.logger.info("Src: %s - Cache hit for WHOIS %s", client_ip, item)
-                        results[item]["whois"] = cached_data_whois.decode('utf-8')
-                    else:
-                        whois_info = whois.whois(item)
-                        r.setex(cache_key_whois, timedelta(hours=24), whois_info.text)
-                        app.logger.info("Src: %s - WHOIS query successful for: %s", client_ip, item)
-                        results[item]["whois"] = whois_info.text
-                except Exception as e:
-                    app.logger.error(f"Src: %s - WHOIS query failed for {item}: {str(e)}")
-                    results[item]["whois"] = f"Error: {str(e)}"
+        if export_type == 'csv':
+            csv_data = export_csv(results)
+            return send_file(
+                BytesIO(csv_data.encode()),
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name='results.csv'
+            )
 
-            if advanced:
-                try:
-                    cached_data_dns = r.get(cache_key_dns)
-                    if cached_data_dns:
-                        app.logger.info(f"Src: %s - Cache hit for DNS  %s", client_ip, item)
-                        results[item]["dns"] = eval(cached_data_dns.decode('utf-8'))
-                    else:
-                        dns_results = query_dns(item, advanced=True)
-                        app.logger.info(f"Src: %s - DNS query results for %s", client_ip, item)
-                        r.setex(cache_key_dns, timedelta(minutes=10), str(dns_results))
-                        results[item]["dns"] = dns_results
-                        store_dns_history(item, dns_results)
-                        app.logger.info("Src: %s - DNS history updated, entries changed: %s", client_ip, item)
-                except Exception as e:
-                    app.logger.error(f"Src: %s - DNS query failed for {item}: {str(e)}")
-                    results[item]["dns"] = {"error": str(e)}
+        return render_template(
+            'index.html',
+            results=results,
+            ordered_items=ordered_items,
+            whois_enabled=whois_enabled,
+            dns_enabled=dns_enabled,
+            ct_enabled=ct_enabled,
+            auto_expand=True
+        )
 
-                # History fetching remains unchanged but wrapped for safety
-                try:
-                    history_key = f"dns_history:{item}"
-                    history_data = []
-                    raw_history = r.lrange(history_key, 0, -1)
-                    raw_history.reverse()
-                    for entry in raw_history:
-                        history_data.append(json.loads(entry))
-                    results[item]["history"] = history_data
-                except Exception as e:
-                    app.logger.error(f"Error fetching DNS history for {item}: {str(e)}")
+    return render_template('index.html', auto_expand=False)
 
-        return render_template('index.html', results=results, whois_enabled=whois_enabled, advanced=advanced)
+# === History Route ===
+@app.route('/history/<item>')
+def history(item):
+    raw = r.lrange(f"dns_history:{item}", 0, -1)
+    entries = [json.loads(h) for h in raw]
+    
+    if not entries:
+        return jsonify({'entries': [], 'diffs': []})
 
-    return render_template('index.html', whois_enabled=False, advanced=False)
+    entries = sorted(entries, key=lambda x: x['timestamp'], reverse=True)
+    diffs = []
+    from difflib import unified_diff
 
-def download_image():
+    for i in range(len(entries) - 1):
+        current = json.loads(entries[i]['result'])
+        previous = json.loads(entries[i + 1]['result'])
+        current_lines = json.dumps(current, indent=2, sort_keys=True).splitlines()
+        previous_lines = json.dumps(previous, indent=2, sort_keys=True).splitlines()
+
+        diff_lines = list(unified_diff(
+            previous_lines, current_lines,
+            fromfile=f"Older ({entries[i+1]['timestamp'][:10]})",
+            tofile=f"Newer ({entries[i]['timestamp'][:10]})",
+            lineterm=''
+        ))
+
+        diffs.append({
+            'from': entries[i+1]['timestamp'],
+            'to': entries[i]['timestamp'],
+            'diff': '\n'.join(diff_lines) if diff_lines else 'No changes'
+        })
+
+    return jsonify({'entries': entries, 'diffs': diffs})
+
+@app.route('/api/query')
+@limiter.limit("20 per minute")
+def api_query():
+    domain = request.args.get('q')
+    dns_q = request.args.get('dns', 'false') == 'true'
+    whois_q = request.args.get('whois', 'false') == 'true'
+    ct_q = request.args.get('ct', 'false') == 'true'
+    if not domain:
+        return jsonify({'error': 'q parameter required'}), 400
+    result = query_item(domain, dns_enabled=dns_q, whois_enabled=whois_q, ct_enabled=ct_q)
+    return jsonify(result)
+
+# === Background Image ===
+def download_background():
     try:
-        url = 'https://unsplash.it/1920/1080/?grayscale'
-        image_content = requests.get(url).content
-        image_path = 'static/background.jpg'
-        with open(image_path, 'wb') as f:
-            f.write(image_content)
-        app.logger.info("Image downloaded successfully: %s", image_path)
+        img = requests.get('https://picsum.photos/1920/1080?grayscale', timeout=10).content
+        with open('static/background.jpg', 'wb') as f:
+            f.write(img)
+        logger.info("Background image updated")
     except Exception as e:
-        app.logger.error("Error downloading image: %s", str(e))
+        logger.warning(f"Background download failed: {e}")
 
 scheduler = BackgroundScheduler()
-scheduler.add_job(download_image, 'date', run_date=datetime.now())
-scheduler.add_job(download_image, 'interval', hours=3)
+download_background()
+scheduler.add_job(download_background, 'interval', hours=6)
 scheduler.start()
 
+# === Run ===
 if __name__ == '__main__':
-    download_image()
-    app.run(host='0.0.0.0', port=5000)
+    download_background()
+    app.run(host='0.0.0.0', port=5000, debug=False)

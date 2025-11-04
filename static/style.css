@@ -1,0 +1,389 @@
+/* Professional dark theme with HIGH CONTRAST */
+body {
+  background: #0f0f0f url('/static/background.jpg') center/cover no-repeat fixed;
+  color: #f0f0f0;
+  min-height: 100vh;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+/* Navbar */
+.navbar {
+  background-color: #1a1a1a !important;
+  border-bottom: 1px solid #333;
+}
+.navbar-brand {
+  color: #00d4ff !important;
+  font-weight: 600;
+}
+
+/* Cards - Dark with high contrast */
+.card {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  color: #f0f0f0;
+}
+
+/* Card header */
+.card-header {
+  background-color: #222;
+  border-bottom: 1px solid #333;
+  color: #00d4ff;
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+/* Tab navigation */
+.nav-tabs {
+  border-bottom: 1px solid #333;
+}
+.nav-tabs .nav-link {
+  color: #ccc;
+  background-color: #1f1f1f;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  margin-right: 4px;
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+.nav-tabs .nav-link:hover {
+  background-color: #2a2a2a;
+  color: #fff;
+}
+.nav-tabs .nav-link.active {
+  background-color: #2d2d2d;
+  color: #00d4ff;
+  border-bottom: 3px solid #00d4ff;
+  font-weight: 600;
+}
+
+/* Tab content */
+.tab-content {
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  padding: 1.5rem;
+}
+
+/* Text & Code - MAX READABILITY */
+pre, code, .card-body, details, summary {
+  color: #f0f0f0 !important;
+}
+pre code {
+  background: #252525;
+  color: #f0f0f0;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+  display: block;
+}
+
+/* Details/Summary */
+details {
+  margin-bottom: 1.2rem;
+  border: 1px solid #333;
+  border-radius: 8px;
+  overflow: hidden;
+}
+summary {
+  background-color: #222;
+  padding: 0.9rem 1.2rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: #00d4ff;
+  border-bottom: 1px solid #333;
+  user-select: none;
+}
+summary:hover {
+  background-color: #2a2a2a;
+}
+details[open] > *:not(summary) {
+  background-color: #1a1a1a;
+  padding: 1.2rem;
+  border-top: 1px solid #333;
+}
+
+/* Alerts */
+.alert {
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+.alert-danger {
+  background-color: #3a1f1f;
+  border-color: #c33;
+  color: #ff6b6b;
+}
+.alert-warning {
+  background-color: #3a3a1f;
+  border-color: #cc9;
+  color: #fff8b3;
+}
+.alert-info {
+  background-color: #1f2d3a;
+  border-color: #468;
+  color: #90caf9;
+}
+
+/* Buttons */
+.btn {
+  border-radius: 6px;
+  font-weight: 500;
+}
+.btn-primary {
+  background-color: #00d4ff;
+  border-color: #00d4ff;
+  color: #000;
+}
+.btn-primary:hover {
+  background-color: #00b8e6;
+  border-color: #00b8e6;
+}
+.btn-outline-info {
+  color: #00d4ff;
+  border-color: #00d4ff;
+}
+.btn-outline-info:hover {
+  background-color: #00d4ff;
+  color: #000;
+}
+
+/* Form controls */
+.form-control, .form-check-input {
+  background-color: #2a2a2a;
+  border-color: #444;
+  color: #f0f0f0;
+}
+.form-control:focus {
+  background-color: #333;
+  border-color: #00d4ff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 212, 255, 0.3);
+  color: #f0f0f0;
+}
+.form-check-input:checked {
+  background-color: #00d4ff;
+  border-color: #00d4ff;
+}
+
+/* Progress bar */
+.progress {
+  background-color: #333;
+  height: 1.5rem;
+  border-radius: 8px;
+}
+.progress-bar {
+  background-color: #00d4ff;
+}
+
+/* Modal */
+.modal-content {
+  background-color: #1a1a1a;
+  color: #f0f0f0;
+  border: 1px solid #333;
+}
+.modal-header, .modal-footer {
+  border-color: #333;
+}
+.modal-title {
+  color: #00d4ff;
+}
+
+/* Diff */
+.language-diff {
+  background: #252525;
+  color: #f0f0f0;
+  border: 1px solid #444;
+  border-radius: 8px;
+  padding: 14px;
+  font-size: 0.82rem;
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .col-md-5, .col-md-7 { 
+    width: 100%; 
+  }
+  .nav-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav-tabs .nav-link {
+    font-size: 0.85rem;
+    padding: 0.6rem 0.8rem;
+  }
+  pre code {
+    font-size: 0.8rem;
+    padding: 10px;
+  }
+}
+
+/* === HISTORY MODAL – DARK MODE FOR DIFF === */
+#historyModal .modal-content {
+  background-color: #1a1a1a;
+  color: #f0f0f0;
+  border: 1px solid #333;
+}
+
+#historyModal .modal-header,
+#historyModal .modal-footer {
+  background-color: #222;
+  border-color: #333;
+  color: #00d4ff;
+}
+
+#historyModal .modal-title {
+  color: #00d4ff;
+  font-weight: 600;
+}
+
+#historyModal .modal-body {
+  background-color: #1a1a1a;
+  color: #f0f0f0;
+}
+
+/* Diff code block in modal */
+#historyModal .language-diff {
+  background: #252525 !important;
+  color: #f0f0f0 !important;
+  border: 1px solid #444 !important;
+  border-radius: 8px !important;
+  padding: 14px !important;
+  font-size: 0.82rem !important;
+  line-height: 1.5 !important;
+  white-space: pre !important;
+  overflow-x: auto !important;
+  max-height: 50vh !important;
+  overflow-y: auto !important;
+  font-family: 'Courier New', monospace !important;
+}
+
+/* Syntax highlighting colors for diff */
+#historyModal .language-diff .token.inserted {
+  color: #a6e22e !important; /* green */
+  background: rgba(166, 226, 46, 0.15) !important;
+}
+#historyModal .language-diff .token.deleted {
+  color: #f92672 !important; /* red */
+  background: rgba(249, 38, 114, 0.15) !important;
+}
+#historyModal .language-diff .token.prefix.inserted {
+  color: #a6e22e !important;
+}
+#historyModal .language-diff .token.prefix.deleted {
+  color: #f92672 !important;
+}
+
+/* Buttons in modal */
+#historyModal .btn {
+  border-radius: 6px;
+}
+#historyModal .btn-outline-secondary {
+  color: #ccc;
+  border-color: #555;
+}
+#historyModal .btn-outline-secondary:hover {
+  background-color: #333;
+  color: #fff;
+}
+#historyModal .btn-outline-secondary:disabled {
+  color: #666;
+  border-color: #444;
+}
+
+/* Scrollbar in modal */
+#historyModal ::-webkit-scrollbar {
+  width: 8px;
+}
+#historyModal ::-webkit-scrollbar-track {
+  background: #1a1a1a;
+}
+#historyModal ::-webkit-scrollbar-thumb {
+  background: #444;
+  border-radius: 4px;
+}
+#historyModal ::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* === WELL-KNOWN SUBDOMAINS – DARK MODE LIST GROUP === */
+.list-group {
+  background-color: #1a1a1a;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #333;
+}
+
+.list-group-item {
+  background-color: #222 !important;
+  border-color: #333 !important;
+  color: #f0f0f0 !important;
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.list-group-item:hover {
+  background-color: #2a2a2a !important;
+  color: #fff !important;
+}
+
+/* Nested details in Well-Known */
+details .list-group {
+  margin-top: 0.5rem;
+}
+details .list-group-item {
+  background-color: #1e1e1e !important;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+details .list-group-item:first-child {
+  border-top: 1px solid #333;
+}
+details .list-group-item:last-child {
+  border-bottom: none;
+}
+
+/* === DNS LOOKUPS LABEL – LIGHT WHITE TEXT === */
+small.text-muted strong,
+small.text-muted .text-muted strong,
+small.text-muted {
+  color: #f8f9fa !important; /* Almost white, high contrast */
+  font-weight: 600 !important;
+}
+
+/* Optional: Make the number slightly lighter for hierarchy */
+small.text-muted strong + * {
+  color: #e0e0e0 !important;
+}

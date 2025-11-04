@@ -6,3 +6,14 @@ redis
 apscheduler
 requests
 dnspython
+concurrent-log-handler
+flask-caching
+aiohttp
+httpx
+tenacity
+pandas
+jinja2
+flask-htmx
+bootstrap-flask
+ipinfo
+abuseipdb-wrapper

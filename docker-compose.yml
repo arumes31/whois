@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   web:
-    build: .
+    image: registry.reitetschlaeger.com/whois-webserver:latest
     ports:
       - "14400:5000"
     depends_on:
@@ -13,8 +13,13 @@ services:
       - REDIS_DB=0
       - REDIS_LIM_DB=1
     restart: unless-stopped
+    networks:
+      - free1_default
   redis:
     image: redis:latest
-#    ports:
-#      - "6379:6379"
     restart: unless-stopped
+    networks:
+      - free1_default
+networks:
+  free1_default:
+    external: true
