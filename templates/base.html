@@ -13,14 +13,24 @@
   <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
     <div class="container">
       <a class="navbar-brand" href="/">WHOIS</a>
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('config') }}">Config</a>
+          </li>
+          {% if session.logged_in %}
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
+          </li>
+          {% endif %}
+        </ul>
     </div>
   </nav>
 
   <div class="container">
-    {% with messages = get_flashed_messages() %}
+    {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-        {% for msg in messages %}
-          <div class="alert alert-info alert-dismissible fade show" role="alert">
+        {% for category, msg in messages %}
+          <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
             {{ msg }}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
           </div>
@@ -47,12 +57,8 @@
           </div>
         </div>
         <div class="modal-footer justify-content-between">
-          <button id="showOlderBtn" class="btn btn-sm btn-outline-secondary">
-            Show Older (10 more)
-          </button>
-          <button id="showAllBtn" class="btn btn-sm btn-outline-secondary">
-            Show All
-          </button>
+          <button id="showOlderBtn" class="btn btn-sm btn-outline-secondary">Show Older (10 more)</button>
+          <button id="showAllBtn" class="btn btn-sm btn-outline-secondary">Show All</button>
         </div>
       </div>
     </div>
@@ -61,104 +67,93 @@
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
 
-<script>
-  const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
-  let allEntries = [];  // Sorted newest first
-  let allDiffs = [];    // Parallel list of diffs
-  let currentLimit = 5;
+  <script>
+    const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
+    let allEntries = [], allDiffs = [], currentLimit = 5;
 
-  function showHistory(item) {
-    document.getElementById('modalItem').textContent = item;
-    const body = document.getElementById('modalBody');
-    const showOlderBtn = document.getElementById('showOlderBtn');
-    const showAllBtn = document.getElementById('showAllBtn');
-    
-    body.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
-    showOlderBtn.disabled = false;
-    showAllBtn.disabled = false;
-    currentLimit = 5;
-    historyModal.show();
-
-    fetch('/history/' + encodeURIComponent(item))
-      .then(r => r.json())
-      .then(data => {
-        allEntries = data.entries || [];
-        allDiffs = data.diffs || [];
-
-        renderHistory(currentLimit);
-
-        showOlderBtn.style.display = allEntries.length > 5 ? 'block' : 'none';
-        showAllBtn.style.display = allEntries.length > 5 ? 'block' : 'none';
-
-        if (currentLimit >= allEntries.length) {
-          showOlderBtn.disabled = true;
-        }
-
-        showOlderBtn.onclick = () => {
-          currentLimit = Math.min(currentLimit + 10, allEntries.length);
-          renderHistory(currentLimit);
-          if (currentLimit >= allEntries.length) {
-            showOlderBtn.disabled = true;
-          }
-        };
-
-        showAllBtn.onclick = () => {
-          currentLimit = allEntries.length;
-          renderHistory(currentLimit);
-          showOlderBtn.disabled = true;
-        };
-      })
-      .catch(err => {
-        body.innerHTML = '<p class="text-danger">Failed to load history.</p>';
-        showOlderBtn.style.display = 'none';
-        showAllBtn.style.display = 'none';
-      });
-  }
-
-  function renderHistory(limit) {
-    const body = document.getElementById('modalBody');
-    let html = '';
-    const displayed = allEntries.slice(0, limit);
-
-    if (displayed.length === 0) {
-      html = '<p class="text-muted">No history available.</p>';
-    } else {
-      html += '<h6 class="mb-3">Change Log</h6>';
+    function showHistory(item) {
+      document.getElementById('modalItem').textContent = item;
+      const body = document.getElementById('modalBody');
+      const showOlderBtn = document.getElementById('showOlderBtn');
+      const showAllBtn = document.getElementById('showAllBtn');
       
-      displayed.forEach((e, i) => {
-        const date = new Date(e.timestamp).toLocaleString();
-        html += `<p><strong>${date}</strong></p>`;
+      body.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
+      showOlderBtn.disabled = false;
+      showAllBtn.disabled = false;
+      currentLimit = 5;
+      historyModal.show();
 
-        // Show diff if not the oldest and we have a corresponding diff
-        if (i < displayed.length - 1 && i < allDiffs.length) {
-          const diffText = allDiffs[i].diff;
-          if (diffText && diffText !== 'No changes') {
-            html += `<pre><code class="language-diff">${escapeHtml(diffText)}</code></pre>`;
-          } else {
-            html += '<p class="text-muted fst-italic">No changes</p>';
-          }
-        }
-      });
+      fetch('/history/' + encodeURIComponent(item))
+        .then(r => r.json())
+        .then(data => {
+          allEntries = data.entries || [];
+          allDiffs = data.diffs || [];
+          renderHistory(currentLimit);
+
+          showOlderBtn.style.display = allEntries.length > 5 ? 'block' : 'none';
+          showAllBtn.style.display = allEntries.length > 5 ? 'block' : 'none';
+
+          if (currentLimit >= allEntries.length) showOlderBtn.disabled = true;
+
+          showOlderBtn.onclick = () => {
+            currentLimit = Math.min(currentLimit + 10, allEntries.length);
+            renderHistory(currentLimit);
+            if (currentLimit >= allEntries.length) showOlderBtn.disabled = true;
+          };
+
+          showAllBtn.onclick = () => {
+            currentLimit = allEntries.length;
+            renderHistory(currentLimit);
+            showOlderBtn.disabled = true;
+          };
+        })
+        .catch(err => {
+          body.innerHTML = '<p class="text-danger">Failed to load history.</p>';
+          showOlderBtn.style.display = 'none';
+          showAllBtn.style.display = 'none';
+        });
     }
 
-    body.innerHTML = html;
-    Prism.highlightAllUnder(body);
-  }
+    function renderHistory(limit) {
+      const body = document.getElementById('modalBody');
+      let html = '';
+      const displayed = allEntries.slice(0, limit);
 
-  function escapeHtml(text) {
-    return text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
+      if (displayed.length === 0) {
+        html = '<p class="text-muted">No history available.</p>';
+      } else {
+        html += '<h6 class="mb-3">Change Log</h6>';
+        displayed.forEach((e, i) => {
+          const date = new Date(e.timestamp).toLocaleString();
+          html += `<p><strong>${date}</strong></p>`;
+          if (i < displayed.length - 1 && i < allDiffs.length) {
+            const diffText = allDiffs[i].diff;
+            if (diffText && diffText !== 'No changes') {
+              html += `<pre><code class="language-diff">${escapeHtml(diffText)}</code></pre>`;
+            } else {
+              html += '<p class="text-muted fst-italic">No changes</p>';
+            }
+          }
+        });
+      }
+      body.innerHTML = html;
+      Prism.highlightAllUnder(body);
+    }
 
-  document.addEventListener('DOMContentLoaded', function() {
-    {% if auto_expand %}
-    document.querySelectorAll('details').forEach(d => d.open = true);
-    {% endif %}
-  });
-</script>
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      {% if auto_expand %}
+      document.querySelectorAll('details').forEach(d => d.open = true);
+      {% endif %}
+    });
+  </script>
 
   {% block scripts %}{% endblock %}
 </body>

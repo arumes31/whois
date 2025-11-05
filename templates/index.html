@@ -11,8 +11,12 @@
         <h3 class="card-title">Query Domains / IPs</h3>
         <form method="post" id="queryForm">
           <div class="mb-3">
-            <textarea class="form-control" name="ips_and_domains" rows="5"
-                      placeholder="example.com, 8.8.8.8" required>{{ request.form.get('ips_and_domains', '') }}</textarea>
+            <textarea 
+              class="form-control" 
+              name="ips_and_domains" 
+              rows="5"
+              placeholder="example.com, 8.8.8.8, github.com"
+              required>{{ request.form.get('ips_and_domains', '') }}</textarea>
           </div>
           <div class="form-check mb-2">
             <input class="form-check-input" type="checkbox" name="whois" id="whois" {% if whois_enabled %}checked{% endif %}>
@@ -23,7 +27,7 @@
             <label class="form-check-label" for="dns">DNS</label>
           </div>
           <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="ct" id="ct" {% if ct_enabled %}checked{% endif %}>
+            <input class="form-check-input" type="checkbox" name="ct" id="ct" {% if ct_enabled and not has_ip %}checked{% endif %} {% if has_ip %}disabled{% endif %}>
             <label class="form-check-label" for="ct">Certificate Transparency</label>
           </div>
           <button type="submit" class="btn btn-primary">Query</button>
@@ -58,6 +62,7 @@
       <div class="tab-content">
         {% for item in ordered_items %}
           {% set data = results[item] %}
+          {% set is_ip = item | is_ip %}
           <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
                id="pane-{{ loop.index }}" role="tabpanel">
 
@@ -89,12 +94,19 @@
                     {% endif %}
                   {% endmacro %}
 
-                  {{ render_list('A', data.dns.get('A')) }}
-                  {{ render_list('AAAA', data.dns.get('AAAA')) }}
-                  {{ render_list('CNAME', data.dns.get('CNAME')) }}
-                  {{ render_list('NS', data.dns.get('NS')) }}
-                  {{ render_list('MX', data.dns.get('MX')) }}
-                  {{ render_list('TXT', data.dns.get('TXT')) }}
+                  {% if is_ip and data.dns.get('PTR') %}
+                    <details open>
+                      <summary><strong>PTR (Reverse DNS)</strong></summary>
+                      <pre><code class="language-text">{{ data.dns.PTR | join('\n') }}</code></pre>
+                    </details>
+                  {% elif not is_ip %}
+                    {{ render_list('A', data.dns.get('A')) }}
+                    {{ render_list('AAAA', data.dns.get('AAAA')) }}
+                    {{ render_list('CNAME', data.dns.get('CNAME')) }}
+                    {{ render_list('NS', data.dns.get('NS')) }}
+                    {{ render_list('MX', data.dns.get('MX')) }}
+                    {{ render_list('TXT', data.dns.get('TXT')) }}
+
                     {% if data.dns.get('SPF') %}
                       <details open>
                         <summary><strong>SPF</strong></summary>
@@ -112,50 +124,43 @@
                           {% for rec in v.validations %}
                             {% if not rec.valid %}
                               <div class="alert alert-danger mt-2">
-                                <strong>Errors in "{{ rec.record[:60] }}{% if rec.record|length > 60 %}..."{% endif %}"</strong>:<br>
+                                <strong>Invalid SPF Record:</strong><br>
+                                <code>{{ rec.record[:80] }}{% if rec.record|length > 80 %}...{% endif %}</code><br>
                                 {{ rec.errors | join('<br>') | safe }}
                               </div>
                             {% elif rec.warnings %}
                               <div class="alert alert-warning mt-2">
-                                <strong>Warnings in "{{ rec.record[:60] }}{% if rec.record|length > 60 %}..."{% endif %}"</strong>:<br>
+                                <strong>Warnings:</strong><br>
                                 {{ rec.warnings | join('<br>') | safe }}
                               </div>
                             {% endif %}
-                            {% if rec.dns_lookups is not none %}
-                              <small class="text-muted d-block mt-1">
-                                <strong>DNS Lookups:</strong> {{ rec.dns_lookups }}
-                                {% if rec.dns_lookups > 10 %} <span class="text-danger">(exceeds RFC limit)</span>{% endif %}
-                              </small>
-                            {% endif %}
+                            <small class="text-muted d-block mt-1">
+                              <strong>DNS Lookups:</strong> {{ rec.dns_lookups }}
+                              {% if rec.dns_lookups > 10 %} <span class="text-danger">(exceeds RFC 7208 limit of 10)</span>{% endif %}
+                            </small>
                           {% endfor %}
                         {% endif %}
                       </details>
                     {% endif %}
-                  {{ render_list('DMARC', data.dns.get('DMARC')) }}
-                  {{ render_list('BIMI', data.dns.get('BIMI')) }}
 
-                  {% if data.dns.get('blacklist') %}
-                    <details open>
-                      <summary><strong>Blacklist</strong></summary>
-                      <pre><code class="language-json">{{ data.dns.blacklist | tojson }}</code></pre>
-                    </details>
-                  {% endif %}
+                    {{ render_list('DMARC', data.dns.get('DMARC')) }}
 
-                  <!-- Well-Known Subdomains -->
-                  {% if data.dns.get('Well-Known') %}
-                    <details open>
-                      <summary><strong>Well-Known Subdomains ({{ data.dns['Well-Known']|length }})</strong></summary>
-                      {% for fqdn, recs in data.dns['Well-Known'].items() %}
-                        <details>
-                          <summary><strong>{{ fqdn }}</strong></summary>
-                          <ul class="list-group list-group-flush">
-                            {% if recs.get('A') %}<li class="list-group-item">A: {{ recs.A | join(', ') }}</li>{% endif %}
-                            {% if recs.get('AAAA') %}<li class="list-group-item">AAAA: {{ recs.AAAA | join(', ') }}</li>{% endif %}
-                            {% if recs.get('CNAME') %}<li class="list-group-item">CNAME: {{ recs.CNAME | join(', ') }}</li>{% endif %}
-                          </ul>
-                        </details>
-                      {% endfor %}
-                    </details>
+                    <!-- Well-Known Subdomains -->
+                    {% if data.dns.get('Well-Known') %}
+                      <details open>
+                        <summary><strong>Well-Known Subdomains ({{ data.dns['Well-Known']|length }})</strong></summary>
+                        {% for fqdn, recs in data.dns['Well-Known'].items() %}
+                          <details>
+                            <summary><strong>{{ fqdn }}</strong></summary>
+                            <ul class="list-group list-group-flush">
+                              {% if recs.get('A') %}<li class="list-group-item">A: {{ recs.A | join(', ') }}</li>{% endif %}
+                              {% if recs.get('AAAA') %}<li class="list-group-item">AAAA: {{ recs.AAAA | join(', ') }}</li>{% endif %}
+                              {% if recs.get('CNAME') %}<li class="list-group-item">CNAME: {{ recs.CNAME | join(', ') }}</li>{% endif %}
+                            </ul>
+                          </details>
+                        {% endfor %}
+                      </details>
+                    {% endif %}
                   {% endif %}
                 {% endif %}
 
@@ -172,11 +177,9 @@
                     <details open>
                       <summary><strong>CT Subdomains ({{ data.ct | length }})</strong></summary>
                       <ul class="list-group">
-                        {% for sub, rec in data.ct.items() %}
+                        {% for sub in data.ct.keys() %}
                           <li class="list-group-item">
                             <strong>{{ sub }}</strong>
-                            {% if rec.A %} (A: {{ rec.A | join(', ') }}) {% endif %}
-                            {% if rec.CNAME %} (CNAME: {{ rec.CNAME | join(', ') }}) {% endif %}
                           </li>
                         {% endfor %}
                       </ul>
@@ -198,5 +201,43 @@
   document.getElementById('queryForm').onsubmit = () => {
     document.getElementById('progress').style.display = 'block';
   };
+
+  // Auto-disable CT if any IP is in the input
+  const textarea = document.querySelector('textarea[name="ips_and_domains"]');
+  const ctCheckbox = document.getElementById('ct');
+
+  function checkForIP() {
+    const lines = textarea.value.split('\n').map(l => l.trim()).filter(Boolean);
+    const hasIP = lines.some(line => 
+      /^(\d{1,3}\.){3}\d{1,3}$/.test(line) || 
+      /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/.test(line) ||
+      /^([0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F]{0,4}$/.test(line)
+    );
+
+    if (hasIP && !ctCheckbox.disabled) {
+      ctCheckbox.disabled = true;
+      ctCheckbox.checked = false;
+      flashMessage('Certificate Transparency is not applicable to IP addresses and has been disabled.', 'info');
+    } else if (!hasIP && ctCheckbox.disabled) {
+      ctCheckbox.disabled = false;
+    }
+  }
+
+  function flashMessage(msg, category = 'info') {
+    const alert = `
+      <div class="alert alert-${category} alert-dismissible fade show position-fixed" 
+           style="top: 1rem; right: 1rem; z-index: 9999;" role="alert">
+        ${msg}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>`;
+    document.body.insertAdjacentHTML('beforeend', alert);
+    setTimeout(() => {
+      const el = document.querySelector('.position-fixed.alert');
+      if (el) el.remove();
+    }, 5000);
+  }
+
+  textarea.addEventListener('input', checkForIP);
+  document.addEventListener('DOMContentLoaded', checkForIP);
 </script>
 {% endblock %}

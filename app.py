@@ -12,11 +12,13 @@ import signal
 from io import StringIO, BytesIO
 from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from flask import Flask, request, render_template, send_file, jsonify, flash, redirect, url_for
+from flask import Flask, request, render_template, send_file, jsonify, flash, redirect, url_for, session
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_caching import Cache
 from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
+from functools import wraps
 import requests
 import aiohttp
 import asyncio
@@ -25,10 +27,13 @@ import pandas as pd
 import ipinfo
 import abuseipdb_wrapper
 from flask_htmx import HTMX
+import ipaddress
+import random
+from urllib.parse import urlparse, urljoin
 
 # === Flask App ===
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'supersecretkey')
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'change-me-in-production')
 app.config['CACHE_TYPE'] = 'redis'
 app.config['CACHE_REDIS_URL'] = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', 6379)}/2"
 
@@ -49,24 +54,46 @@ app.logger.info("| |_| | |  _ <  ║    app                  ║")
 app.logger.info("|____/  |_| \\_\\ ╚═════════════════════════╝")
 app.logger.info("starting.....")
 
+# === Custom Jinja Filter: is_ip ===
+def is_ip_filter(value):
+    if not value or not isinstance(value, str):
+        return False
+    try:
+        ipaddress.ip_address(value.strip())
+        return True
+    except ValueError:
+        return False
+
+app.jinja_env.filters['is_ip'] = is_ip_filter
+
+# === Helper: is_ip_address (Python) ===
+def is_ip_address(value):
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except:
+        return False
+
+# === Login Required Decorator ===
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            # Build safe HTTPS next URL
+            scheme = 'https'  # Always use HTTPS
+            host = request.host
+            path = request.full_path if request.full_path != '?' else request.path
+            next_url = f"{scheme}://{host}{path}"
+            return redirect(url_for('login', next=next_url))
+        return f(*args, **kwargs)
+    return decorated_function
+
 # === Async Session ===
 async def get_async_session():
     timeout = aiohttp.ClientTimeout(total=70)
     session = aiohttp.ClientSession(timeout=timeout)
     logger.debug("Created new aiohttp session")
     return session
-
-# === Helper: IP Check ===
-def is_ip_address(value):
-    try:
-        socket.inet_pton(socket.AF_INET, value)
-        return True
-    except socket.error:
-        try:
-            socket.inet_pton(socket.AF_INET6, value)
-            return True
-        except socket.error:
-            return False
 
 # === Parallel DNS Lookup ===
 def parallel_dns_lookup(domain, record_types):
@@ -215,13 +242,11 @@ def validate_spf_record(record, domain):
             
             mech = mech.lower()
             
-            # Count DNS lookups
             if mech in ['a', 'mx', 'include', 'ptr', 'exists']:
                 val['dns_lookups'] += 1
             elif mech == 'redirect':
                 val['dns_lookups'] += 1
             
-            # Validate mechanism
             if mech not in ['+a', '-a', '~a', '?a', 'a',
                            '+mx', '-mx', '~mx', '?mx', 'mx',
                            '+ip4', '-ip4', '~ip4', '?ip4', 'ip4',
@@ -250,6 +275,7 @@ def validate_spf_record(record, domain):
 
 # === Query single item ===
 def query_item(item, dns_enabled=True, whois_enabled=True, ct_enabled=True):
+    is_ip = is_ip_address(item)
     cache_key = f"query:{item}:{dns_enabled}:{whois_enabled}:{ct_enabled}"
     cached = cache.get(cache_key)
     if cached is not None:
@@ -258,62 +284,50 @@ def query_item(item, dns_enabled=True, whois_enabled=True, ct_enabled=True):
 
     result = {'whois': None, 'dns': None, 'ct': None}
 
-    # WHOIS
-    if whois_enabled and not is_ip_address(item):
+    if whois_enabled:
         try:
             w = whois.whois(item)
             result['whois'] = str(w)
         except Exception as e:
             result['whois'] = f"WHOIS error: {str(e)}"
 
-    # DNS
     if dns_enabled:
         dns_result = {}
-        if is_ip_address(item):
+        if is_ip:
             try:
                 rev = dns.reversename.from_address(item)
-                ptr = str(dns.resolver.resolve(rev, 'PTR')[0]).rstrip('.')
-                dns_result['PTR'] = [ptr]
+                ptr_records = dns.resolver.resolve(rev, 'PTR', raise_on_no_answer=False)
+                dns_result['PTR'] = [str(r).rstrip('.') for r in ptr_records]
             except Exception as e:
                 logger.debug(f"PTR lookup failed for {item}: {e}")
+                dns_result['PTR'] = []
         else:
             record_types = ['A', 'AAAA', 'CNAME', 'NS', 'TXT', 'MX']
             dns_result.update(parallel_dns_lookup(item, record_types))
 
-            # Clean and sort TXT
             if 'TXT' in dns_result:
                 dns_result['TXT'] = [t.strip('"\'') for t in dns_result['TXT']]
                 dns_result['TXT'] = sorted(dns_result['TXT'], key=str.lower)
 
-            # SPF
-            dns_result['SPF'] = parse_spf(dns_result.get('TXT', []))
+            spf_records = parse_spf(dns_result.get('TXT', []))
+            dns_result['SPF'] = spf_records
 
-            # MANUAL SPF VALIDATION
-            if dns_result.get('SPF'):
-                validations = []
-                global_errors = []
-
-                for spf_record in dns_result['SPF']:
-                    val = validate_spf_record(spf_record, item)
-                    validations.append(val)
-
-                if len(dns_result['SPF']) > 1:
-                    global_errors.append("Multiple SPF records found (RFC 7208 permits only one)")
-
+            if spf_records:
+                validations = [validate_spf_record(rec, item) for rec in spf_records]
+                global_errors = ["Multiple SPF records found (RFC 7208 permits only one)"] if len(spf_records) > 1 else []
                 dns_result['SPF_validation'] = {
                     'validations': validations,
                     'global_errors': global_errors
                 }
-                logger.debug(f"SPF validation complete for {item}: {len(validations)} record(s)")
 
-            # DMARC
             try:
-                dmarc = [str(r) for r in dns.resolver.resolve('_dmarc.' + item, 'TXT', raise_on_no_answer=False)]
-                dns_result['DMARC'] = dmarc
+                dmarc = dns.resolver.resolve('_dmarc.' + item, 'TXT', raise_on_no_answer=False)
+                dmarc_records = [str(r).strip('"') for r in dmarc if 'v=DMARC1' in str(r)]
+                if dmarc_records:
+                    dns_result['DMARC'] = dmarc_records
             except Exception as e:
-                logger.debug(f"DMARC failed: {e}")
+                logger.debug(f"DMARC lookup failed: {e}")
 
-            # Well-known
             well_known = query_well_known(item)
             if well_known:
                 dns_result['Well-Known'] = well_known
@@ -321,8 +335,7 @@ def query_item(item, dns_enabled=True, whois_enabled=True, ct_enabled=True):
         result['dns'] = dns_result
         store_dns_history(item, dns_result)
 
-    # CT
-    if ct_enabled:
+    if ct_enabled and not is_ip:
         old_handler = signal.getsignal(signal.SIGALRM)
         try:
             signal.signal(signal.SIGALRM, timeout_handler)
@@ -331,30 +344,24 @@ def query_item(item, dns_enabled=True, whois_enabled=True, ct_enabled=True):
             result['ct'] = ct_result
             signal.alarm(0)
         except TimeoutError:
-            logger.warning(f"CT lookup timed out for {item}")
             result['ct'] = {'error': 'CT lookup timed out after 60 seconds'}
         except Exception as e:
-            logger.error(f"CT lookup failed for {item}: {e}")
             result['ct'] = {'error': f"CT failed: {str(e)}"}
         finally:
             signal.signal(signal.SIGALRM, old_handler)
+    elif ct_enabled and is_ip:
+        result['ct'] = {'error': 'Certificate Transparency not applicable to IP addresses'}
 
     cache.set(cache_key, result, timeout=600)
-    logger.debug(f"Query complete for {item}")
     return result
-    
+
 # === EXPORT TO CSV ===
 def export_csv(results):
     output = StringIO()
     writer = csv.writer(output)
-    
-    # Header
-    writer.writerow([
-        'Domain/IP', 'Type', 'Record', 'Value'
-    ])
+    writer.writerow(['Domain/IP', 'Type', 'Record', 'Value'])
     
     for item, data in results.items():
-        # WHOIS
         if data.get('whois'):
             lines = data['whois'].strip().split('\n')
             for line in lines:
@@ -362,7 +369,6 @@ def export_csv(results):
                     k, v = line.split(':', 1)
                     writer.writerow([item, 'WHOIS', k.strip(), v.strip()])
         
-        # DNS
         if data.get('dns'):
             dns = data['dns']
             for rtype, values in dns.items():
@@ -374,7 +380,6 @@ def export_csv(results):
                 else:
                     writer.writerow([item, 'DNS', rtype, values])
             
-            # SPF Validation
             if dns.get('SPF_validation'):
                 val = dns['SPF_validation']
                 for rec in val.get('validations', []):
@@ -385,19 +390,49 @@ def export_csv(results):
                 for err in val.get('global_errors', []):
                     writer.writerow([item, 'SPF_ERROR', '', err])
             
-            # Well-Known
             if dns.get('Well-Known'):
                 for fqdn, recs in dns['Well-Known'].items():
                     for rtype, values in recs.items():
                         for val in values:
                             writer.writerow([item, 'WELL_KNOWN', f"{fqdn} {rtype}", val])
         
-        # CT
         if data.get('ct') and 'error' not in data['ct']:
             for sub in data['ct'].keys():
                 writer.writerow([item, 'CT', 'SUBDOMAIN', sub])
     
     return output.getvalue()
+
+# === Monitoring System ===
+MONITORED_KEY = "monitored_items"
+
+def monitor_item(item):
+    logger.info(f"[MONITOR] Running scheduled check for {item}")
+    result = query_item(item, dns_enabled=True, whois_enabled=True, ct_enabled=not is_ip_address(item))
+    logger.debug(f"[MONITOR] Result: {json.dumps(result)[:500]}...")
+
+def schedule_monitoring_jobs():
+    scheduler.remove_all_jobs()
+    items = r.lrange(MONITORED_KEY, 0, -1)
+    items = [item.decode('utf-8') for item in items]
+    if not items:
+        logger.info("No monitored items.")
+        return
+
+    total_minutes = 23 * 60  # 23-hour window
+    interval = total_minutes / len(items)
+    for idx, item in enumerate(items):
+        delay = int(idx * interval + random.uniform(0, 30))
+        hour = delay // 60
+        minute = delay % 60
+        trigger = CronTrigger(hour=hour, minute=minute)
+        scheduler.add_job(
+            func=lambda i=item: monitor_item(i),
+            trigger=trigger,
+            id=f"monitor_{item}",
+            name=f"Monitor {item}",
+            replace_existing=True
+        )
+        logger.info(f"Scheduled {item} → {hour:02d}:{minute:02d}")
 
 # === Routes ===
 @app.route('/', methods=['GET', 'POST'])
@@ -410,6 +445,7 @@ def index():
         dns_enabled = 'dns' in request.form
         ct_enabled = 'ct' in request.form
         export_type = request.form.get('export')
+        has_ip = any(is_ip_address(item) for item in items)
 
         logger.info(f"POST query | Items: {len(items)} | WHOIS: {whois_enabled} | DNS: {dns_enabled} | CT: {ct_enabled}")
 
@@ -435,43 +471,107 @@ def index():
             whois_enabled=whois_enabled,
             dns_enabled=dns_enabled,
             ct_enabled=ct_enabled,
+            has_ip=has_ip,
             auto_expand=True
         )
 
     return render_template('index.html', auto_expand=False)
 
-# === History Route ===
+@app.route('/login', methods=['GET', 'POST'])
+@limiter.exempt
+def login():
+    raw_next = request.args.get('next')
+    default_next = url_for('config', _external=True, _scheme='https')
+
+    # Sanitize next URL
+    if raw_next:
+        parsed = urlparse(raw_next)
+        if parsed.scheme == 'https' and parsed.netloc == request.host:
+            safe_next = raw_next
+        else:
+            safe_next = default_next
+    else:
+        safe_next = default_next
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        env_user = os.getenv('CONFIG_USER')
+        env_pass = os.getenv('CONFIG_PASS')
+
+        if env_user and env_pass and username == env_user and password == env_pass:
+            session['logged_in'] = True
+            return redirect(safe_next)
+        else:
+            flash('Invalid credentials', 'danger')
+
+    return render_template('login.html', next=safe_next)
+
+@app.route('/logout')
+@login_required
+def logout():
+    session.pop('logged_in', None)
+    flash('Logged out successfully', 'info')
+    return redirect(url_for('index'))
+
+@app.route('/config', methods=['GET', 'POST'])
+@login_required
+@limiter.exempt
+def config():
+    if request.method == 'POST':
+        action = request.form.get('action')
+        item = request.form.get('item', '').strip().lower()
+
+        if action == 'add' and item:
+            if (is_ip_address(item) or '.' in item) and item not in [i.decode() for i in r.lrange(MONITORED_KEY, 0, -1)]:
+                r.rpush(MONITORED_KEY, item)
+                flash(f"Added {item} to monitoring", "success")
+                schedule_monitoring_jobs()
+            else:
+                flash("Invalid or duplicate item", "danger")
+        elif action == 'remove' and item:
+            r.lrem(MONITORED_KEY, 0, item)
+            try:
+                scheduler.remove_job(f"monitor_{item}")
+            except:
+                pass
+            flash(f"Removed {item}", "success")
+            schedule_monitoring_jobs()
+        return redirect(url_for('config'))
+
+    monitored = [i.decode() for i in r.lrange(MONITORED_KEY, 0, -1)]
+    jobs = [
+        {
+            'id': j.id,
+            'name': j.name.split(' ', 1)[1] if ' ' in j.name else j.id,
+            'next_run': j.next_run_time.strftime('%Y-%m-%d %H:%M') if j.next_run_time else '—'
+        }
+        for j in scheduler.get_jobs()
+        if j.id.startswith('monitor_')
+    ]
+    return render_template('config.html', monitored=monitored, jobs=jobs)
+
 @app.route('/history/<item>')
 def history(item):
     raw = r.lrange(f"dns_history:{item}", 0, -1)
     entries = [json.loads(h) for h in raw]
-    
     if not entries:
         return jsonify({'entries': [], 'diffs': []})
 
     entries = sorted(entries, key=lambda x: x['timestamp'], reverse=True)
     diffs = []
     from difflib import unified_diff
-
     for i in range(len(entries) - 1):
         current = json.loads(entries[i]['result'])
         previous = json.loads(entries[i + 1]['result'])
         current_lines = json.dumps(current, indent=2, sort_keys=True).splitlines()
         previous_lines = json.dumps(previous, indent=2, sort_keys=True).splitlines()
-
-        diff_lines = list(unified_diff(
-            previous_lines, current_lines,
-            fromfile=f"Older ({entries[i+1]['timestamp'][:10]})",
-            tofile=f"Newer ({entries[i]['timestamp'][:10]})",
-            lineterm=''
-        ))
-
+        diff_lines = list(unified_diff(previous_lines, current_lines, lineterm=''))
         diffs.append({
             'from': entries[i+1]['timestamp'],
             'to': entries[i]['timestamp'],
             'diff': '\n'.join(diff_lines) if diff_lines else 'No changes'
         })
-
     return jsonify({'entries': entries, 'diffs': diffs})
 
 @app.route('/api/query')
@@ -499,7 +599,11 @@ def download_background():
 scheduler = BackgroundScheduler()
 download_background()
 scheduler.add_job(download_background, 'interval', hours=6)
+
+# === Start Scheduler & Monitoring ===
 scheduler.start()
+scheduler.add_job(schedule_monitoring_jobs, 'interval', minutes=5, id='refresh_monitoring')
+schedule_monitoring_jobs()
 
 # === Run ===
 if __name__ == '__main__':

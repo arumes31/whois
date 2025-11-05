@@ -18,6 +18,9 @@ services:
   redis:
     image: redis:latest
     restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - /proxy/whois/redis-data:/data
     networks:
       - free1_default
 networks:

@@ -1,1 +1,2 @@
 autobuild.sh
+redis-data/dump.rdb
