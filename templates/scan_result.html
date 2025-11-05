@@ -1,0 +1,26 @@
+{# templates/scan_result.html #}
+{% if result.error %}
+  <div class="alert alert-danger">
+    <strong>Error:</strong> {{ result.error }}
+  </div>
+{% else %}
+  <div class="alert alert-info mb-2">
+    <strong>Target:</strong> {{ target }} – scanned in {{ "%.3f"|format(result.elapsed) }} s
+  </div>
+
+  {% if result.open %}
+    <div class="alert alert-success">
+      <strong class="text-dark">Open ({{ result.open|length }})</strong>:
+      <code class="d-block mt-1 text-dark">{{ result.open|join(', ') }}</code>
+    </div>
+  {% else %}
+    <div class="alert alert-secondary">No open ports detected.</div>
+  {% endif %}
+
+  {% if result.closed %}
+    <details class="mt-2">
+      <summary class="text-white">Closed ports ({{ result.closed|length }}) – click to view</summary>
+      <code class="d-block mt-1 text-white">{{ result.closed|join(', ') }}</code>
+    </details>
+  {% endif %}
+{% endif %}

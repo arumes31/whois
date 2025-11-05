@@ -475,3 +475,8 @@ textarea:focus {
 .position-fixed.alert {
     max-width: 400px;
 }
+
+/* Port scanner spinner alignment */
+.htmx-indicator {
+    color: #00d4ff;
+}

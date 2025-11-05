@@ -30,6 +30,7 @@ from flask_htmx import HTMX
 import ipaddress
 import random
 from urllib.parse import urlparse, urljoin
+from utils.portscan import scan_ports
 
 # === Flask App ===
 app = Flask(__name__)
@@ -105,6 +106,47 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+# ----------------------------------------------------------------------
+# PORT SCANNER ENDPOINT (HTMX) – uses function from utils/portscan.py
+# ----------------------------------------------------------------------
+@app.route("/scan", methods=["GET", "POST"])
+@login_required
+@limiter.limit("20 per minute")
+def port_scan():
+    # ---- 1. Determine target ------------------------------------------------
+    remote_ip = get_real_ip()
+    manual_target = request.form.get("target", "").strip()
+
+    if manual_target:
+        try:
+            ip_obj = ipaddress.ip_address(manual_target)
+            if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_reserved:
+                return '<div class="alert alert-danger">Private/reserved IPs not allowed.</div>'
+        except ValueError:
+            return '<div class="alert alert-danger">Invalid IP address.</div>'
+        target = manual_target
+    else:
+        target = remote_ip
+
+    # ---- 2. Parse ports ----------------------------------------------------
+    raw_ports = request.form.get("ports", "80,443,22,21,25,3389")
+    try:
+        ports = [int(p.strip()) for p in raw_ports.split(",") if p.strip().isdigit()]
+        if not ports:
+            raise ValueError
+    except ValueError:
+        return '<div class="alert alert-danger">Ports must be comma-separated numbers.</div>'
+
+    # ---- 3. Run scan --------------------------------------------------------
+    scan_result = scan_ports(target, ports)
+
+    # ---- 4. Return **only the fragment** (no layout) -----------------------
+    return render_template(
+        "scan_result.html",          # <-- fragment only
+        target=target,
+        remote_ip=remote_ip,
+        result=scan_result,
+    )
 # === Async Session ===
 async def get_async_session():
     timeout = aiohttp.ClientTimeout(total=70)
@@ -453,34 +495,41 @@ def schedule_monitoring_jobs():
 
 # === Routes ===
 @app.route('/', methods=['GET', 'POST'])
-@limiter.limit("15 per minute")
 def index():
+    real_ip = get_real_ip()  # Compute the real IP here
+    
     if request.method == 'POST':
-        raw_input = request.form.get("ips_and_domains", "")
-        items = [i.strip() for i in raw_input.replace(',', '\n').splitlines() if i.strip()]
+        ips_and_domains = request.form.get('ips_and_domains', '').strip()
+        export_type = request.form.get('export')
         whois_enabled = 'whois' in request.form
         dns_enabled = 'dns' in request.form
         ct_enabled = 'ct' in request.form
-        export_type = request.form.get('export')
-        has_ip = any(is_ip_address(item) for item in items)
-
-        logger.info(f"POST query | Items: {len(items)} | WHOIS: {whois_enabled} | DNS: {dns_enabled} | CT: {ct_enabled}")
-
+        
+        items = [i.strip() for i in ips_and_domains.split(',') if i.strip()]
+        ordered_items = items[:]  # Preserve order
+        
         results = {}
-        ordered_items = []
-        for item in items:
-            results[item] = query_item(item, dns_enabled=dns_enabled, whois_enabled=whois_enabled, ct_enabled=ct_enabled)
-            ordered_items.append(item)
-
+        has_ip = any(is_ip_address(i) for i in items)
+        
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_item = {executor.submit(query_item, item, dns_enabled, whois_enabled, ct_enabled): item for item in items}
+            for future in as_completed(future_to_item):
+                item = future_to_item[future]
+                try:
+                    results[item] = future.result()
+                except Exception as e:
+                    results[item] = {'error': str(e)}
+        
         if export_type == 'csv':
-            csv_data = export_csv(results)
-            return send_file(
-                BytesIO(csv_data.encode()),
-                mimetype='text/csv',
-                as_attachment=True,
-                download_name='results.csv'
-            )
-
+            si = StringIO()
+            cw = csv.writer(si)
+            cw.writerow(['Item', 'Type', 'Data'])
+            for item, data in results.items():
+                for key, val in data.items():
+                    cw.writerow([item, key, json.dumps(val)])
+            si.seek(0)
+            return send_file(BytesIO(si.getvalue().encode('utf-8')), mimetype='text/csv', download_name='results.csv')
+        
         return render_template(
             'index.html',
             results=results,
@@ -489,10 +538,11 @@ def index():
             dns_enabled=dns_enabled,
             ct_enabled=ct_enabled,
             has_ip=has_ip,
-            auto_expand=True
+            auto_expand=True,
+            real_ip=real_ip  # Pass the computed real IP to the template
         )
-
-    return render_template('index.html', auto_expand=False)
+    
+    return render_template('index.html', auto_expand=False, real_ip=real_ip)  # Also pass it for GET requests
     
 @app.route('/ip')
 def show_ip():
