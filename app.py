@@ -39,7 +39,6 @@ app.config['CACHE_REDIS_URL'] = f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os
 
 cache = Cache(app)
 htmx = HTMX(app)
-limiter = Limiter(key_func=get_remote_address, app=app, storage_uri=f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', 6379)}/1")
 r = redis.StrictRedis(host=os.getenv('REDIS_HOST', 'redis'), port=int(os.getenv('REDIS_PORT', 6379)), db=0)
 
 # === Logging ===
@@ -53,6 +52,24 @@ app.logger.info("| | | | | |_) | ║    whois                ║")
 app.logger.info("| |_| | |  _ <  ║    app                  ║")
 app.logger.info("|____/  |_| \\_\\ ╚═════════════════════════╝")
 app.logger.info("starting.....")
+
+# === REAL IP FOR REVERSE PROXY ===
+def get_real_ip():
+    TRUSTED_PROXIES = {'127.0.0.1', '::1', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'}
+    remote = request.remote_addr
+    if remote in TRUSTED_PROXIES:
+        xff = request.headers.get('X-Forwarded-For')
+        if xff:
+            for ip in [ip.strip() for ip in xff.split(',')]:
+                if ip not in TRUSTED_PROXIES:
+                    return ip
+        real_ip = request.headers.get('X-Real-IP')
+        if real_ip and real_ip not in TRUSTED_PROXIES:
+            return real_ip
+    return remote or '127.0.0.1'
+
+#Limiter
+limiter = Limiter(key_func=get_real_ip, app=app, storage_uri=f"redis://{os.getenv('REDIS_HOST', 'redis')}:{os.getenv('REDIS_PORT', 6379)}/1")
 
 # === Custom Jinja Filter: is_ip ===
 def is_ip_filter(value):
@@ -476,9 +493,19 @@ def index():
         )
 
     return render_template('index.html', auto_expand=False)
+    
+@app.route('/ip')
+def show_ip():
+    return jsonify({
+            'remote_addr': request.remote_addr,
+            'xff': request.headers.get('X-Forwarded-For'),
+            'x_real_ip': request.headers.get('X-Real-IP'),
+            'host': request.host,
+            'user_agent': request.headers.get('User-Agent'),
+            'real_ip': get_real_ip()
+        })
 
 @app.route('/login', methods=['GET', 'POST'])
-@limiter.exempt
 def login():
     raw_next = request.args.get('next')
     default_next = url_for('config', _external=True, _scheme='https')
