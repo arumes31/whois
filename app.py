@@ -534,33 +534,45 @@ def monitor_item(item):
     logger.debug(f"[MONITOR] Result: {json.dumps(result)[:500]}...")
 
 def schedule_monitoring_jobs():
-    # Only remove monitoring jobs, not system jobs
-    for job in scheduler.get_jobs():
-        if job.id.startswith('monitor_'):
-            scheduler.remove_job(job.id)
-            
-    items = r.lrange(MONITORED_KEY, 0, -1)
-    items = [item.decode('utf-8') for item in items]
-    if not items:
-        logger.info("No monitored items.")
+    lock_key = "lock:schedule_monitoring"
+    # Acquire a short lock (30s) to prevent concurrent rescheduling
+    if not r.set(lock_key, "1", nx=True, ex=30):
+        logger.debug("Rescheduling already in progress, skipping.")
         return
 
-    total_minutes = 23 * 60  # 23-hour window
-    interval = total_minutes / len(items)
-    for idx, item in enumerate(items):
-        delay = int(idx * interval + random.uniform(0, 30))
-        hour = delay // 60
-        minute = delay % 60
-        trigger = CronTrigger(hour=hour, minute=minute)
-        scheduler.add_job(
-            func=monitor_item,
-            args=[item],
-            trigger=trigger,
-            id=f"monitor_{item}",
-            name=f"Monitor {item}",
-            replace_existing=True
-        )
-        logger.info(f"Scheduled {item} → {hour:02d}:{minute:02d}")
+    try:
+        # Only remove monitoring jobs, not system jobs
+        for job in scheduler.get_jobs():
+            if job.id.startswith('monitor_'):
+                try:
+                    scheduler.remove_job(job.id)
+                except:
+                    pass
+                
+        items = r.lrange(MONITORED_KEY, 0, -1)
+        items = [item.decode('utf-8') for item in items]
+        if not items:
+            logger.info("No monitored items.")
+            return
+
+        total_minutes = 23 * 60  # 23-hour window
+        interval = total_minutes / len(items)
+        for idx, item in enumerate(items):
+            delay = int(idx * interval + random.uniform(0, 30))
+            hour = delay // 60
+            minute = delay % 60
+            trigger = CronTrigger(hour=hour, minute=minute)
+            scheduler.add_job(
+                func=monitor_item,
+                args=[item],
+                trigger=trigger,
+                id=f"monitor_{item}",
+                name=f"Monitor {item}",
+                replace_existing=True
+            )
+            logger.info(f"Scheduled {item} → {hour:02d}:{minute:02d}")
+    finally:
+        r.delete(lock_key)
 
 # === Routes ===
 @app.route('/', methods=['GET', 'POST'])
