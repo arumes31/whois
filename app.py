@@ -313,9 +313,19 @@ def timeout_handler(signum, frame):
 
 # === Store DNS history ===
 def store_dns_history(item, dns_result):
+    # Fetch latest entry to check for changes
+    last_entry_raw = r.lindex(f"dns_history:{item}", 0)
+    new_result_json = json.dumps(dns_result, sort_keys=True)
+    
+    if last_entry_raw:
+        last_entry = json.loads(last_entry_raw)
+        if last_entry.get('result') == new_result_json:
+            logger.debug(f"No DNS change for {item}, skipping history update.")
+            return
+
     entry = {
         'timestamp': datetime.utcnow().isoformat() + 'Z',
-        'result': json.dumps(dns_result, sort_keys=True)
+        'result': new_result_json
     }
     r.lpush(f"dns_history:{item}", json.dumps(entry))
     r.ltrim(f"dns_history:{item}", 0, 99)

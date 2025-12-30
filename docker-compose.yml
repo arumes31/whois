@@ -1,8 +1,7 @@
-version: '3.8'
-
 services:
   web:
-    image: registry.reitetschlaeger.com/whois-webserver:latest
+    build: .
+    image: whois-app:latest
     ports:
       - "14400:5000"
     depends_on:
@@ -10,12 +9,17 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_DB=0
-      - REDIS_LIM_DB=1
+      - CONFIG_USER=${CONFIG_USER:-admin}
+      - CONFIG_PASS=${CONFIG_PASS:-admin}
+      - SECRET_KEY=${SECRET_KEY:-dev-key-change-me}
     restart: unless-stopped
+    
   redis:
-    image: redis:latest
+    image: redis:alpine
     restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
+    command: redis-server --save 60 1 --appendonly yes
     volumes:
-      - /data/whois/redis-data:/data
+      - redis_data:/data
+
+volumes:
+  redis_data:
