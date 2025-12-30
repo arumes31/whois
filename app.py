@@ -28,7 +28,7 @@ import ipinfo
 import abuseipdb_wrapper
 from flask_htmx import HTMX
 from apscheduler.jobstores.redis import RedisJobStore
-from apscheduler.executors.pool import ThreadPoolExecutor
+from apscheduler.executors.pool import ThreadPoolExecutor as APSThreadPoolExecutor
 import ipaddress
 import random
 from urllib.parse import urlparse, urljoin
@@ -750,7 +750,7 @@ jobstores = {
     )
 }
 executors = {
-    'default': ThreadPoolExecutor(10)
+    'default': APSThreadPoolExecutor(10)
 }
 job_defaults = {
     'coalesce': True,
