@@ -147,6 +147,54 @@ def port_scan():
         remote_ip=remote_ip,
         result=scan_result,
     )
+
+# ----------------------------------------------------------------------
+# SINGLE DNS LOOKUP (HTMX)
+# ----------------------------------------------------------------------
+@app.route("/dns_lookup", methods=["POST"])
+@limiter.limit("30 per minute")
+def dns_lookup():
+    domain = request.form.get("domain", "").strip()
+    record_type = request.form.get("type", "A").strip().upper()
+    
+    if not domain:
+        return '<div class="alert alert-warning">Please enter a domain.</div>'
+    
+    try:
+        answers = dns.resolver.resolve(domain, record_type)
+        results = [str(r) for r in answers]
+        return f'<div class="alert alert-success"><strong>{record_type} records for {domain}:</strong><pre class="mb-0 mt-2"><code>' + "\n".join(results) + '</code></pre></div>'
+    except Exception as e:
+        return f'<div class="alert alert-danger">Error: {str(e)}</div>'
+
+# ----------------------------------------------------------------------
+# MAC LOOKUP (HTMX)
+# ----------------------------------------------------------------------
+@app.route("/mac_lookup", methods=["POST"])
+@limiter.limit("30 per minute")
+def mac_lookup():
+    mac = request.form.get("mac", "").strip()
+    if not mac:
+        return '<div class="alert alert-warning">Please enter a MAC address.</div>'
+    
+    cache_key = f"mac:{mac}"
+    cached = cache.get(cache_key)
+    if cached:
+        return f'<div class="alert alert-success"><strong>MAC Vendor for {mac}:</strong><br>{cached}</div>'
+    
+    try:
+        resp = requests.get(f"https://api.macvendors.com/{mac}", timeout=5)
+        if resp.status_code == 200:
+            vendor = resp.text
+            cache.set(cache_key, vendor, timeout=86400) # Cache for 1 day
+            return f'<div class="alert alert-success"><strong>MAC Vendor for {mac}:</strong><br>{vendor}</div>'
+        elif resp.status_code == 404:
+            return f'<div class="alert alert-warning">Vendor not found for MAC: {mac}</div>'
+        else:
+            return f'<div class="alert alert-danger">API Error: {resp.status_code}</div>'
+    except Exception as e:
+        return f'<div class="alert alert-danger">Error: {str(e)}</div>'
+
 # === Async Session ===
 async def get_async_session():
     timeout = aiohttp.ClientTimeout(total=70)

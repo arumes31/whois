@@ -134,6 +134,11 @@ details[open] > *:not(summary) {
   border-color: #468;
   color: #90caf9;
 }
+.alert-success {
+  background-color: #1f3a24;
+  border-color: #3a6b3e;
+  color: #a6e22e;
+}
 
 /* Buttons */
 .btn {
