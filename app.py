@@ -553,7 +553,8 @@ def schedule_monitoring_jobs():
         minute = delay % 60
         trigger = CronTrigger(hour=hour, minute=minute)
         scheduler.add_job(
-            func=lambda i=item: monitor_item(i),
+            func=monitor_item,
+            args=[item],
             trigger=trigger,
             id=f"monitor_{item}",
             name=f"Monitor {item}",
