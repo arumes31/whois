@@ -17,7 +17,7 @@ services:
   redis:
     image: redis:alpine
     restart: unless-stopped
-    command: redis-server --save 60 1 --appendonly yes
+    command: redis-server --save 60 1
     volumes:
       - redis_data:/data
 
