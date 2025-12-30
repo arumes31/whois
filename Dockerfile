@@ -1,10 +1,10 @@
-# syntax=docker/dockerfile:1.6
-FROM python:3.13-slim-bookworm
+# syntax=docker/dockerfile:1
+FROM python:3.13-slim
 
-# --- System packages (only what we still need) ---
-RUN apt-get update && \
+# --- System packages ---
+# Use a more resilient update process
+RUN apt-get update || (sleep 5 && apt-get update) && \
     apt-get install -y --no-install-recommends \
-        # For background image download
         curl \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
