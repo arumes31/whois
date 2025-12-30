@@ -1,4 +1,4 @@
-# WHOIS & DNS Pro
+# WHOIS & DNS
 
 A comprehensive network diagnostic and monitoring tool for performing WHOIS lookups, DNS analysis, and security scanning.
 
