@@ -763,13 +763,13 @@ scheduler = BackgroundScheduler(
     job_defaults=job_defaults
 )
 
-download_background()
-scheduler.add_job(download_background, 'interval', hours=6)
-
 # === Start Scheduler & Monitoring ===
+# We start the scheduler at the module level so all workers share the same instance state via RedisJobStore.
+# However, we avoid doing heavy/blocking work here.
 if not scheduler.running:
     scheduler.start()
 
+# Add system jobs with replace_existing=True to coordinate across workers
 scheduler.add_job(
     download_background, 
     'interval', 
@@ -784,9 +784,12 @@ scheduler.add_job(
     id='refresh_monitoring', 
     replace_existing=True
 )
-schedule_monitoring_jobs()
+
+# Run initial check only in development mode or as a separate process
+# schedule_monitoring_jobs() # Disabled here to prevent Gunicorn worker boot blockage
 
 # === Run ===
 if __name__ == '__main__':
     download_background()
+    schedule_monitoring_jobs()
     app.run(host='0.0.0.0', port=5000, debug=False)
