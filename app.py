@@ -27,6 +27,8 @@ import pandas as pd
 import ipinfo
 import abuseipdb_wrapper
 from flask_htmx import HTMX
+from apscheduler.jobstores.redis import RedisJobStore
+from apscheduler.executors.pool import ThreadPoolExecutor
 import ipaddress
 import random
 from urllib.parse import urlparse, urljoin
@@ -532,7 +534,11 @@ def monitor_item(item):
     logger.debug(f"[MONITOR] Result: {json.dumps(result)[:500]}...")
 
 def schedule_monitoring_jobs():
-    scheduler.remove_all_jobs()
+    # Only remove monitoring jobs, not system jobs
+    for job in scheduler.get_jobs():
+        if job.id.startswith('monitor_'):
+            scheduler.remove_job(job.id)
+            
     items = r.lrange(MONITORED_KEY, 0, -1)
     items = [item.decode('utf-8') for item in items]
     if not items:
@@ -735,13 +741,49 @@ def download_background():
     except Exception as e:
         logger.warning(f"Background download failed: {e}")
 
-scheduler = BackgroundScheduler()
+# APScheduler Configuration
+jobstores = {
+    'default': RedisJobStore(
+        host=os.getenv('REDIS_HOST', 'redis'),
+        port=int(os.getenv('REDIS_PORT', 6379)),
+        db=3
+    )
+}
+executors = {
+    'default': ThreadPoolExecutor(10)
+}
+job_defaults = {
+    'coalesce': True,
+    'max_instances': 1
+}
+
+scheduler = BackgroundScheduler(
+    jobstores=jobstores, 
+    executors=executors, 
+    job_defaults=job_defaults
+)
+
 download_background()
 scheduler.add_job(download_background, 'interval', hours=6)
 
 # === Start Scheduler & Monitoring ===
-scheduler.start()
-scheduler.add_job(schedule_monitoring_jobs, 'interval', minutes=5, id='refresh_monitoring')
+if not scheduler.running:
+    scheduler.start()
+
+scheduler.add_job(
+    download_background, 
+    'interval', 
+    hours=6, 
+    id='download_bg', 
+    replace_existing=True
+)
+scheduler.add_job(
+    schedule_monitoring_jobs, 
+    'interval', 
+    minutes=5, 
+    id='refresh_monitoring', 
+    replace_existing=True
+)
 schedule_monitoring_jobs()
 
 # === Run ===
