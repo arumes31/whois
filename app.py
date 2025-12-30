@@ -158,11 +158,15 @@ def dns_lookup():
     record_type = request.form.get("type", "A").strip().upper()
     
     if not domain:
-        return '<div class="alert alert-warning">Please enter a domain.</div>'
+        return '<div class="alert alert-warning">Please enter a domain or IP.</div>'
     
     try:
-        answers = dns.resolver.resolve(domain, record_type)
-        results = [str(r) for r in answers]
+        query_target = domain
+        if record_type == 'PTR' and is_ip_address(domain):
+            query_target = dns.reversename.from_address(domain)
+            
+        answers = dns.resolver.resolve(query_target, record_type)
+        results = [str(r).rstrip('.') for r in answers]
         return f'<div class="alert alert-success"><strong>{record_type} records for {domain}:</strong><pre class="mb-0 mt-2"><code>' + "\n".join(results) + '</code></pre></div>'
     except Exception as e:
         return f'<div class="alert alert-danger">Error: {str(e)}</div>'
