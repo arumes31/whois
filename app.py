@@ -766,11 +766,28 @@ scheduler = BackgroundScheduler(
 
 # === Start Scheduler & Monitoring ===
 # We start the scheduler at the module level so all workers share the same instance state via RedisJobStore.
-# However, we avoid doing heavy/blocking work here.
 if not scheduler.running:
     scheduler.start()
 
-# Add system jobs with replace_existing=True to coordinate across workers
+def initialize_startup():
+    """Ensure startup tasks run only once across all workers using a Redis lock."""
+    lock_key = "lock:startup_init"
+    # Try to acquire a 60-second lock
+    if r.set(lock_key, "1", nx=True, ex=60):
+        logger.info("Primary worker performing initial startup tasks")
+        try:
+            download_background()
+            schedule_monitoring_jobs()
+        except Exception as e:
+            logger.error(f"Error during startup tasks: {e}")
+            # If it fails, we might want to delete the lock to allow retry, 
+            # but usually it's better to let it expire to prevent thrashing.
+    else:
+        logger.debug("Startup tasks skipped (already handled by another worker)")
+
+# Add system jobs with replace_existing=True to coordinate across workers.
+# APScheduler with RedisJobStore ensures that even if multiple workers call add_job,
+# only one instance of the job exists and only one worker runs it at a time.
 scheduler.add_job(
     download_background, 
     'interval', 
@@ -786,8 +803,8 @@ scheduler.add_job(
     replace_existing=True
 )
 
-# Run initial check only in development mode or as a separate process
-# schedule_monitoring_jobs() # Disabled here to prevent Gunicorn worker boot blockage
+# Execute one-time initialization
+initialize_startup()
 
 # === Run ===
 if __name__ == '__main__':
