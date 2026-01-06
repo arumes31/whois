@@ -40,7 +40,13 @@ You can use the local build or the pre-built image from GitHub Container Registr
 docker compose up -d
 ```
 
-#### Using GHCR Image
+#### Docker Compose (GHCR)
+Download the compose file:
+```bash
+curl -O https://raw.githubusercontent.com/arumes31/whois/main/docker-compose.ghcr.yml
+```
+
+Run the application:
 ```bash
 docker compose -f docker-compose.ghcr.yml up -d
 ```
