@@ -1,0 +1,24 @@
+services:
+  web:
+    image: ghcr.io/arumes31/whois:latest
+    ports:
+      - "14400:5000"
+    depends_on:
+      - redis
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CONFIG_USER=${CONFIG_USER:-admin}
+      - CONFIG_PASS=${CONFIG_PASS:-admin}
+      - SECRET_KEY=${SECRET_KEY:-dev-key-change-me}
+    restart: unless-stopped
+    
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    command: redis-server --save 60 1
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

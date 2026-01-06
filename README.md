@@ -33,8 +33,22 @@ Set these environment variables to customize the installation:
 ## Deployment
 
 ### Method 1: Docker Compose (Recommended)
+You can use the local build or the pre-built image from GitHub Container Registry (GHCR).
+
+#### Using Local Build
 ```bash
 docker compose up -d
+```
+
+#### Docker Compose (GHCR)
+Download the compose file:
+```bash
+curl -O https://raw.githubusercontent.com/arumes31/whois/main/docker-compose.ghcr.yml
+```
+
+Run the application:
+```bash
+docker compose -f docker-compose.ghcr.yml up -d
 ```
 Access the application at `http://localhost:14400`.
 
