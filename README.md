@@ -1,5 +1,8 @@
 # WHOIS & DNS
 
+[![Build and Publish Docker Image](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml)
+[![Daily Security Scan](https://github.com/arumes31/whois/actions/workflows/security-scan.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/security-scan.yml)
+
 A comprehensive network diagnostic and monitoring tool for performing WHOIS lookups, DNS analysis, and security scanning.
 
 ## Features
