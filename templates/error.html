@@ -1,0 +1,15 @@
+{{ template "header" . }}
+
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8 text-center">
+        <div class="card glass p-5">
+            <h1 class="display-1 matrix-primary">ERROR</h1>
+            <h2 class="mb-4">{{ .Code }}</h2>
+            <p class="lead mb-4">{{ .Message }}</p>
+            <hr class="bg-danger">
+            <a href="/" class="btn btn-outline-info btn-lg">RETURN TO CONSOLE</a>
+        </div>
+    </div>
+</div>
+
+{{ template "footer" . }}
