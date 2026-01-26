@@ -17,8 +17,9 @@ RUN apk add --no-cache tzdata ca-certificates
 COPY --from=builder /app/whois-app .
 COPY templates ./templates
 COPY static ./static
+COPY data ./data
 
-# Ensure user can read templates and static
+# Ensure user can read templates, static, and data
 RUN chown -R whoisuser:whoisgroup /app
 
 USER whoisuser

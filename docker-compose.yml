@@ -34,6 +34,8 @@ services:
         reservations:
           cpus: '0.10'
           memory: 128M
+    volumes:
+      - ./data:/app/data
     networks:
       - app-tier
 

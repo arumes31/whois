@@ -13,7 +13,28 @@ A comprehensive network diagnostic and monitoring tool for performing WHOIS look
 - **Port Scanner:** Security tool to scan common ports on targets (Login required).
 - **Monitoring & History:** Track DNS changes over time with unified diffs and 24h scheduled checks.
 - **100% Self-Contained:** All CSS and JS assets (Bootstrap, FontAwesome, PrismJS, HTMX, Tippy, Chart.js) are bundled locally for offline/private network support.
+- **Zero External Calls (Optional):** Supports local MAC OUI and MaxMind GeoIP2 databases to eliminate all external API dependencies.
 - **Nordic Cyber Theme:** Professional, high-contrast aesthetic optimized for readability.
+
+## Local Data Sources
+
+To eliminate external API calls for MAC and GeoIP lookups, place the following files in the `data/` directory:
+1. `data/oui.txt`: Download from [IEEE OUI](https://standards-oui.ieee.org/oui/oui.txt)
+2. `data/GeoLite2-City.mmdb`: Download from [MaxMind](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data)
+
+The application will automatically detect these files and switch to local lookup mode.
+
+## Development & Testing
+
+### Running Unit Tests
+```bash
+go test -v ./...
+```
+
+### Running Stress Tests
+```bash
+go test -v -tags=stress ./internal/service/stress_test.go
+```
 
 ## Redis Integration
 
