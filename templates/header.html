@@ -1,0 +1,44 @@
+{{ define "header" }}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WHOIS & DNS Pro</title>
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link href="/static/vendor/bootstrap.min.css" rel="stylesheet">
+  <link href="/static/vendor/prism.min.css" rel="stylesheet">
+  <link href="/static/style.css" rel="stylesheet">
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
+    <div class="container">
+      <a class="navbar-brand" href="/">WHOIS</a>
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="/config">Config</a>
+          </li>
+          {{ if .LoggedIn }}
+          <li class="nav-item">
+            <a class="nav-link" href="/logout">Logout</a>
+          </li>
+          {{ end }}
+        </ul>
+    </div>
+  </nav>
+
+  <div class="container">
+    {{ if .Error }}
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        {{ .Error }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {{ end }}
+    {{ if .Message }}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        {{ .Message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {{ end }}
+
+{{ end }}

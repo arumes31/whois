@@ -1,25 +1,17 @@
-# syntax=docker/dockerfile:1
-FROM python:3.13-slim
-
-# --- System packages ---
-# Use a more resilient update process
-RUN apt-get update || (sleep 5 && apt-get update) && \
-    apt-get install -y --no-install-recommends \
-        curl \
-        ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
+# Build Stage
+FROM golang:1.24-alpine AS builder
 WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -o whois-app cmd/server/main.go
 
-# --- Python dependencies ---
-COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# --- App code ---
-COPY . /app
-RUN mkdir -p /app/static
-
+# Runtime Stage
+FROM alpine:latest
+WORKDIR /app
+RUN apk add --no-cache tzdata ca-certificates
+COPY --from=builder /app/whois-app .
+COPY templates ./templates
+COPY static ./static
 EXPOSE 5000
-
-CMD ["gunicorn", "-w", "4", "--threads", "2", "-b", "0.0.0.0:5000", "app:app"]
+CMD ["./whois-app"]

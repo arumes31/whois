@@ -1,7 +1,5 @@
-{% extends "base.html" %}
-{% block title %}Monitoring Config{% endblock %}
+{{ template "header" . }}
 
-{% block content %}
 <div class="container mt-4">
   <h2 class="mb-4">Monitoring Configuration</h2>
   <p class="text-muted">Items below are checked <strong>once every 24 hours</strong></p>
@@ -32,24 +30,24 @@
     <div class="col-md-7">
       <div class="card shadow-sm">
         <div class="card-header bg-primary text-white">
-          <h5 class="mb-0">Currently Monitored ({{ monitored|length }})</h5>
+          <h5 class="mb-0">Currently Monitored ({{ len .monitored }})</h5>
         </div>
         <div class="card-body">
-          {% if monitored %}
+          {{ if .monitored }}
             <ul class="list-group list-group-flush">
-              {% for item in monitored %}
+              {{ range .monitored }}
                 <li class="list-group-item d-flex justify-content-between align-items-center">
-                  <code>{{ item }}</code>
+                  <code>{{ . }}</code>
                   <form method="post" class="d-inline">
-                    <input type="hidden" name="item" value="{{ item }}">
+                    <input type="hidden" name="item" value="{{ . }}">
                     <button type="submit" name="action" value="remove" class="btn btn-sm btn-outline-danger">Remove</button>
                   </form>
                 </li>
-              {% endfor %}
+              {{ end }}
             </ul>
-          {% else %}
+          {{ else }}
             <p class="text-muted mb-0">No items are being monitored.</p>
-          {% endif %}
+          {{ end }}
         </div>
       </div>
     </div>
@@ -64,7 +62,7 @@
           <small class="text-white-50">Runs once every 24h</small>
         </div>
         <div class="card-body bg-dark text-light p-4">
-          {% if jobs %}
+          {{ if .jobs }}
             <div class="table-responsive">
               <table class="table table-dark table-hover table-sm mb-0">
                 <thead class="table-secondary text-dark">
@@ -74,27 +72,28 @@
                   </tr>
                 </thead>
                 <tbody>
-                  {% for job in jobs %}
+                  {{ range .jobs }}
                     <tr>
                       <td>
-                        <code class="text-info bg-dark border-0">{{ job.name }}</code>
+                        <code class="text-info bg-dark border-0">{{ .name }}</code>
                       </td>
                       <td>
                         <span class="badge bg-light text-dark fw-normal px-2 py-1">
-                          {{ job.next_run }}
+                          {{ .next_run }}
                         </span>
                       </td>
                     </tr>
-                  {% endfor %}
+                  {{ end }}
                 </tbody>
               </table>
             </div>
-          {% else %}
+          {{ else }}
             <p class="text-muted mb-0">No scheduled jobs.</p>
-          {% endif %}
+          {{ end }}
         </div>
       </div>
     </div>
   </div>
 </div>
-{% endblock %}
+
+{{ template "footer" . }}

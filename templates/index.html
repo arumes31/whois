@@ -1,8 +1,5 @@
-{% extends "base.html" %}
+{{ template "header" . }}
 
-{% block title %}Query Tool{% endblock %}
-
-{% block content %}
 <div class="row">
   <!-- ==================== QUERY DOMAINS / IPs CARD ==================== -->
   <div class="col-md-5">
@@ -16,22 +13,21 @@
               name="ips_and_domains" 
               rows="5"
               placeholder="example.com, 8.8.8.8, github.com"
-              required>{{ request.form.get('ips_and_domains', '') }}</textarea>
+              required></textarea>
           </div>
           <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" name="whois" id="whois" {% if whois_enabled %}checked{% endif %}>
+            <input class="form-check-input" type="checkbox" name="whois" id="whois" {{ if .whois_enabled }}checked{{ end }}>
             <label class="form-check-label" for="whois">WHOIS</label>
           </div>
           <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" name="dns" id="dns" {% if dns_enabled %}checked{% endif %}>
+            <input class="form-check-input" type="checkbox" name="dns" id="dns" {{ if .dns_enabled }}checked{{ end }}>
             <label class="form-check-label" for="dns">DNS</label>
           </div>
           <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="ct" id="ct" {% if ct_enabled and not has_ip %}checked{% endif %} {% if has_ip %}disabled{% endif %}>
+            <input class="form-check-input" type="checkbox" name="ct" id="ct" {{ if .ct_enabled }}checked{{ end }}>
             <label class="form-check-label" for="ct">Certificate Transparency</label>
           </div>
           <button type="submit" class="btn btn-primary">Query</button>
-          <button type="submit" name="export" value="csv" class="btn btn-outline-secondary ms-2">CSV</button>
         </form>
         <div class="mt-3" id="progress" style="display:none;">
           <div class="progress">
@@ -44,155 +40,94 @@
 
   <!-- ==================== RESULTS TABS (RIGHT COLUMN) ==================== -->
   <div class="col-md-7">
-    {% if results %}
+    {{ if .results }}
       <!-- Tabs -->
       <ul class="nav nav-tabs mb-3" id="resultTabs" role="tablist">
-        {% for item in ordered_items %}
+        {{ range $i, $item := .ordered_items }}
           <li class="nav-item" role="presentation">
-            <button class="nav-link {% if loop.first %}active{% endif %}"
-                    id="tab-{{ loop.index }}" data-bs-toggle="tab"
-                    data-bs-target="#pane-{{ loop.index }}" role="tab">
-              {{ item }}
+            <button class="nav-link {{ if eq $i 0 }}active{{ end }}"
+                    id="tab-{{ $i }}" data-bs-toggle="tab"
+                    data-bs-target="#pane-{{ $i }}" role="tab">
+              {{ $item }}
             </button>
           </li>
-        {% endfor %}
+        {{ end }}
       </ul>
 
       <!-- Tab Content -->
       <div class="tab-content">
-        {% for item in ordered_items %}
-          {% set data = results[item] %}
-          {% set is_ip = item | is_ip %}
-          <div class="tab-pane fade {% if loop.first %}show active{% endif %}"
-               id="pane-{{ loop.index }}" role="tabpanel">
+        {{ range $i, $item := .ordered_items }}
+          {{ $data := index $.results $item }}
+          <div class="tab-pane fade {{ if eq $i 0 }}show active{{ end }}"
+               id="pane-{{ $i }}" role="tabpanel">
 
             <div class="card shadow-sm mb-3">
               <div class="card-header d-flex justify-content-between align-items-center">
-                <strong>{{ item }}</strong>
-                <button class="btn btn-sm btn-outline-info" onclick="showHistory('{{ item }}')">
+                <strong>{{ $item }}</strong>
+                <button class="btn btn-sm btn-outline-info" onclick="showHistory('{{ $item }}')">
                   History
                 </button>
               </div>
               <div class="card-body">
 
                 <!-- WHOIS -->
-                {% if data.whois %}
+                {{ if $data.Whois }}
                   <details open>
                     <summary><strong>WHOIS</strong></summary>
-                    <pre><code class="language-text">{{ data.whois }}</code></pre>
+                    <pre><code class="language-text">{{ $data.Whois }}</code></pre>
                   </details>
-                {% endif %}
+                {{ end }}
 
                 <!-- DNS -->
-                {% if data.dns %}
-                  {% macro render_list(title, items) %}
-                    {% if items %}
-                      <details open>
-                        <summary><strong>{{ title }}</strong></summary>
-                        <pre><code class="language-text">{{ items | join('\n') }}</code></pre>
-                      </details>
-                    {% endif %}
-                  {% endmacro %}
-
-                  {% if is_ip and data.dns.get('PTR') %}
-                    <details open>
-                      <summary><strong>PTR (Reverse DNS)</strong></summary>
-                      <pre><code class="language-text">{{ data.dns.PTR | join('\n') }}</code></pre>
-                    </details>
-                  {% elif not is_ip %}
-                    {{ render_list('A', data.dns.get('A')) }}
-                    {{ render_list('AAAA', data.dns.get('AAAA')) }}
-                    {{ render_list('CNAME', data.dns.get('CNAME')) }}
-                    {{ render_list('NS', data.dns.get('NS')) }}
-                    {{ render_list('MX', data.dns.get('MX')) }}
-                    {{ render_list('TXT', data.dns.get('TXT')) }}
-
-                    {% if data.dns.get('SPF') %}
-                      <details open>
-                        <summary><strong>SPF</strong></summary>
-                        <pre><code class="language-text">{{ data.dns.SPF | join('\n') }}</code></pre>
-
-                        {% set v = data.dns.get('SPF_validation') %}
-                        {% if v %}
-                          {% if v.global_errors %}
-                            <div class="alert alert-danger mt-2">
-                              <strong>Global Errors:</strong><br>
-                              {{ v.global_errors | join('<br>') | safe }}
-                            </div>
-                          {% endif %}
-
-                          {% for rec in v.validations %}
-                            {% if not rec.valid %}
-                              <div class="alert alert-danger mt-2">
-                                <strong>Invalid SPF Record:</strong><br>
-                                <code>{{ rec.record[:80] }}{% if rec.record|length > 80 %}...{% endif %}</code><br>
-                                {{ rec.errors | join('<br>') | safe }}
-                              </div>
-                            {% elif rec.warnings %}
-                              <div class="alert alert-warning mt-2">
-                                <strong>Warnings:</strong><br>
-                                {{ rec.warnings | join('<br>') | safe }}
-                              </div>
-                            {% endif %}
-                            <small class="text-muted d-block mt-1">
-                              <strong>DNS Lookups:</strong> {{ rec.dns_lookups }}
-                              {% if rec.dns_lookups > 10 %} <span class="text-danger">(exceeds RFC 7208 limit of 10)</span>{% endif %}
-                            </small>
-                          {% endfor %}
-                        {% endif %}
-                      </details>
-                    {% endif %}
-
-                    {{ render_list('DMARC', data.dns.get('DMARC')) }}
-
-                    <!-- Well-Known Subdomains -->
-                    {% if data.dns.get('Well-Known') %}
-                      <details open>
-                        <summary><strong>Well-Known Subdomains ({{ data.dns['Well-Known']|length }})</strong></summary>
-                        {% for fqdn, recs in data.dns['Well-Known'].items() %}
-                          <details>
-                            <summary><strong>{{ fqdn }}</strong></summary>
-                            <ul class="list-group list-group-flush">
-                              {% if recs.get('A') %}<li class="list-group-item">A: {{ recs.A | join(', ') }}</li>{% endif %}
-                              {% if recs.get('AAAA') %}<li class="list-group-item">AAAA: {{ recs.AAAA | join(', ') }}</li>{% endif %}
-                              {% if recs.get('CNAME') %}<li class="list-group-item">CNAME: {{ recs.CNAME | join(', ') }}</li>{% endif %}
-                            </ul>
-                          </details>
-                        {% endfor %}
-                      </details>
-                    {% endif %}
-                  {% endif %}
-                {% endif %}
+                {{ if $data.DNS }}
+                    {{ $dns := $data.DNS }}
+                    
+                    {{ with index $dns "A" }}
+                      <details open><summary><strong>A</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                    {{ with index $dns "AAAA" }}
+                      <details open><summary><strong>AAAA</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                    {{ with index $dns "CNAME" }}
+                      <details open><summary><strong>CNAME</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                    {{ with index $dns "NS" }}
+                      <details open><summary><strong>NS</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                    {{ with index $dns "MX" }}
+                      <details open><summary><strong>MX</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                    {{ with index $dns "TXT" }}
+                      <details open><summary><strong>TXT</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                    {{ with index $dns "PTR" }}
+                      <details open><summary><strong>PTR</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                    {{ with index $dns "SPF" }}
+                      <details open><summary><strong>SPF</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
+                    {{ end }}
+                {{ end }}
 
                 <!-- CT -->
-                {% if data.ct %}
-                  {% if 'error' in data.ct %}
-                    <details>
-                      <summary><strong>CT Error</strong></summary>
-                      <div class="alert alert-danger">
-                        <strong>Error:</strong> {{ data.ct.error }}
-                      </div>
-                    </details>
-                  {% else %}
-                    <details open>
-                      <summary><strong>CT Subdomains ({{ data.ct | length }})</strong></summary>
-                      <ul class="list-group">
-                        {% for sub in data.ct.keys() %}
-                          <li class="list-group-item">
-                            <strong>{{ sub }}</strong>
-                          </li>
-                        {% endfor %}
-                      </ul>
-                    </details>
-                  {% endif %}
-                {% endif %}
+                {{ if $data.CT }}
+                  {{ with $data.CT }}
+                     <details open>
+                        <summary><strong>CT Subdomains</strong></summary>
+                        <ul class="list-group">
+                        {{ range $k, $v := . }}
+                          <li class="list-group-item"><strong>{{ $k }}</strong></li>
+                        {{ end }}
+                        </ul>
+                     </details>
+                  {{ end }}
+                {{ end }}
 
               </div>
             </div>
           </div>
-        {% endfor %}
+        {{ end }}
       </div>
-    {% endif %}
+    {{ end }}
   </div>
 </div>
 
@@ -203,17 +138,17 @@
     <div class="card shadow-sm h-100">
       <div class="card-header bg-info text-white d-flex justify-content-between">
         <strong>Port Scanner</strong>
-        {% if session.logged_in %}
+        {{ if .LoggedIn }}
           <span class="badge bg-light text-dark">Ready</span>
-        {% else %}
+        {{ else }}
           <span class="badge bg-warning text-dark">Login required</span>
-        {% endif %}
+        {{ end }}
       </div>
       <div class="card-body">
-        {% if not session.logged_in %}
+        {{ if not .LoggedIn }}
           <p class="text-muted"><em>Log in to use the scanner.</em></p>
-        {% else %}
-          <form hx-post="{{ url_for('port_scan') }}"
+        {{ else }}
+          <form hx-post="/scan"
                 hx-target="#scanResult"
                 hx-swap="innerHTML"
                 hx-indicator="#scanSpinner">
@@ -222,7 +157,7 @@
               <label class="form-label">Target IP</label>
               <div class="input-group">
                 <input type="text" class="form-control" name="target"
-                       placeholder="{{ real_ip }}">
+                       placeholder="{{ .real_ip }}">
               </div>
             </div>
 
@@ -241,7 +176,7 @@
             <div class="spinner-border spinner-border-sm text-info" role="status"></div>
           </div>
           <div id="scanResult" class="mt-3"></div>
-        {% endif %}
+        {{ end }}
       </div>
     </div>
   </div>
@@ -253,7 +188,7 @@
         <strong>Single DNS Lookup</strong>
       </div>
       <div class="card-body">
-        <form hx-post="{{ url_for('dns_lookup') }}"
+        <form hx-post="/dns_lookup"
               hx-target="#dnsResult"
               hx-swap="innerHTML"
               hx-indicator="#dnsSpinner">
@@ -270,7 +205,6 @@
               <option value="TXT">TXT</option>
               <option value="NS">NS</option>
               <option value="CNAME">CNAME</option>
-              <option value="SOA">SOA</option>
               <option value="PTR">PTR (Reverse)</option>
             </select>
           </div>
@@ -291,7 +225,7 @@
         <strong>MAC Lookup</strong>
       </div>
       <div class="card-body">
-        <form hx-post="{{ url_for('mac_lookup') }}"
+        <form hx-post="/mac_lookup"
               hx-target="#macResult"
               hx-swap="innerHTML"
               hx-indicator="#macSpinner">
@@ -311,47 +245,9 @@
 </div>
 
 <script>
-  // Show progress bar on submit
   document.getElementById('queryForm').onsubmit = () => {
     document.getElementById('progress').style.display = 'block';
   };
-
-  // Auto-disable CT if any IP is in the input
-  const textarea = document.querySelector('textarea[name="ips_and_domains"]');
-  const ctCheckbox = document.getElementById('ct');
-
-  function checkForIP() {
-    const lines = textarea.value.split('\n').  map(l => l.trim()).filter(Boolean);
-    const hasIP = lines.some(line => 
-      /^(\d{1,3}\.){3}\d{1,3}$/.test(line) || 
-      /^([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/.test(line) ||
-      /^([0-9a-fA-F]{1,4}:){1,7}:[0-9a-fA-F]{0,4}$/.test(line)
-    );
-
-    if (hasIP && !ctCheckbox.disabled) {
-      ctCheckbox.disabled = true;
-      ctCheckbox.checked = false;
-      flashMessage('Certificate Transparency is not applicable to IP addresses and has been disabled.', 'info');
-    } else if (!hasIP && ctCheckbox.disabled) {
-      ctCheckbox.disabled = false;
-    }
-  }
-
-  function flashMessage(msg, category = 'info') {
-    const alert = `
-      <div class="alert alert-${category} alert-dismissible fade show position-fixed" 
-           style="top: 1rem; right: 1rem; z-index: 9999;" role="alert">
-        ${msg}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-      </div>`;
-    document.body.insertAdjacentHTML('beforeend', alert);
-    setTimeout(() => {
-      const el = document.querySelector('.position-fixed.alert');
-      if (el) el.remove();
-    }, 5000);
-  }
-
-  textarea.addEventListener('input', checkForIP);
-  document.addEventListener('DOMContentLoaded', checkForIP);
 </script>
-{% endblock %}
+
+{{ template "footer" . }}

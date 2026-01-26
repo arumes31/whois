@@ -1,44 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}WHOIS & DNS Pro{% endblock %}</title>
-  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-  <link href="{{ url_for('static', filename='vendor/bootstrap.min.css') }}" rel="stylesheet">
-  <link href="{{ url_for('static', filename='vendor/prism.min.css') }}" rel="stylesheet">
-  <link href="/static/style.css" rel="stylesheet">
-</head>
-<body>
-  <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
-    <div class="container">
-      <a class="navbar-brand" href="/">WHOIS</a>
-        <ul class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('config') }}">Config</a>
-          </li>
-          {% if session.logged_in %}
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('logout') }}">Logout</a>
-          </li>
-          {% endif %}
-        </ul>
-    </div>
-  </nav>
-
-  <div class="container">
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, msg in messages %}
-          <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-            {{ msg }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-          </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    {% block content %}{% endblock %}
+{{ define "footer" }}
   </div>
 
   <!-- History Modal -->
@@ -64,9 +24,9 @@
     </div>
   </div>
 
-  <script src="{{ url_for('static', filename='vendor/bootstrap.bundle.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='vendor/prism.min.js') }}"></script>
-  <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
+  <script src="/static/vendor/bootstrap.bundle.min.js"></script>
+  <script src="/static/vendor/prism.min.js"></script>
+  <script src="/static/vendor/htmx.min.js"></script>
 
   <script>
     const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
@@ -150,12 +110,11 @@
     }
 
     document.addEventListener('DOMContentLoaded', function() {
-      {% if auto_expand %}
+      {{ if .AutoExpand }}
       document.querySelectorAll('details').forEach(d => d.open = true);
-      {% endif %}
+      {{ end }}
     });
   </script>
-
-  {% block scripts %}{% endblock %}
 </body>
 </html>
+{{ end }}

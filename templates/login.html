@@ -1,7 +1,5 @@
-{% extends "base.html" %}
-{% block title %}Login{% endblock %}
+{{ template "header" . }}
 
-{% block content %}
 <div class="container mt-5">
   <div class="row justify-content-center">
     <div class="col-md-4">
@@ -11,7 +9,10 @@
         </div>
         <div class="card-body">
           <form method="post">
-            <input type="hidden" name="next" value="{{ next }}">
+            <input type="hidden" name="next" value="{{ .next }}">
+            {{ if .error }}
+                <div class="alert alert-danger">{{ .error }}</div>
+            {{ end }}
             <div class="mb-3">
               <label class="form-label">Username</label>
               <input type="text" name="username" class="form-control" required autofocus>
@@ -27,4 +28,5 @@
     </div>
   </div>
 </div>
-{% endblock %}
+
+{{ template "footer" . }}

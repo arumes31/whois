@@ -1,3 +1,7 @@
 autobuild.sh
 redis-data/dump.rdb
 .dockerignore
+venv/
+steps.md
+.gemini
+.env

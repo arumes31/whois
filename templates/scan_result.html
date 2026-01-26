@@ -1,26 +1,34 @@
-{# templates/scan_result.html #}
-{% if result.error %}
+{{ if .result.Error }}
   <div class="alert alert-danger">
-    <strong>Error:</strong> {{ result.error }}
+    <strong>Errors:</strong>
+    <ul>
+    {{ range .result.Error }}
+      <li>{{ . }}</li>
+    {{ end }}
+    </ul>
   </div>
-{% else %}
+{{ else }}
   <div class="alert alert-info mb-2">
-    <strong>Target:</strong> {{ target }} – scanned in {{ "%.3f"|format(result.elapsed) }} s
+    <strong>Target:</strong> {{ .target }} – scanned in {{ printf "%.3f" .result.Elapsed }} s
   </div>
 
-  {% if result.open %}
+  {{ if .result.Open }}
     <div class="alert alert-success">
-      <strong class="text-dark">Open ({{ result.open|length }})</strong>:
-      <code class="d-block mt-1 text-dark">{{ result.open|join(', ') }}</code>
+      <strong class="text-dark">Open ({{ len .result.Open }})</strong>:
+      <code class="d-block mt-1 text-dark">
+        {{ range $i, $p := .result.Open }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}
+      </code>
     </div>
-  {% else %}
+  {{ else }}
     <div class="alert alert-secondary">No open ports detected.</div>
-  {% endif %}
+  {{ end }}
 
-  {% if result.closed %}
+  {{ if .result.Closed }}
     <details class="mt-2">
-      <summary class="text-white">Closed ports ({{ result.closed|length }}) – click to view</summary>
-      <code class="d-block mt-1 text-white">{{ result.closed|join(', ') }}</code>
+      <summary class="text-muted">Closed ports ({{ len .result.Closed }}) – click to view</summary>
+      <code class="d-block mt-1 text-muted">
+        {{ range $i, $p := .result.Closed }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}
+      </code>
     </details>
-  {% endif %}
-{% endif %}
+  {{ end }}
+{{ end }}
