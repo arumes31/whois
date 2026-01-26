@@ -1,120 +1,58 @@
-{{ define "footer" }}
-  </div> <!-- end container -->
+</main> <!-- End Main Content -->
+</div> <!-- End App Container -->
 
-  <!-- History Modal -->
-  <div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">DNS History: <span id="modalItem"></span></h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-        </div>
-        <div class="modal-body" id="modalBody">
-          <div class="text-center">
-            <div class="spinner-border" role="status">
-              <span class="visually-hidden">Loading...</span>
+<!-- Tool Modals -->
+<div class="modal fade" id="toolModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content glass-panel border-0">
+            <div class="modal-header border-0">
+                <h5 class="modal-title" id="toolTitle">Tool</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
-          </div>
+            <div class="modal-body" id="toolBody">
+                <!-- Content injected via JS -->
+            </div>
         </div>
-        <div class="modal-footer justify-content-between">
-          <button id="showOlderBtn" class="btn btn-sm btn-outline-secondary">Show Older (10 more)</button>
-          <button id="showAllBtn" class="btn btn-sm btn-outline-secondary">Show All</button>
-        </div>
-      </div>
     </div>
-  </div>
+</div>
 
-  <script src="/static/vendor/bootstrap.bundle.min.js"></script>
-  <script src="/static/vendor/prism.min.js"></script>
-  <script src="/static/vendor/htmx.min.js"></script>
+<script src="/static/vendor/bootstrap.bundle.min.js"></script>
+<script src="/static/vendor/prism.min.js"></script>
 
-  <script>
-    const historyModal = new bootstrap.Modal(document.getElementById('historyModal'));
-    let allEntries = [], allDiffs = [], currentLimit = 5;
-
-    function showHistory(item) {
-      document.getElementById('modalItem').textContent = item;
-      const body = document.getElementById('modalBody');
-      const showOlderBtn = document.getElementById('showOlderBtn');
-      const showAllBtn = document.getElementById('showAllBtn');
-      
-      body.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
-      showOlderBtn.disabled = false;
-      showAllBtn.disabled = false;
-      currentLimit = 5;
-      historyModal.show();
-
-      fetch('/history/' + encodeURIComponent(item))
-        .then(r => r.json())
-        .then(data => {
-          allEntries = data.entries || [];
-          allDiffs = data.diffs || [];
-          renderHistory(currentLimit);
-
-          showOlderBtn.style.display = allEntries.length > 5 ? 'block' : 'none';
-          showAllBtn.style.display = allEntries.length > 5 ? 'block' : 'none';
-
-          if (currentLimit >= allEntries.length) showOlderBtn.disabled = true;
-
-          showOlderBtn.onclick = () => {
-            currentLimit = Math.min(currentLimit + 10, allEntries.length);
-            renderHistory(currentLimit);
-            if (currentLimit >= allEntries.length) showOlderBtn.disabled = true;
-          };
-
-          showAllBtn.onclick = () => {
-            currentLimit = allEntries.length;
-            renderHistory(currentLimit);
-            showOlderBtn.disabled = true;
-          };
-        })
-        .catch(err => {
-          body.innerHTML = '<p class="text-danger">Failed to load history.</p>';
-          showOlderBtn.style.display = 'none';
-          showAllBtn.style.display = 'none';
-        });
+<script>
+    function openTool(type) {
+        const modal = new bootstrap.Modal(document.getElementById('toolModal'));
+        const title = document.getElementById('toolTitle');
+        const body = document.getElementById('toolBody');
+        
+        if (type === 'dns') {
+            title.innerText = 'Single DNS Lookup';
+            body.innerHTML = `
+                <form hx-post="/dns_lookup" hx-target="#toolRes" hx-indicator="#toolSpin">
+                    <input type="text" class="form-control matrix-input mb-3" name="domain" placeholder="example.com" required>
+                    <select class="form-select matrix-input mb-3" name="type">
+                        <option value="A">A</option><option value="AAAA">AAAA</option><option value="MX">MX</option>
+                        <option value="TXT">TXT</option><option value="NS">NS</option><option value="PTR">PTR</option>
+                    </select>
+                    <button class="btn btn-primary w-100">Execute</button>
+                    <div id="toolSpin" class="htmx-indicator text-center mt-3"><div class="spinner-border text-danger"></div></div>
+                    <div id="toolRes" class="mt-3"></div>
+                </form>`;
+        } else if (type === 'mac') {
+            title.innerText = 'MAC Address Lookup';
+            body.innerHTML = `
+                <form hx-post="/mac_lookup" hx-target="#toolRes" hx-indicator="#toolSpin">
+                    <input type="text" class="form-control matrix-input mb-3" name="mac" placeholder="00:11:22:33:44:55" required>
+                    <button class="btn btn-primary w-100">Execute</button>
+                    <div id="toolSpin" class="htmx-indicator text-center mt-3"><div class="spinner-border text-danger"></div></div>
+                    <div id="toolRes" class="mt-3"></div>
+                </form>`;
+        }
+        
+        htmx.process(body);
+        modal.show();
     }
+</script>
 
-    function renderHistory(limit) {
-      const body = document.getElementById('modalBody');
-      let html = '';
-      const displayed = allEntries.slice(0, limit);
-
-      if (displayed.length === 0) {
-        html = '<p class="text-muted">No history available.</p>';
-      } else {
-        html += '<h6 class="mb-3">Change Log</h6>';
-        displayed.forEach((e, i) => {
-          const date = new Date(e.timestamp).toLocaleString();
-          html += `<p><strong>${date}</strong></p>`;
-          if (i < displayed.length - 1 && i < allDiffs.length) {
-            const diffText = allDiffs[i].diff;
-            if (diffText && diffText !== 'No changes') {
-              html += `<pre><code class="language-diff">${escapeHtml(diffText)}</code></pre>`;
-            } else {
-              html += '<p class="text-muted fst-italic">No changes</p>';
-            }
-          }
-        });
-      }
-      body.innerHTML = html;
-      Prism.highlightAllUnder(body);
-    }
-
-    function escapeHtml(text) {
-      return text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-    }
-
-    document.addEventListener('DOMContentLoaded', function() {
-      {{ if .AutoExpand }}
-      document.querySelectorAll('details').forEach(d => d.open = true);
-      {{ end }}
-    });
-  </script>
 </body>
 </html>
-{{ end }}

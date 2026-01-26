@@ -4,21 +4,46 @@ services:
     ports:
       - "14400:5000"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CONFIG_USER=${CONFIG_USER:-admin}
       - CONFIG_PASS=${CONFIG_PASS:-admin}
-      - SECRET_KEY=${SECRET_KEY:-dev-key-change-me}
+      - SECRET_KEY=${SECRET_KEY:-change-me-for-production}
     restart: unless-stopped
-    
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+    networks:
+      - app-tier
+
   redis:
     image: redis:alpine
     restart: unless-stopped
-    command: redis-server --save 60 1
+    command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis_data:/data
+    networks:
+      - app-tier
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+networks:
+  app-tier:
+    driver: bridge
 
 volumes:
   redis_data:

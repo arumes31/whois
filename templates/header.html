@@ -1,44 +1,82 @@
-{{ define "header" }}
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WHOIS & DNS Pro</title>
-  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-  <link href="/static/vendor/bootstrap.min.css" rel="stylesheet">
-  <link href="/static/vendor/prism.min.css" rel="stylesheet">
-  <link href="/static/style.css" rel="stylesheet">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WHOIS & DNS | Matrix Command Center</title>
+    
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Local Vendor Assets -->
+    <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/vendor/prism.min.css">
+    <link rel="stylesheet" href="/static/vendor/fontawesome.min.css">
+    <link rel="stylesheet" href="/static/style.css">
+    
+    <!-- UX Enhancements Local -->
+    <script src="/static/vendor/popper.min.js"></script>
+    <script src="/static/vendor/tippy.min.js"></script>
+    <script src="/static/vendor/chart.min.js"></script>
+    
+    <script src="/static/vendor/htmx.min.js"></script>
 </head>
 <body>
-  <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
-    <div class="container">
-      <a class="navbar-brand" href="/">WHOIS</a>
-        <ul class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="/config">Config</a>
-          </li>
-          {{ if .LoggedIn }}
-          <li class="nav-item">
-            <a class="nav-link" href="/logout">Logout</a>
-          </li>
-          {{ end }}
-        </ul>
-    </div>
-  </nav>
 
-  <div class="container glass p-4 mt-4">
-    {{ if .Error }}
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        {{ .Error }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {{ end }}
-    {{ if .Message }}
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        {{ .Message }}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-    {{ end }}
+<div class="app-container">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+        <div class="sidebar-logo">
+            <i class="fas fa-terminal"></i> WHOIS.IO
+        </div>
+        
+        <nav class="flex-grow-1">
+            <a href="/" class="nav-link active">
+                <i class="fas fa-search"></i> Dashboard
+            </a>
+            <a href="/login" class="nav-link">
+                <i class="fas fa-shield-halved"></i> Scanner
+            </a>
+            <a href="/config" class="nav-link">
+                <i class="fas fa-cog"></i> Configuration
+            </a>
+            <a href="/metrics" target="_blank" class="nav-link">
+                <i class="fas fa-chart-line"></i> System Metrics
+            </a>
+            <hr class="border-secondary opacity-25">
+            <div class="small text-muted px-3 mb-2">SYSTEM TOOLS</div>
+            <a href="#" onclick="openTool('dns')" class="nav-link">
+                <i class="fas fa-globe"></i> DNS Lookup
+            </a>
+            <a href="#" onclick="openTool('mac')" class="nav-link">
+                <i class="fas fa-microchip"></i> MAC Vendor
+            </a>
+        </nav>
+        
+        <div class="sidebar-footer">
+            <div class="glass-panel p-2 text-center">
+                <small class="text-muted">v2.5.0-Go</small>
+            </div>
+        </div>
+    </aside>
 
-{{ end }}
+    <!-- Main Content Area -->
+    <main class="main-content">
+        <header class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h4 class="mb-0">Network Diagnostics</h4>
+                <p class="text-muted small mb-0">System status: <span class="text-success">Operational</span></p>
+            </div>
+            <div class="d-flex gap-3">
+                {{ if .stats }}
+                <div class="d-flex gap-2 me-3">
+                    <span class="small text-muted"><i class="fas fa-eye me-1"></i> {{ .stats.MonitoredCount }} Monitored</span>
+                    <span class="small text-muted"><i class="fas fa-history me-1"></i> {{ .stats.HistoryCount }} Targets</span>
+                </div>
+                {{ end }}
+                <span class="badge bg-dark border border-secondary p-2">
+                    <i class="fas fa-network-wired me-1"></i> {{ .real_ip }}
+                </span>
+            </div>
+        </header>

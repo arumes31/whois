@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"time"
+	"whois/internal/config"
 	"whois/internal/handler"
 	"whois/internal/service"
 	"whois/internal/storage"
@@ -14,26 +15,21 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
-	// Config
-	redisHost := os.Getenv("REDIS_HOST")
-	if redisHost == "" {
-		redisHost = "localhost"
-	}
-	redisPort := os.Getenv("REDIS_PORT")
-	if redisPort == "" {
-		redisPort = "6379"
-	}
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "5000"
+	utils.InitLogger()
+	defer utils.Log.Sync()
+
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		utils.Log.Fatal("config load failed", utils.Field("error", err.Error()))
 	}
 
 	// Dependencies
-	store := storage.NewStorage(redisHost, redisPort)
-	h := handler.NewHandler(store)
+	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
+	h := handler.NewHandler(store, cfg)
 	sched := service.NewScheduler(store)
 
 	// Startup tasks
@@ -42,9 +38,40 @@ func main() {
 
 	// Web Server
 	e := echo.New()
+	e.HideBanner = true
+	
+	// Prometheus endpoint with IP restriction
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if utils.IsTrustedIP(c.RealIP(), cfg.TrustedIPs) {
+				return next(c)
+			}
+			return c.NoContent(http.StatusForbidden)
+		}
+	})
+	
+	// Security Middlewares
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(20))) // 20 requests per second
+	e.Use(middleware.BodyLimit("1M")) // Prevent large payload attacks
+	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(20)))
+	
+	// Secure Headers
+	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+		XSSProtection:         "1; mode=block",
+		ContentTypeNosniff:    "nosniff",
+		XFrameOptions:         "DENY",
+		HSTSMaxAge:            31536000,
+		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:;",
+	}))
+
+	// CSRF Protection
+	e.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
+		TokenLookup: "form:_csrf,header:X-CSRF-Token",
+		CookieName:  "_csrf",
+		CookieHTTPOnly: true,
+		CookieSameSite: http.SameSiteLaxMode,
+	}))
 
 	// Templates
 	e.Renderer = &utils.TemplateRegistry{
@@ -82,6 +109,7 @@ func main() {
 	e.POST("/scan", h.Scan) // HTMX
 	e.POST("/dns_lookup", h.DNSLookup)
 	e.POST("/mac_lookup", h.MacLookup)
+	e.GET("/ws", h.HandleWS)
 	e.GET("/login", h.Login)
 	e.POST("/login", h.Login)
 	
@@ -108,8 +136,9 @@ func main() {
 
 	// Start server
 	go func() {
-		if err := e.Start(":" + port); err != nil && err != http.ErrServerClosed {
-			e.Logger.Fatal("shutting down the server")
+		utils.Log.Info("starting server", utils.Field("port", cfg.Port))
+		if err := e.Start(":" + cfg.Port); err != nil && err != http.ErrServerClosed {
+			utils.Log.Fatal("shutting down the server")
 		}
 	}()
 

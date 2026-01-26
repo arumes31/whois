@@ -1,253 +1,256 @@
 {{ template "header" . }}
 
-<div class="row">
-  <!-- ==================== QUERY DOMAINS / IPs CARD ==================== -->
-  <div class="col-md-5">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h3 class="card-title">Query Domains / IPs</h3>
-        <form method="post" id="queryForm">
-          <div class="mb-3">
-            <textarea 
-              class="form-control" 
-              name="ips_and_domains" 
-              rows="5"
-              placeholder="example.com, 8.8.8.8, github.com"
-              required></textarea>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" name="whois" id="whois" {{ if .whois_enabled }}checked{{ end }}>
-            <label class="form-check-label" for="whois">WHOIS</label>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="checkbox" name="dns" id="dns" {{ if .dns_enabled }}checked{{ end }}>
-            <label class="form-check-label" for="dns">DNS</label>
-          </div>
-          <div class="form-check mb-3">
-            <input class="form-check-input" type="checkbox" name="ct" id="ct" {{ if .ct_enabled }}checked{{ end }}>
-            <label class="form-check-label" for="ct">Certificate Transparency</label>
-          </div>
-          <button type="submit" class="btn btn-primary">Query</button>
-        </form>
-        <div class="mt-3" id="progress" style="display:none;">
-          <div class="progress">
-            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ==================== RESULTS TABS (RIGHT COLUMN) ==================== -->
-  <div class="col-md-7">
-    {{ if .results }}
-      <!-- Tabs -->
-      <ul class="nav nav-tabs mb-3" id="resultTabs" role="tablist">
-        {{ range $i, $item := .ordered_items }}
-          <li class="nav-item" role="presentation">
-            <button class="nav-link {{ if eq $i 0 }}active{{ end }}"
-                    id="tab-{{ $i }}" data-bs-toggle="tab"
-                    data-bs-target="#pane-{{ $i }}" role="tab">
-              {{ $item }}
-            </button>
-          </li>
-        {{ end }}
-      </ul>
-
-      <!-- Tab Content -->
-      <div class="tab-content">
-        {{ range $i, $item := .ordered_items }}
-          {{ $data := index $.results $item }}
-          <div class="tab-pane fade {{ if eq $i 0 }}show active{{ end }}"
-               id="pane-{{ $i }}" role="tabpanel">
-
-            <div class="card shadow-sm mb-3">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <strong>{{ $item }}</strong>
-                <button class="btn btn-sm btn-outline-info" onclick="showHistory('{{ $item }}')">
-                  History
+<div class="search-section">
+    <div class="glass-panel">
+        <div class="row g-3">
+            <div class="col-md-8">
+                <textarea 
+                  id="targetInput"
+                  class="form-control matrix-input" 
+                  rows="1"
+                  placeholder="Enter domains or IPs (comma separated)..."
+                  required></textarea>
+            </div>
+            <div class="col-md-4 d-flex gap-2">
+                <button onclick="startQuery()" class="btn btn-danger flex-grow-1 fw-bold">
+                    <i class="fas fa-bolt me-2"></i> EXECUTE SCAN
                 </button>
-              </div>
-              <div class="card-body">
-
-                <!-- WHOIS -->
-                {{ if $data.Whois }}
-                  <details open>
-                    <summary><strong>WHOIS</strong></summary>
-                    <pre><code class="language-text">{{ $data.Whois }}</code></pre>
-                  </details>
-                {{ end }}
-
-                <!-- DNS -->
-                {{ if $data.DNS }}
-                    {{ $dns := $data.DNS }}
-                    
-                    {{ with index $dns "A" }}
-                      <details open><summary><strong>A</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                    {{ with index $dns "AAAA" }}
-                      <details open><summary><strong>AAAA</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                    {{ with index $dns "CNAME" }}
-                      <details open><summary><strong>CNAME</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                    {{ with index $dns "NS" }}
-                      <details open><summary><strong>NS</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                    {{ with index $dns "MX" }}
-                      <details open><summary><strong>MX</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                    {{ with index $dns "TXT" }}
-                      <details open><summary><strong>TXT</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                    {{ with index $dns "PTR" }}
-                      <details open><summary><strong>PTR</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                    {{ with index $dns "SPF" }}
-                      <details open><summary><strong>SPF</strong></summary><pre><code class="language-text">{{ range . }}{{ . }}{{ "\n" }}{{ end }}</code></pre></details>
-                    {{ end }}
-                {{ end }}
-
-                <!-- CT -->
-                {{ if $data.CT }}
-                  {{ with $data.CT }}
-                     <details open>
-                        <summary><strong>CT Subdomains</strong></summary>
-                        <ul class="list-group">
-                        {{ range $k, $v := . }}
-                          <li class="list-group-item"><strong>{{ $k }}</strong></li>
-                        {{ end }}
-                        </ul>
-                     </details>
-                  {{ end }}
-                {{ end }}
-
-              </div>
+                <button onclick="clearResults()" class="btn btn-outline-secondary">
+                    <i class="fas fa-trash"></i>
+                </button>
             </div>
-          </div>
-        {{ end }}
-      </div>
-    {{ end }}
-  </div>
+        </div>
+        
+        <div class="d-flex flex-wrap gap-4 mt-3">
+            <div class="form-check form-switch" {{ if not .config.EnableWhois }}style="display:none;"{{ end }}>
+                <input class="form-check-input" type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
+                <label class="form-check-label small text-muted">WHOIS</label>
+            </div>
+            <div class="form-check form-switch" {{ if not .config.EnableDNS }}style="display:none;"{{ end }}>
+                <input class="form-check-input" type="checkbox" id="cfg-dns" {{ if .config.EnableDNS }}checked{{ end }}>
+                <label class="form-check-label small text-muted">DNS</label>
+            </div>
+            <div class="form-check form-switch" {{ if not .config.EnableSSL }}style="display:none;"{{ end }}>
+                <input class="form-check-input" type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}>
+                <label class="form-check-label small text-muted">SSL/TLS</label>
+            </div>
+            <div class="form-check form-switch" {{ if not .config.EnableHTTP }}style="display:none;"{{ end }}>
+                <input class="form-check-input" type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}>
+                <label class="form-check-label small text-muted">HTTP</label>
+            </div>
+            <div class="form-check form-switch" {{ if not .config.EnableGeo }}style="display:none;"{{ end }}>
+                <input class="form-check-input" type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
+                <label class="form-check-label small text-muted">Geo/ASN</label>
+            </div>
+            <div class="form-check form-switch" {{ if not .config.EnableCT }}style="display:none;"{{ end }}>
+                <input class="form-check-input" type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
+                <label class="form-check-label small text-muted">CT Logs</label>
+            </div>
+        </div>
+    </div>
 </div>
 
-<!-- ==================== PORT SCANNER & TOOLS CARD ==================== -->
-<div class="row mt-4">
-  <!-- Port Scanner -->
-  <div class="col-md-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-info text-white d-flex justify-content-between">
-        <strong>Port Scanner</strong>
-        {{ if .LoggedIn }}
-          <span class="badge bg-light text-dark">Ready</span>
-        {{ else }}
-          <span class="badge bg-warning text-dark">Login required</span>
-        {{ end }}
-      </div>
-      <div class="card-body">
-        {{ if not .LoggedIn }}
-          <p class="text-muted"><em>Log in to use the scanner.</em></p>
-        {{ else }}
-          <form hx-post="/scan"
-                hx-target="#scanResult"
-                hx-swap="innerHTML"
-                hx-indicator="#scanSpinner">
-
-            <div class="mb-3">
-              <label class="form-label">Target IP</label>
-              <div class="input-group">
-                <input type="text" class="form-control" name="target"
-                       placeholder="{{ .real_ip }}">
-              </div>
-            </div>
-
-            <div class="mb-3">
-              <label class="form-label">Ports</label>
-              <input type="text" class="form-control" name="ports"
-                     value="80,443,22,21,25,3389">
-            </div>
-
-            <button type="submit" class="btn btn-info w-100">
-              Scan Ports
-            </button>
-          </form>
-
-          <div id="scanSpinner" class="htmx-indicator text-center mt-3">
-            <div class="spinner-border spinner-border-sm text-info" role="status"></div>
-          </div>
-          <div id="scanResult" class="mt-3"></div>
-        {{ end }}
-      </div>
-    </div>
-  </div>
-
-  <!-- Single DNS Lookup -->
-  <div class="col-md-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-secondary text-white">
-        <strong>Single DNS Lookup</strong>
-      </div>
-      <div class="card-body">
-        <form hx-post="/dns_lookup"
-              hx-target="#dnsResult"
-              hx-swap="innerHTML"
-              hx-indicator="#dnsSpinner">
-          <div class="mb-3">
-            <label class="form-label">Domain</label>
-            <input type="text" class="form-control" name="domain" placeholder="example.com" required>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Type</label>
-            <select class="form-select" name="type">
-              <option value="A">A</option>
-              <option value="AAAA">AAAA</option>
-              <option value="MX">MX</option>
-              <option value="TXT">TXT</option>
-              <option value="NS">NS</option>
-              <option value="CNAME">CNAME</option>
-              <option value="PTR">PTR (Reverse)</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-secondary w-100">Lookup</button>
-        </form>
-        <div id="dnsSpinner" class="htmx-indicator text-center mt-3">
-          <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
-        </div>
-        <div id="dnsResult" class="mt-3"></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- MAC Lookup -->
-  <div class="col-md-4">
-    <div class="card shadow-sm h-100">
-      <div class="card-header bg-dark text-white">
-        <strong>MAC Lookup</strong>
-      </div>
-      <div class="card-body">
-        <form hx-post="/mac_lookup"
-              hx-target="#macResult"
-              hx-swap="innerHTML"
-              hx-indicator="#macSpinner">
-          <div class="mb-3">
-            <label class="form-label">MAC Address</label>
-            <input type="text" class="form-control" name="mac" placeholder="00:11:22:33:44:55" required>
-          </div>
-          <button type="submit" class="btn btn-dark w-100">Lookup Vendor</button>
-        </form>
-        <div id="macSpinner" class="htmx-indicator text-center mt-3">
-          <div class="spinner-border spinner-border-sm text-dark" role="status"></div>
-        </div>
-        <div id="macResult" class="mt-3"></div>
-      </div>
-    </div>
-  </div>
+<!-- Dynamic Results Grid -->
+<div id="resultsGrid" class="results-grid">
+    <!-- Cards injected here -->
 </div>
+
+<template id="resultCardTemplate">
+    <div class="result-card glass-panel" data-target="">
+        <div class="d-flex justify-content-between align-items-start mb-3">
+            <h5 class="target-name mb-0 font-monospace text-danger"></h5>
+            <div class="d-flex gap-2">
+                <i class="fas fa-copy copy-btn" onclick="copyTarget(this)" title="Copy Target"></i>
+                <div class="streaming-indicator"></div>
+            </div>
+        </div>
+        <div class="diagnostic-content">
+            <div class="service-section" data-service="geo">
+                <div class="skeleton skeleton-title"></div>
+                <div class="skeleton skeleton-text"></div>
+            </div>
+            <div class="service-section" data-service="dns">
+                <div class="skeleton skeleton-title"></div>
+                <div class="skeleton skeleton-text"></div>
+                <div class="skeleton skeleton-text" style="width: 60%"></div>
+            </div>
+            <div class="service-section" data-service="ssl"></div>
+            <div class="service-section" data-service="http"></div>
+        </div>
+    </div>
+</template>
 
 <script>
-  document.getElementById('queryForm').onsubmit = () => {
-    document.getElementById('progress').style.display = 'block';
-  };
+let socket;
+
+function connectWS() {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${proto}//${window.location.host}/ws`);
+    
+    socket.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+        updateUI(msg);
+    };
+
+    socket.onclose = () => {
+        console.log("Socket closed. Reconnecting...");
+        setTimeout(connectWS, 2000);
+    };
+}
+
+function startQuery() {
+    const targets = document.getElementById('targetInput').value.split(',').map(t => t.trim()).filter(t => t !== "");
+    if (targets.length === 0) return;
+
+    const config = {
+        whois: document.getElementById('cfg-whois').checked,
+        dns: document.getElementById('cfg-dns').checked,
+        ssl: document.getElementById('cfg-ssl').checked,
+        http: document.getElementById('cfg-http').checked,
+        geo: document.getElementById('cfg-geo').checked,
+        ct: document.getElementById('cfg-ct').checked,
+    };
+
+    // Create cards for each target
+    targets.forEach(t => createCard(t));
+
+    socket.send(JSON.stringify({ targets, config }));
+}
+
+function createCard(target) {
+    if (document.querySelector(`[data-target="${target}"]`)) return;
+
+    const template = document.getElementById('resultCardTemplate');
+    const clone = template.content.cloneNode(true);
+    const card = clone.querySelector('.result-card');
+    
+    card.setAttribute('data-target', target);
+    card.querySelector('.target-name').innerText = target;
+    
+    document.getElementById('resultsGrid').prepend(card);
+}
+
+function updateUI(msg) {
+    const card = document.querySelector(`[data-target="${msg.Target}"]`);
+    if (!card) return;
+
+    const section = card.querySelector(`[data-service="${msg.Service}"]`);
+    if (!section) return;
+
+    // Remove streaming indicator if all services done (simple heuristic: after WHOIS or CT)
+    if (msg.Service === 'whois' || msg.Service === 'ct') {
+        card.querySelector('.streaming-indicator').style.display = 'none';
+    }
+
+    let html = "";
+    const data = msg.Data;
+
+    switch(msg.Service) {
+        case 'geo':
+            if (data) {
+                html = `<details open><summary>LOCATION & ASN <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Physical location and network owner data"></i></summary>
+                        <div class="p-2 small">
+                            <i class="fas fa-map-marker-alt me-2 text-danger"></i>${data.city}, ${data.country} (${data.countryCode})<br>
+                            <i class="fas fa-network-wired me-2 text-danger"></i>${data.as}
+                        </div></details>`;
+            }
+            break;
+        case 'dns':
+            html = `<details><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
+            for (const [type, records] of Object.entries(data)) {
+                html += `[${type}]\n${records.join('\n')}\n\n`;
+            }
+            html += `</code></pre></details>`;
+            break;
+        case 'ssl':
+            if (data.error) {
+                html = `<details><summary>SSL/TLS</summary><div class="p-2 text-muted small">${data.error}</div></details>`;
+            } else {
+                html = `<details><summary>SSL/TLS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="TLS Handshake and Certificate Validity"></i></summary>
+                        <div class="p-2 small">
+                            <span class="badge bg-success mb-2">${data.protocol}</span><br>
+                            <strong>Issuer:</strong> ${data.issuer}<br>
+                            <strong>Expiry:</strong> ${data.expiry.split('T')[0]} (${data.days_left}d)
+                        </div></details>`;
+            }
+            break;
+        case 'http':
+            if (data.error) {
+                html = `<details><summary>HTTP</summary><div class="p-2 text-muted small">${data.error}</div></details>`;
+            } else {
+                html = `<details><summary>HTTP INSPECTOR <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Security headers and response metadata"></i></summary>
+                        <div class="p-2 small">
+                            <strong>Status:</strong> ${data.status}<br>
+                            <strong>Server:</strong> ${data.headers.Server || 'Unknown'}
+                        </div></details>`;
+            }
+            break;
+        case 'whois':
+            if (typeof data === 'object') {
+                html = `<details open><summary>WHOIS INTEL</summary>
+                        <div class="p-2 small">
+                            <strong>Registrar:</strong> ${data.registrar || 'Unknown'}<br>
+                            <strong>Expires:</strong> ${data.expiry || 'Unknown'}<br>
+                            <strong>Created:</strong> ${data.created || 'Unknown'}
+                        </div>
+                        <details><summary><small>RAW DATA</small></summary>
+                        <pre class="p-2 mt-1 rounded"><code>${data.raw}</code></pre>
+                        </details></details>`;
+            } else {
+                html = `<details><summary>WHOIS RAW</summary><pre class="p-2 mt-1 rounded"><code>${data}</code></pre></details>`;
+            }
+            break;
+        case 'ct':
+            html = `<details><summary>CT SUBDOMAINS</summary><ul class="list-unstyled p-2 small">`;
+            for (const [sub, _] of Object.entries(data)) {
+                html += `<li><i class="fas fa-caret-right me-2 text-danger"></i>${sub}</li>`;
+            }
+            html += `</ul></details>`;
+            break;
+    }
+
+    section.innerHTML = html;
+    
+    // Initialize tooltips for new content
+    tippy(section.querySelectorAll('.help-icon'), {
+        theme: 'matrix',
+        placement: 'right'
+    });
+
+    Prism.highlightAllUnder(section);
+}
+
+function copyTarget(btn) {
+    const target = btn.closest('.result-card').getAttribute('data-target');
+    navigator.clipboard.writeText(target);
+    const originalIcon = btn.className;
+    btn.className = "fas fa-check text-success";
+    setTimeout(() => btn.className = originalIcon, 2000);
+}
+
+// Keyboard Shortcuts
+document.addEventListener('keydown', (e) => {
+    // Ctrl + Enter to scan
+    if (e.ctrlKey && e.key === 'Enter') {
+        startQuery();
+    }
+    // '/' to focus search
+    if (e.key === '/' && document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        document.getElementById('targetInput').focus();
+    }
+});
+
+function clearResults() {
+    document.getElementById('resultsGrid').innerHTML = "";
+    document.getElementById('targetInput').value = "";
+}
+
+// Initialize connection
+connectWS();
+
+// Initial global tooltips
+tippy('[title]', { theme: 'matrix' });
 </script>
 
 {{ template "footer" . }}

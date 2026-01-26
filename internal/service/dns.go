@@ -41,10 +41,13 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 	} else {
 		types := []uint16{
 			dns.TypeA, dns.TypeAAAA, dns.TypeCNAME, dns.TypeNS, dns.TypeTXT, dns.TypeMX,
+			dns.TypeCAA, dns.TypeSOA, dns.TypeSRV, dns.TypeDS, dns.TypeDNSKEY,
 		}
 		typeNames := map[uint16]string{
 			dns.TypeA: "A", dns.TypeAAAA: "AAAA", dns.TypeCNAME: "CNAME",
 			dns.TypeNS: "NS", dns.TypeTXT: "TXT", dns.TypeMX: "MX",
+			dns.TypeCAA: "CAA", dns.TypeSOA: "SOA", dns.TypeSRV: "SRV",
+			dns.TypeDS: "DS", dns.TypeDNSKEY: "DNSKEY",
 		}
 
 		for _, t := range types {
@@ -62,6 +65,20 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 	}
 
 	wg.Wait()
+
+	// DMARC Lookup
+	if !isIP {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			r, err := s.query("_dmarc."+target, dns.TypeTXT, false)
+			if err == nil && len(r) > 0 {
+				mu.Lock()
+				results["DMARC"] = r
+				mu.Unlock()
+			}
+		}()
+	}
 
 	// Well-known subdomains
 	if !isIP {
@@ -96,6 +113,11 @@ func (s *DNSService) QueryWellKnown(domain string) map[string]interface{} {
 		"staging", "beta", "demo", "status", "monitor", "metrics", "health",
 		"shop", "store", "blog", "forum", "wiki", "docs", "support", "help",
 		"cdn", "static", "assets", "media", "images", "files", "download",
+		"mysql", "sql", "db", "git", "gitlab", "jenkins", "docker", "proxy",
+		"ns1", "ns2", "ns3", "whm", "web", "server", "app", "dashboard",
+		"ssh", "sip", "vnc", "rdp", "postgres", "redis", "mongodb", "elastic",
+		"kibana", "grafana", "prometheus", "traefik", "nginx", "apache",
+		"k8s", "kubernetes", "aws", "azure", "gcp", "mail1", "mail2",
 	}
 
 	results := make(map[string]interface{})

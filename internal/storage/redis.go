@@ -88,11 +88,19 @@ func (s *Storage) GetHistoryWithDiffs(ctx context.Context, item string) ([]model
 	return entries, diffs, nil
 }
 
+type HistoryMetadata struct {
+	RecordCount int `json:"record_count"`
+	Version     int `json:"version"`
+}
+
 func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interface{}) error {
 	resBytes, _ := json.Marshal(result)
 	resStr := string(resBytes)
 
-	lastEntryJSON, err := s.Client.LIndex(ctx, "dns_history:"+item, 0).Result()
+	// Fetch metadata or versioning info if needed
+	historyKey := "dns_history:" + item
+	
+	lastEntryJSON, err := s.Client.LIndex(ctx, historyKey, 0).Result()
 	if err == nil {
 		var lastEntry model.HistoryEntry
 		if json.Unmarshal([]byte(lastEntryJSON), &lastEntry) == nil {
@@ -109,8 +117,8 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 	entryBytes, _ := json.Marshal(entry)
 	
 	pipe := s.Client.Pipeline()
-	pipe.LPush(ctx, "dns_history:"+item, string(entryBytes))
-	pipe.LTrim(ctx, "dns_history:"+item, 0, 99)
+	pipe.LPush(ctx, historyKey, string(entryBytes))
+	pipe.LTrim(ctx, historyKey, 0, 99)
 	_, err = pipe.Exec(ctx)
 	return err
 }
@@ -122,4 +130,21 @@ func (s *Storage) GetCache(ctx context.Context, key string) (string, error) {
 func (s *Storage) SetCache(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
 	val, _ := json.Marshal(value)
 	return s.Client.Set(ctx, key, val, expiration).Err()
+}
+
+type SystemStats struct {
+	MonitoredCount int `json:"monitored_count"`
+	HistoryCount   int `json:"history_count"`
+}
+
+func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
+	monitored, _ := s.GetMonitoredItems(ctx)
+	
+	// Count total history entries (simplified logic)
+	keys, _ := s.Client.Keys(ctx, "dns_history:*").Result()
+	
+	return SystemStats{
+		MonitoredCount: len(monitored),
+		HistoryCount:   len(keys),
+	}, nil
 }

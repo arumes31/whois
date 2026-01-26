@@ -15,9 +15,16 @@
   {{ if .result.Open }}
     <div class="alert alert-success">
       <strong class="text-dark">Open ({{ len .result.Open }})</strong>:
-      <code class="d-block mt-1 text-dark">
-        {{ range $i, $p := .result.Open }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}
-      </code>
+      <div class="list-group list-group-flush mt-2">
+        {{ range $port, $banner := .result.Open }}
+          <div class="list-group-item bg-light text-dark border-secondary p-1">
+            <small><strong>Port {{ $port }}</strong></small>
+            {{ if $banner }}
+              <pre class="mb-0 text-primary" style="font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis;"><code>{{ $banner }}</code></pre>
+            {{ end }}
+          </div>
+        {{ end }}
+      </div>
     </div>
   {{ else }}
     <div class="alert alert-secondary">No open ports detected.</div>

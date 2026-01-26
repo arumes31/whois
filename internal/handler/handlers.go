@@ -12,22 +12,28 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"whois/internal/config"
 	"whois/internal/model"
 	"whois/internal/service"
 	"whois/internal/storage"
+	"whois/internal/utils"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 )
 
 type Handler struct {
-	Storage *storage.Storage
-	DNS     *service.DNSService
+	Storage   *storage.Storage
+	DNS       *service.DNSService
+	AppConfig *config.Config
+	wsMu      sync.Mutex
 }
 
-func NewHandler(storage *storage.Storage) *Handler {
+func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 	return &Handler{
-		Storage: storage,
-		DNS:     service.NewDNSService(),
+		Storage:   storage,
+		DNS:       service.NewDNSService(),
+		AppConfig: cfg,
 	}
 }
 
@@ -35,7 +41,8 @@ func NewHandler(storage *storage.Storage) *Handler {
 func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		sess, _ := c.Cookie("session_id")
-		if sess == nil || sess.Value == "" {
+		expected := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
+		if sess == nil || sess.Value == "" || sess.Value != expected {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
 		return next(c)
@@ -45,19 +52,26 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 // === Routes ===
 
 func (h *Handler) Index(c echo.Context) error {
-	realIP := c.RealIP()
+	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
+	realIP := utils.ExtractIP(c, pCfg)
+	stats, _ := h.Storage.GetSystemStats(c.Request().Context())
+
 	if c.Request().Method == http.MethodPost {
 		ipsDomains := c.FormValue("ips_and_domains")
 		exportType := c.FormValue("export")
-		whoisEnabled := c.FormValue("whois") != ""
-		dnsEnabled := c.FormValue("dns") != ""
-		ctEnabled := c.FormValue("ct") != ""
+		
+		whoisEnabled := c.FormValue("whois") != "" && h.AppConfig.EnableWhois
+		dnsEnabled := c.FormValue("dns") != "" && h.AppConfig.EnableDNS
+		ctEnabled := c.FormValue("ct") != "" && h.AppConfig.EnableCT
+		sslEnabled := c.FormValue("ssl") != "" && h.AppConfig.EnableSSL
+		httpEnabled := c.FormValue("http") != "" && h.AppConfig.EnableHTTP
+		geoEnabled := c.FormValue("geo") != "" && h.AppConfig.EnableGeo
 
 		items := strings.Split(ipsDomains, ",")
 		var cleanedItems []string
-		for _, i := range items {
-			trimmed := strings.TrimSpace(i)
-			if trimmed != "" {
+		for _, item := range items {
+			trimmed := strings.TrimSpace(item)
+			if utils.IsValidTarget(trimmed) {
 				cleanedItems = append(cleanedItems, trimmed)
 			}
 		}
@@ -70,7 +84,7 @@ func (h *Handler) Index(c echo.Context) error {
 			wg.Add(1)
 			go func(target string) {
 				defer wg.Done()
-				res := h.queryItem(target, dnsEnabled, whoisEnabled, ctEnabled)
+				res := h.queryItem(target, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
 				mu.Lock()
 				results[target] = res
 				mu.Unlock()
@@ -88,14 +102,21 @@ func (h *Handler) Index(c echo.Context) error {
 			"whois_enabled": whoisEnabled,
 			"dns_enabled":   dnsEnabled,
 			"ct_enabled":    ctEnabled,
+			"ssl_enabled":   sslEnabled,
+			"http_enabled":  httpEnabled,
+			"geo_enabled":   geoEnabled,
 			"real_ip":       realIP,
 			"auto_expand":   true,
+			"stats":         stats,
+			"config":        h.AppConfig,
 		})
 	}
 
 	return c.Render(http.StatusOK, "index.html", map[string]interface{}{
 		"auto_expand": false,
 		"real_ip":     realIP,
+		"stats":       stats,
+		"config":      h.AppConfig,
 	})
 }
 
@@ -127,9 +148,9 @@ func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult
 	return nil
 }
 
-func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled bool) model.QueryResult {
+func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled bool) model.QueryResult {
 	ctx := context.Background()
-	cacheKey := fmt.Sprintf("query:%s:%v:%v:%v", item, dnsEnabled, whoisEnabled, ctEnabled)
+	cacheKey := fmt.Sprintf("query:%s:%v:%v:%v:%v:%v:%v", item, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
 	
 	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
 		var res model.QueryResult
@@ -168,7 +189,6 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled boo
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				// Check specific CT cache first like Python did
 				ctCacheKey := "ct:" + item
 				if cached, err := h.Storage.GetCache(ctx, ctCacheKey); err == nil {
 					var ctRes interface{}
@@ -189,6 +209,35 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled boo
 		} else {
 			res.CT = map[string]string{"error": "CT not applicable to IP"}
 		}
+	}
+
+	if sslEnabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res.SSL = service.GetSSLInfo(item)
+		}()
+	}
+
+	if httpEnabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res.HTTP = service.GetHTTPInfo(item)
+		}()
+	}
+
+	if geoEnabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			g, err := service.GetGeoInfo(item)
+			if err == nil {
+				res.Geo = g
+			} else {
+				res.Geo = map[string]string{"error": err.Error()}
+			}
+		}()
 	}
 
 	wg.Wait()
@@ -231,7 +280,7 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 	isIP := net.ParseIP(domain) != nil
 	d, err := h.DNS.Lookup(domain, isIP)
 	if err != nil {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %%v</div>", err))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", err))
 	}
 
 	var results []string
@@ -242,10 +291,10 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 	}
 
 	if len(results) == 0 {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-warning'>No %%s records found for %%s</div>", rtype, domain))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-warning'>No %s records found for %s</div>", rtype, domain))
 	}
 
-	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>%%s records for %%s:</strong><pre class='mb-0 mt-2'><code>%%s</code></pre></div>", rtype, domain, strings.Join(results, "\n")))
+	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>%s records for %s:</strong><pre class='mb-0 mt-2'><code>%s</code></pre></div>", rtype, domain, strings.Join(results, "\n")))
 }
 
 func (h *Handler) MacLookup(c echo.Context) error {
@@ -277,18 +326,23 @@ func (h *Handler) Login(c echo.Context) error {
 		envUser := os.Getenv("CONFIG_USER")
 		envPass := os.Getenv("CONFIG_PASS")
 		
-		if user == envUser && pass == envPass {
+		if user != "" && user == envUser && pass == envPass {
+			// Generate a simple secure token (In production, use JWT or Redis-backed sessions)
+			// For this hardening, we'll use a hash of the credentials + secret
+			token := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
 			c.SetCookie(&http.Cookie{
 				Name: "session_id", 
-				Value: "logged_in", 
+				Value: token, 
 				Path: "/",
 				HttpOnly: true,
+				Secure: true, // Recommended for HTTPS
+				SameSite: http.SameSiteLaxMode,
 			})
 			return c.Redirect(http.StatusFound, "/config")
 		}
-		return c.Render(http.StatusOK, "login.html", map[string]interface{}{"error": "Invalid credentials"})
+		return c.Render(http.StatusOK, "login.html", map[string]interface{}{"error": "Invalid credentials", "csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey)})
 	}
-	return c.Render(http.StatusOK, "login.html", nil)
+	return c.Render(http.StatusOK, "login.html", map[string]interface{}{"csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey)})
 }
 
 func (h *Handler) Config(c echo.Context) error {

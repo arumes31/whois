@@ -12,8 +12,8 @@ A comprehensive network diagnostic and monitoring tool for performing WHOIS look
 - **MAC Lookup:** Identify hardware vendors from MAC addresses using the MacVendors API (with local caching).
 - **Port Scanner:** Security tool to scan common ports on targets (Login required).
 - **Monitoring & History:** Track DNS changes over time with unified diffs and 24h scheduled checks.
-- **Self-Contained:** All CSS and JS assets (Bootstrap, PrismJS, HTMX) are bundled locally for offline/private network support.
-- **High Contrast Dark Theme:** Optimized for readability and professional use.
+- **100% Self-Contained:** All CSS and JS assets (Bootstrap, FontAwesome, PrismJS, HTMX, Tippy, Chart.js) are bundled locally for offline/private network support.
+- **Nordic Cyber Theme:** Professional, high-contrast aesthetic optimized for readability.
 
 ## Redis Integration
 
@@ -27,8 +27,12 @@ Redis is the core of the application's state management:
 
 Set these environment variables to customize the installation:
 - `SECRET_KEY`: Session security (Required for production).
-- `CONFIG_USER` / `CONFIG_PASS`: Credentials for the `/config` and scanning tools.
+- `CONFIG_USER` / `CONFIG_PASS`: Credentials for the `/config` tools.
 - `REDIS_HOST`: Hostname of your Redis instance (Default: `redis`).
+- `TRUSTED_IPS`: Comma-separated list of IPs or CIDRs allowed to access `/metrics`.
+- `TRUST_PROXY`: Set to `true` to use `X-Forwarded-For` for client IP (Default: `true`).
+- `USE_CLOUDFLARE`: Set to `true` to use `CF-Connecting-IP` header.
+- `ENABLE_GEO`, `ENABLE_SSL`, `ENABLE_WHOIS`, `ENABLE_DNS`, `ENABLE_CT`, `ENABLE_HTTP`: Toggle individual diagnostic features (Default: `true`).
 
 ## Deployment
 
