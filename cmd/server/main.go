@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"time"
 	"whois/internal/handler"
+	"whois/internal/service"
 	"whois/internal/storage"
 	"whois/internal/utils"
 
@@ -33,6 +34,11 @@ func main() {
 	// Dependencies
 	store := storage.NewStorage(redisHost, redisPort)
 	h := handler.NewHandler(store)
+	sched := service.NewScheduler(store)
+
+	// Startup tasks
+	go service.DownloadBackground()
+	sched.Start()
 
 	// Web Server
 	e := echo.New()

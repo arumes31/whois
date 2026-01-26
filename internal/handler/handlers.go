@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,9 +37,6 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 		if sess == nil || sess.Value == "" {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
-		// In a real app verify session. Here we just check cookie existence for simplicity 
-		// matching the python "session['logged_in']" but we need a secure way.
-		// Since python used client side session (Flask default), we can just use a simple cookie for now.
 		return next(c)
 	}
 }
@@ -48,7 +47,7 @@ func (h *Handler) Index(c echo.Context) error {
 	realIP := c.RealIP()
 	if c.Request().Method == http.MethodPost {
 		ipsDomains := c.FormValue("ips_and_domains")
-		// exportType := c.FormValue("export") // Not implemented yet
+		exportType := c.FormValue("export")
 		whoisEnabled := c.FormValue("whois") != ""
 		dnsEnabled := c.FormValue("dns") != ""
 		ctEnabled := c.FormValue("ct") != ""
@@ -56,7 +55,7 @@ func (h *Handler) Index(c echo.Context) error {
 		items := strings.Split(ipsDomains, ",")
 		var cleanedItems []string
 		for _, i := range items {
-			trimmed := strings.TrimSpace(i)
+			rimmed := strings.TrimSpace(i)
 			if trimmed != "" {
 				cleanedItems = append(cleanedItems, trimmed)
 			}
@@ -78,8 +77,12 @@ func (h *Handler) Index(c echo.Context) error {
 		}
 		wg.Wait()
 
+		if exportType == "csv" {
+			return h.exportCSV(c, results)
+		}
+
 		return c.Render(http.StatusOK, "index.html", map[string]interface{}{
-			"results":      results,
+			"results":       results,
 			"ordered_items": cleanedItems,
 			"whois_enabled": whoisEnabled,
 			"dns_enabled":   dnsEnabled,
@@ -93,6 +96,32 @@ func (h *Handler) Index(c echo.Context) error {
 		"auto_expand": false,
 		"real_ip":     realIP,
 	})
+}
+
+func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult) error {
+	c.Response().Header().Set(echo.HeaderContentType, "text/csv")
+	c.Response().Header().Set(echo.HeaderContentDisposition, "attachment;filename=results.csv")
+	c.Response().WriteHeader(http.StatusOK)
+
+	writer := csv.NewWriter(c.Response().Writer)
+	defer writer.Flush()
+
+	writer.Write([]string{"Item", "Type", "Data"})
+
+	for item, data := range results {
+		if data.Whois != nil {
+			writer.Write([]string{item, "WHOIS", *data.Whois})
+		}
+		if data.DNS != nil {
+			dnsBytes, _ := json.Marshal(data.DNS)
+			writer.Write([]string{item, "DNS", string(dnsBytes)})
+		}
+		if data.CT != nil {
+			ctBytes, _ := json.Marshal(data.CT)
+			writer.Write([]string{item, "CT", string(ctBytes)})
+		}
+	}
+	return nil
 }
 
 func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled bool) model.QueryResult {
@@ -114,10 +143,11 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled boo
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			d, _ := h.DNS.Lookup(item, isIP)
-			res.DNS = d
-			// Store history
-			h.Storage.AddDNSHistory(context.Background(), item, d)
+			d, err := h.DNS.Lookup(item, isIP)
+			if err == nil {
+				res.DNS = d
+				h.Storage.AddDNSHistory(context.Background(), item, d)
+			}
 		}()
 	}
 
@@ -174,16 +204,33 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 	rtype := strings.ToUpper(c.FormValue("type"))
 	if rtype == "" { rtype = "A" }
 	
-	// Reuse existing DNS service logic or simple lookup
-	// For single lookup HTMX
-	// Implementation simplified for brevity
-	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-info'>DNS %s for %s</div>", rtype, domain))
+	isIP := net.ParseIP(domain) != nil
+	d, err := h.DNS.Lookup(domain, isIP)
+	if err != nil {
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %%v</div>", err))
+	}
+
+	var results []string
+	if val, ok := d[rtype]; ok {
+		if list, ok := val.([]string); ok {
+			results = list
+		}
+	}
+
+	if len(results) == 0 {
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-warning'>No %%s records found for %%s</div>", rtype, domain))
+	}
+
+	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>%%s records for %%s:</strong><pre class='mb-0 mt-2'><code>%%s</code></pre></div>", rtype, domain, strings.Join(results, "\n")))
 }
 
 func (h *Handler) MacLookup(c echo.Context) error {
 	mac := c.FormValue("mac")
-	vendor, _ := service.LookupMacVendor(mac)
-	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'>%s</div>", vendor))
+	vendor, err := service.LookupMacVendor(mac)
+	if err != nil {
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %%v</div>", err))
+	}
+	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %%s:</strong><br>%%s</div>", mac, vendor))
 }
 
 func (h *Handler) Login(c echo.Context) error {
