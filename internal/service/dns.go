@@ -63,6 +63,11 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 
 	wg.Wait()
 
+	// Well-known subdomains
+	if !isIP {
+		results["Well-Known"] = s.QueryWellKnown(target)
+	}
+
 	// Post-process TXT for SPF
 	if txts, ok := results["TXT"]; ok {
 		if txtList, ok := txts.([]string); ok {
@@ -81,6 +86,48 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 	}
 
 	return results, nil
+}
+
+func (s *DNSService) QueryWellKnown(domain string) map[string]interface{} {
+	subs := []string{
+		"www", "mail", "ftp", "webmail", "admin", "cpanel", "login", "secure",
+		"smtp", "pop", "imap", "autodiscover", "autoconfig", "mta-sts",
+		"vpn", "remote", "gateway", "portal", "cloud", "api", "dev", "test",
+		"staging", "beta", "demo", "status", "monitor", "metrics", "health",
+		"shop", "store", "blog", "forum", "wiki", "docs", "support", "help",
+		"cdn", "static", "assets", "media", "images", "files", "download",
+	}
+
+	results := make(map[string]interface{})
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, sub := range subs {
+		wg.Add(1)
+		go func(sub string) {
+			defer wg.Done()
+			fqdn := sub + "." + domain
+			res := make(map[string][]string)
+			
+			for _, t := range []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME} {
+				r, err := s.query(fqdn, t, false)
+				if err == nil && len(r) > 0 {
+					typeName := "A"
+					if t == dns.TypeAAAA { typeName = "AAAA" }
+					if t == dns.TypeCNAME { typeName = "CNAME" }
+					res[typeName] = r
+				}
+			}
+
+			if len(res) > 0 {
+				mu.Lock()
+				results[fqdn] = res
+				mu.Unlock()
+			}
+		}(sub)
+	}
+	wg.Wait()
+	return results
 }
 
 func (s *DNSService) query(target string, qtype uint16, isReverse bool) ([]string, error) {

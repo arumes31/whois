@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"whois/internal/model"
 	"whois/internal/service"
 	"whois/internal/storage"
@@ -110,7 +111,9 @@ func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult
 
 	for item, data := range results {
 		if data.Whois != nil {
-			writer.Write([]string{item, "WHOIS", *data.Whois})
+			if w, ok := data.Whois.(string); ok {
+				writer.Write([]string{item, "WHOIS", w})
+			}
 		}
 		if data.DNS != nil {
 			dnsBytes, _ := json.Marshal(data.DNS)
@@ -125,9 +128,18 @@ func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult
 }
 
 func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled bool) model.QueryResult {
+	ctx := context.Background()
+	cacheKey := fmt.Sprintf("query:%s:%v:%v:%v", item, dnsEnabled, whoisEnabled, ctEnabled)
+	
+	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
+		var res model.QueryResult
+		if json.Unmarshal([]byte(cached), &res) == nil {
+			return res
+		}
+	}
+
 	res := model.QueryResult{}
 	isIP := net.ParseIP(item) != nil
-
 	var wg sync.WaitGroup
 
 	if whoisEnabled {
@@ -135,7 +147,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled boo
 		go func() {
 			defer wg.Done()
 			w := service.Whois(item)
-			res.Whois = &w
+			res.Whois = w
 		}()
 	}
 
@@ -146,7 +158,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled boo
 			d, err := h.DNS.Lookup(item, isIP)
 			if err == nil {
 				res.DNS = d
-				h.Storage.AddDNSHistory(context.Background(), item, d)
+				h.Storage.AddDNSHistory(ctx, item, d)
 			}
 		}()
 	}
@@ -156,11 +168,22 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled boo
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				// Check specific CT cache first like Python did
+				ctCacheKey := "ct:" + item
+				if cached, err := h.Storage.GetCache(ctx, ctCacheKey); err == nil {
+					var ctRes interface{}
+					if json.Unmarshal([]byte(cached), &ctRes) == nil {
+						res.CT = ctRes
+						return
+					}
+				}
+
 				c, err := service.FetchCTSubdomains(item)
 				if err != nil {
 					res.CT = map[string]string{"error": err.Error()}
 				} else {
 					res.CT = c
+					h.Storage.SetCache(ctx, ctCacheKey, c, 1*time.Hour)
 				}
 			}()
 		} else {
@@ -169,6 +192,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled boo
 	}
 
 	wg.Wait()
+	h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
 	return res
 }
 
@@ -226,11 +250,23 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 
 func (h *Handler) MacLookup(c echo.Context) error {
 	mac := c.FormValue("mac")
+	ctx := c.Request().Context()
+	cacheKey := "mac:" + mac
+
+	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
+		var vendor string
+		if json.Unmarshal([]byte(cached), &vendor) == nil {
+			return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", mac, vendor))
+		}
+	}
+
 	vendor, err := service.LookupMacVendor(mac)
 	if err != nil {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %%v</div>", err))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", err))
 	}
-	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %%s:</strong><br>%%s</div>", mac, vendor))
+
+	h.Storage.SetCache(ctx, cacheKey, vendor, 24*time.Hour)
+	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", mac, vendor))
 }
 
 func (h *Handler) Login(c echo.Context) error {

@@ -44,6 +44,7 @@ func main() {
 	e := echo.New()
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
+	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(20))) // 20 requests per second
 
 	// Templates
 	e.Renderer = &utils.TemplateRegistry{
@@ -75,14 +76,13 @@ func main() {
 	})
 	g.GET("/history/:item", func(c echo.Context) error {
 		item := c.Param("item")
-		entries, err := store.GetDNSHistory(c.Request().Context(), item)
+		entries, diffs, err := store.GetHistoryWithDiffs(c.Request().Context(), item)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		}
-		// Calculate diffs (simplified - no diff logic implemented yet)
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"entries": entries,
-			"diffs": []string{},
+			"diffs":   diffs,
 		})
 	})
 

@@ -3,7 +3,7 @@ package model
 type DNSResult map[string]interface{}
 
 type QueryResult struct {
-	Whois *string     `json:"whois"`
+	Whois interface{} `json:"whois"`
 	DNS   DNSResult   `json:"dns"`
 	CT    interface{} `json:"ct"`
 }

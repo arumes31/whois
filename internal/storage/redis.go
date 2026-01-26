@@ -3,9 +3,13 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 	"whois/internal/model"
 
+	"github.com/hexops/gotextdiff"
+	"github.com/hexops/gotextdiff/myers"
+	"github.com/hexops/gotextdiff/span"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -48,27 +52,58 @@ func (s *Storage) GetDNSHistory(ctx context.Context, item string) ([]model.Histo
 	return entries, nil
 }
 
+func (s *Storage) GetHistoryWithDiffs(ctx context.Context, item string) ([]model.HistoryEntry, []string, error) {
+	entries, err := s.GetDNSHistory(ctx, item)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	diffs := make([]string, 0)
+	if len(entries) < 2 {
+		return entries, diffs, nil
+	}
+
+	for i := 0; i < len(entries)-1; i++ {
+		currentRaw := entries[i].Result
+		previousRaw := entries[i+1].Result
+
+		// Pretty print JSON for better diff
+		var currentObj, previousObj interface{}
+		json.Unmarshal([]byte(currentRaw), &currentObj)
+		json.Unmarshal([]byte(previousRaw), &previousObj)
+
+		currentPretty, _ := json.MarshalIndent(currentObj, "", "  ")
+		previousPretty, _ := json.MarshalIndent(previousObj, "", "  ")
+
+		edits := myers.ComputeEdits(span.URIFromPath("previous"), string(previousPretty), string(currentPretty))
+		diff := fmt.Sprint(gotextdiff.ToUnified("previous", "current", string(previousPretty), edits))
+		
+		if diff == "" {
+			diffs = append(diffs, "No changes")
+		} else {
+			diffs = append(diffs, diff)
+		}
+	}
+
+	return entries, diffs, nil
+}
+
 func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interface{}) error {
-	// Match Python's logic: Check latest entry to avoid duplicates
-	// Serialize result to JSON string
 	resBytes, _ := json.Marshal(result)
 	resStr := string(resBytes)
 
-	// Check last entry
 	lastEntryJSON, err := s.Client.LIndex(ctx, "dns_history:"+item, 0).Result()
 	if err == nil {
 		var lastEntry model.HistoryEntry
 		if json.Unmarshal([]byte(lastEntryJSON), &lastEntry) == nil {
-			// In python it compares json dumps.
-			// Here we compare the result string field.
 			if lastEntry.Result == resStr {
-				return nil // No change
+				return nil
 			}
 		}
 	}
 
 	entry := model.HistoryEntry{
-		Timestamp: time.Now().UTC().Format(time.RFC3339) + "Z", // Match Python isoformat() + 'Z' rough approx
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Result:    resStr,
 	}
 	entryBytes, _ := json.Marshal(entry)
