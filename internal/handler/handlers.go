@@ -55,7 +55,7 @@ func (h *Handler) Index(c echo.Context) error {
 		items := strings.Split(ipsDomains, ",")
 		var cleanedItems []string
 		for _, i := range items {
-			rimmed := strings.TrimSpace(i)
+			trimmed := strings.TrimSpace(i)
 			if trimmed != "" {
 				cleanedItems = append(cleanedItems, trimmed)
 			}
