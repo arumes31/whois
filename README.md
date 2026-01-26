@@ -69,7 +69,7 @@ Access the application at `http://localhost:14400`.
 Access the application at `http://localhost:5000`.
 
 ## Tech Stack
-- **Backend:** Python / Flask / Gunicorn
+- **Backend:** Go / Echo
 - **Frontend:** HTMX / Bootstrap 5 / PrismJS
 - **Storage:** Redis
-- **Data Sources:** python-whois, dnspython, crt.sh, MacVendors API
+- **Data Sources:** github.com/likexian/whois, github.com/miekg/dns, crt.sh, MacVendors API
