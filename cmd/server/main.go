@@ -34,6 +34,7 @@ func main() {
 
 	// Startup tasks
 	go service.DownloadBackground()
+	service.InitializeGeoDB(cfg.GeoIPURL)
 	sched.Start()
 
 	// Web Server

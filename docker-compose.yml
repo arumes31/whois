@@ -22,6 +22,7 @@ services:
       - ENABLE_DNS=${ENABLE_DNS:-true}
       - ENABLE_CT=${ENABLE_CT:-true}
       - ENABLE_HTTP=${ENABLE_HTTP:-true}
+      - GEOIP_URL=${GEOIP_URL}
       - PORT=5000
     restart: unless-stopped
     security_opt:

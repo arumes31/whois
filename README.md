@@ -22,7 +22,7 @@ To eliminate external API calls for MAC and GeoIP lookups, place the following f
 1. `data/oui.txt`: Download from [IEEE OUI](https://standards-oui.ieee.org/oui/oui.txt)
 2. `data/GeoLite2-City.mmdb`: Download from [MaxMind](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data)
 
-The application will automatically detect these files and switch to local lookup mode.
+The application will automatically detect these files and switch to local lookup mode. If `GEOIP_URL` is set, it will manage the MaxMind database updates automatically (every 72 hours).
 
 ## Development & Testing
 
@@ -54,6 +54,7 @@ Set these environment variables to customize the installation:
 - `TRUST_PROXY`: Set to `true` to use `X-Forwarded-For` for client IP (Default: `true`).
 - `USE_CLOUDFLARE`: Set to `true` to use `CF-Connecting-IP` header.
 - `ENABLE_GEO`, `ENABLE_SSL`, `ENABLE_WHOIS`, `ENABLE_DNS`, `ENABLE_CT`, `ENABLE_HTTP`: Toggle individual diagnostic features (Default: `true`).
+- `GEOIP_URL`: (Optional) Direct download link for a MaxMind `GeoLite2-City.mmdb` (or `.tar.gz`). If provided, the app will automatically download the database on startup (if missing) and update it every 72 hours.
 
 ## Deployment
 

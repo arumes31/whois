@@ -22,6 +22,7 @@ type Config struct {
 	EnableDNS     bool
 	EnableCT      bool
 	EnableHTTP    bool
+	GeoIPURL      string
 }
 
 func LoadConfig() (*Config, error) {
@@ -41,6 +42,7 @@ func LoadConfig() (*Config, error) {
 		EnableDNS:     getEnvBool("ENABLE_DNS", true),
 		EnableCT:      getEnvBool("ENABLE_CT", true),
 		EnableHTTP:    getEnvBool("ENABLE_HTTP", true),
+		GeoIPURL:      os.Getenv("GEOIP_URL"),
 	}
 
 	if cfg.SecretKey == "" {
