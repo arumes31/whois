@@ -165,6 +165,35 @@ func TestHandlers(t *testing.T) {
 		_ = h.Config(c)
 	})
 
+	t.Run("Config POST Add/Remove", func(t *testing.T) {
+		f := url.Values{}
+		f.Add("action", "add")
+		f.Add("item", "example.com")
+		req := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(f.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		if err := h.Config(c); err != nil {
+			t.Errorf("Config POST add failed: %v", err)
+		}
+		if rec.Code != http.StatusFound {
+			t.Errorf("Expected 302 redirect, got %d", rec.Code)
+		}
+
+		f.Set("action", "remove")
+		req = httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(f.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec = httptest.NewRecorder()
+		c = e.NewContext(req, rec)
+		if err := h.Config(c); err != nil {
+			t.Errorf("Config POST remove failed: %v", err)
+		}
+		if rec.Code != http.StatusFound {
+			t.Errorf("Expected 302 redirect, got %d", rec.Code)
+		}
+	})
+
 	t.Run("BulkUpload Errors", func(t *testing.T) {
 		// Test wrong extension
 		body := &bytes.Buffer{}
