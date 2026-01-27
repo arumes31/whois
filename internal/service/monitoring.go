@@ -23,7 +23,7 @@ func NewMonitorService(s *storage.Storage) *MonitorService {
 
 func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 	log.Printf("[MONITOR] Running scheduled check for %s", item)
-	
+
 	isIP := net.ParseIP(item) != nil
 	res := model.QueryResult{}
 	var wg sync.WaitGroup

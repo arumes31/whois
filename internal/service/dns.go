@@ -130,13 +130,17 @@ func (s *DNSService) QueryWellKnown(domain string) map[string]interface{} {
 			defer wg.Done()
 			fqdn := sub + "." + domain
 			res := make(map[string][]string)
-			
+
 			for _, t := range []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME} {
 				r, err := s.query(fqdn, t, false)
 				if err == nil && len(r) > 0 {
 					typeName := "A"
-					if t == dns.TypeAAAA { typeName = "AAAA" }
-					if t == dns.TypeCNAME { typeName = "CNAME" }
+					if t == dns.TypeAAAA {
+						typeName = "AAAA"
+					}
+					if t == dns.TypeCNAME {
+						typeName = "CNAME"
+					}
 					res[typeName] = r
 				}
 			}
@@ -167,7 +171,7 @@ func (s *DNSService) Trace(target string) ([]string, error) {
 
 	// Start from a random root server
 	nextServer := rootServers[0]
-	
+
 	for {
 		results = append(results, fmt.Sprintf("Querying %s for %s", nextServer, target))
 		c := new(dns.Client)
@@ -203,7 +207,7 @@ func (s *DNSService) Trace(target string) ([]string, error) {
 						break
 					}
 				}
-				
+
 				if nsIP != "" {
 					nextServer = nsIP + ":53"
 					found = true
@@ -220,7 +224,7 @@ func (s *DNSService) Trace(target string) ([]string, error) {
 			results = append(results, "Could not follow referral (no glue records)")
 			break
 		}
-		
+
 		if len(results) > 20 { // Safety break
 			results = append(results, "Trace too long, aborting")
 			break

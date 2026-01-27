@@ -19,7 +19,7 @@ func TestHandleWS(t *testing.T) {
 	store := storage.NewStorage("localhost", "6379")
 	cfg := &config.Config{EnableWhois: true, EnableDNS: true}
 	h := NewHandler(store, cfg)
-	
+
 	// Create test server
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := e.NewContext(r, w)
@@ -51,7 +51,7 @@ func TestHandleWS(t *testing.T) {
 			DNS   bool `json:"dns"`
 		}{Whois: true, DNS: false},
 	}
-	
+
 	err = ws.WriteJSON(input)
 	if err != nil {
 		t.Fatalf("Failed to send message: %v", err)

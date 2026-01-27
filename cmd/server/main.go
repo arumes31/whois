@@ -40,7 +40,7 @@ func main() {
 	// Web Server
 	e := echo.New()
 	e.HideBanner = true
-	
+
 	// Prometheus endpoint with IP restriction
 	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -50,13 +50,13 @@ func main() {
 			return c.NoContent(http.StatusForbidden)
 		}
 	})
-	
+
 	// Security Middlewares
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(middleware.BodyLimit("1M")) // Prevent large payload attacks
 	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(20)))
-	
+
 	// Secure Headers
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
 		XSSProtection:         "1; mode=block",
@@ -68,8 +68,8 @@ func main() {
 
 	// CSRF Protection
 	e.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
-		TokenLookup: "form:_csrf,header:X-CSRF-Token",
-		CookieName:  "_csrf",
+		TokenLookup:    "form:_csrf,header:X-CSRF-Token",
+		CookieName:     "_csrf",
 		CookieHTTPOnly: true,
 		CookieSameSite: http.SameSiteLaxMode,
 	}))
@@ -93,12 +93,12 @@ func main() {
 		if he, ok := err.(*echo.HTTPError); ok {
 			code = he.Code
 		}
-		
+
 		errorData := map[string]interface{}{
 			"Code":    code,
 			"Message": http.StatusText(code),
 		}
-		
+
 		if renderErr := c.Render(code, "error.html", errorData); renderErr != nil {
 			c.Logger().Error(renderErr)
 		}
@@ -113,7 +113,7 @@ func main() {
 	e.GET("/ws", h.HandleWS)
 	e.GET("/login", h.Login)
 	e.POST("/login", h.Login)
-	
+
 	// Protected
 	g := e.Group("")
 	g.Use(h.LoginRequired)

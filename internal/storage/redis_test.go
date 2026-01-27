@@ -23,9 +23,14 @@ func TestStorage(t *testing.T) {
 	items, _ := s.GetMonitoredItems(ctx)
 	found := false
 	for _, v := range items {
-		if v == item { found = true; break }
+		if v == item {
+			found = true
+			break
+		}
 	}
-	if !found { t.Errorf("Item %s not found in monitored items", item) }
+	if !found {
+		t.Errorf("Item %s not found in monitored items", item)
+	}
 
 	s.RemoveMonitoredItem(ctx, item)
 
@@ -36,4 +41,3 @@ func TestStorage(t *testing.T) {
 		t.Errorf("Cache failed: got %v, want %v", val, "test-value")
 	}
 }
-

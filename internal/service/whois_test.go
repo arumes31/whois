@@ -11,7 +11,7 @@ func TestWhois(t *testing.T) {
 	if result == nil {
 		t.Error("Whois returned nil")
 	}
-	
+
 	if str, ok := result.(string); ok {
 		if strings.Contains(str, "WHOIS error") {
 			t.Errorf("Whois returned error: %s", str)

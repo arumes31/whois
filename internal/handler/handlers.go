@@ -60,7 +60,7 @@ func (h *Handler) Index(c echo.Context) error {
 	if c.Request().Method == http.MethodPost {
 		ipsDomains := c.FormValue("ips_and_domains")
 		exportType := c.FormValue("export")
-		
+
 		whoisEnabled := c.FormValue("whois") != "" && h.AppConfig.EnableWhois
 		dnsEnabled := c.FormValue("dns") != "" && h.AppConfig.EnableDNS
 		ctEnabled := c.FormValue("ct") != "" && h.AppConfig.EnableCT
@@ -211,7 +211,7 @@ func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult
 func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled bool) model.QueryResult {
 	ctx := context.Background()
 	cacheKey := fmt.Sprintf("query:%s:%v:%v:%v:%v:%v:%v", item, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
-	
+
 	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
 		var res model.QueryResult
 		if json.Unmarshal([]byte(cached), &res) == nil {
@@ -333,7 +333,7 @@ func (h *Handler) Scan(c echo.Context) error {
 	}
 
 	res := service.ScanPorts(target, ports)
-	
+
 	return c.Render(http.StatusOK, "scan_result.html", map[string]interface{}{
 		"target":    target,
 		"remote_ip": c.RealIP(),
@@ -344,8 +344,10 @@ func (h *Handler) Scan(c echo.Context) error {
 func (h *Handler) DNSLookup(c echo.Context) error {
 	domain := c.FormValue("domain")
 	rtype := strings.ToUpper(c.FormValue("type"))
-	if rtype == "" { rtype = "A" }
-	
+	if rtype == "" {
+		rtype = "A"
+	}
+
 	isIP := net.ParseIP(domain) != nil
 	d, err := h.DNS.Lookup(domain, isIP)
 	if err != nil {
@@ -391,20 +393,20 @@ func (h *Handler) Login(c echo.Context) error {
 	if c.Request().Method == http.MethodPost {
 		user := c.FormValue("username")
 		pass := c.FormValue("password")
-		
+
 		envUser := os.Getenv("CONFIG_USER")
 		envPass := os.Getenv("CONFIG_PASS")
-		
+
 		if user != "" && user == envUser && pass == envPass {
 			// Generate a simple secure token (In production, use JWT or Redis-backed sessions)
 			// For this hardening, we'll use a hash of the credentials + secret
 			token := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
 			c.SetCookie(&http.Cookie{
-				Name: "session_id", 
-				Value: token, 
-				Path: "/",
+				Name:     "session_id",
+				Value:    token,
+				Path:     "/",
 				HttpOnly: true,
-				Secure: true, // Recommended for HTTPS
+				Secure:   true, // Recommended for HTTPS
 				SameSite: http.SameSiteLaxMode,
 			})
 			return c.Redirect(http.StatusFound, "/config")
@@ -426,7 +428,7 @@ func (h *Handler) Config(c echo.Context) error {
 		}
 		return c.Redirect(http.StatusFound, "/config")
 	}
-	
+
 	items, _ := h.Storage.GetMonitoredItems(ctx)
 	return c.Render(http.StatusOK, "config.html", map[string]interface{}{
 		"monitored": items,

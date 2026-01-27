@@ -32,7 +32,7 @@ func ScanPorts(target string, ports []int) ScanResult {
 		go func(p int) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			
+
 			address := fmt.Sprintf("%s:%d", target, p)
 			conn, err := net.DialTimeout("tcp", address, 2*time.Second)
 			mu.Lock()
@@ -42,7 +42,7 @@ func ScanPorts(target string, ports []int) ScanResult {
 				res.Closed = append(res.Closed, p)
 			} else {
 				defer conn.Close()
-				
+
 				// Attempt to grab banner
 				conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 				banner := make([]byte, 256)
@@ -58,8 +58,8 @@ func ScanPorts(target string, ports []int) ScanResult {
 
 	wg.Wait()
 	res.Elapsed = time.Since(start).Seconds()
-	
+
 	sort.Ints(res.Closed)
-	
+
 	return res
 }

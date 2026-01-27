@@ -23,7 +23,7 @@ func LookupMacVendor(mac string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
-	
+
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == 200 {
 		return string(body), nil

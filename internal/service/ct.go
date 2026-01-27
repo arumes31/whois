@@ -11,7 +11,7 @@ import (
 func FetchCTSubdomains(domain string) (map[string]interface{}, error) {
 	url := fmt.Sprintf("https://crt.sh/?q=%s&output=json", domain)
 	client := &http.Client{Timeout: 60 * time.Second}
-	
+
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("CT request failed: %v", err)
@@ -43,10 +43,10 @@ func FetchCTSubdomains(domain string) (map[string]interface{}, error) {
 			}
 		}
 	}
-	
+
 	if len(subdomains) == 0 {
 		return nil, fmt.Errorf("No subdomains found")
 	}
-	
+
 	return subdomains, nil
 }

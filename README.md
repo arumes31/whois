@@ -55,6 +55,7 @@ Set these environment variables to customize the installation:
 - `USE_CLOUDFLARE`: Set to `true` to use `CF-Connecting-IP` header.
 - `GEOIP_URL`: (Optional) Direct download link for a MaxMind `GeoLite2-City.mmdb` (or `.tar.gz`).
 - `MAXMIND_LICENSE_KEY`: (Recommended) Your MaxMind license key for automatic GeoIP updates.
+- `MAXMIND_ACCOUNT_ID`: (Required for updates) Your MaxMind account ID.
 - `ENABLE_GEO`, `ENABLE_SSL`, `ENABLE_WHOIS`, `ENABLE_DNS`, `ENABLE_CT`, `ENABLE_HTTP`: Toggle individual diagnostic features (Default: `true`).
 
 ## Deployment

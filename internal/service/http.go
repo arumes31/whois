@@ -6,11 +6,11 @@ import (
 )
 
 type HTTPInfo struct {
-	Status     string            `json:"status"`
-	Protocol   string            `json:"protocol"`
-	Headers    map[string]string `json:"headers"`
-	Security   map[string]string `json:"security"`
-	Error      string            `json:"error,omitempty"`
+	Status   string            `json:"status"`
+	Protocol string            `json:"protocol"`
+	Headers  map[string]string `json:"headers"`
+	Security map[string]string `json:"security"`
+	Error    string            `json:"error,omitempty"`
 }
 
 func GetHTTPInfo(host string) *HTTPInfo {

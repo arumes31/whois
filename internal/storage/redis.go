@@ -77,7 +77,7 @@ func (s *Storage) GetHistoryWithDiffs(ctx context.Context, item string) ([]model
 
 		edits := myers.ComputeEdits(span.URIFromPath("previous"), string(previousPretty), string(currentPretty))
 		diff := fmt.Sprint(gotextdiff.ToUnified("previous", "current", string(previousPretty), edits))
-		
+
 		if diff == "" {
 			diffs = append(diffs, "No changes")
 		} else {
@@ -99,7 +99,7 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 
 	// Fetch metadata or versioning info if needed
 	historyKey := "dns_history:" + item
-	
+
 	lastEntryJSON, err := s.Client.LIndex(ctx, historyKey, 0).Result()
 	if err == nil {
 		var lastEntry model.HistoryEntry
@@ -115,7 +115,7 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 		Result:    resStr,
 	}
 	entryBytes, _ := json.Marshal(entry)
-	
+
 	pipe := s.Client.Pipeline()
 	pipe.LPush(ctx, historyKey, string(entryBytes))
 	pipe.LTrim(ctx, historyKey, 0, 99)
@@ -139,10 +139,10 @@ type SystemStats struct {
 
 func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 	monitored, _ := s.GetMonitoredItems(ctx)
-	
+
 	// Count total history entries (simplified logic)
 	keys, _ := s.Client.Keys(ctx, "dns_history:*").Result()
-	
+
 	return SystemStats{
 		MonitoredCount: len(monitored),
 		HistoryCount:   len(keys),

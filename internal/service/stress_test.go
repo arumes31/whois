@@ -1,4 +1,5 @@
 //go:build stress
+
 package service
 
 import (

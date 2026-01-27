@@ -34,13 +34,17 @@ func GetSSLInfo(host string) *SSLInfo {
 	}
 
 	cert := state.PeerCertificates[0]
-	
+
 	protocol := "Unknown"
 	switch state.Version {
-	case tls.VersionTLS10: protocol = "TLS 1.0"
-	case tls.VersionTLS11: protocol = "TLS 1.1"
-	case tls.VersionTLS12: protocol = "TLS 1.2"
-	case tls.VersionTLS13: protocol = "TLS 1.3"
+	case tls.VersionTLS10:
+		protocol = "TLS 1.0"
+	case tls.VersionTLS11:
+		protocol = "TLS 1.1"
+	case tls.VersionTLS12:
+		protocol = "TLS 1.2"
+	case tls.VersionTLS13:
+		protocol = "TLS 1.3"
 	}
 
 	return &SSLInfo{

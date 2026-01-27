@@ -58,8 +58,10 @@ func (h *Handler) HandleWS(c echo.Context) error {
 
 		for _, target := range input.Targets {
 			target = strings.TrimSpace(target)
-			if target == "" { continue }
-			
+			if target == "" {
+				continue
+			}
+
 			go h.streamQuery(ws, target, input.Config)
 		}
 	}

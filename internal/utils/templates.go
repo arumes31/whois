@@ -28,7 +28,9 @@ func IsValidTarget(target string) bool {
 	if ip := net.ParseIP(target); ip != nil {
 		return !ip.IsLoopback() && !ip.IsMulticast() && !ip.IsUnspecified()
 	}
-	if len(target) > 255 { return false }
+	if len(target) > 255 {
+		return false
+	}
 	for _, ch := range target {
 		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '.' && ch != '-' {
 			return false
@@ -75,7 +77,7 @@ func ExtractIP(c echo.Context, cfg ProxyConfig) string {
 			return cfIP
 		}
 	}
-	
+
 	if cfg.TrustProxy {
 		if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
 			parts := strings.Split(xff, ",")

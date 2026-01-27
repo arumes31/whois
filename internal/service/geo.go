@@ -17,10 +17,10 @@ import (
 )
 
 var (
-	geoReader *geoip2.Reader
-	geoMu     sync.RWMutex
-	geoPath   = "data/GeoLite2-City.mmdb"
-	geoAccountID string
+	geoReader     *geoip2.Reader
+	geoMu         sync.RWMutex
+	geoPath       = "data/GeoLite2-City.mmdb"
+	geoAccountID  string
 	geoLicenseKey string
 )
 
@@ -194,7 +194,7 @@ func GetGeoInfo(target string) (*GeoInfo, error) {
 	// Fallback to API
 	client := &http.Client{Timeout: 5 * time.Second}
 	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query", target)
-	
+
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err

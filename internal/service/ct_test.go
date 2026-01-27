@@ -22,4 +22,3 @@ func TestFetchCTSubdomains(t *testing.T) {
 	// by manually triggering a failure or using a real domain if allowed.
 	// Actually, I'll update the service to support a base URL for better testability.
 }
-
