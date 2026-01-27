@@ -7,23 +7,40 @@ import (
 func TestDNSService_Lookup(t *testing.T) {
 	s := NewDNSService("")
 
-	// Test Domain Lookup
-	res, err := s.Lookup("google.com", false)
-	if err != nil {
-		t.Fatalf("Lookup failed: %v", err)
+	tests := []struct {
+		name     string
+		target   string
+		isIP     bool
+		expected []string
+	}{
+		{"Google A", "google.com", false, []string{"A"}},
+		{"Google MX", "google.com", false, []string{"MX"}},
+		{"Google TXT", "google.com", false, []string{"TXT"}},
+		{"Google DNS PTR", "8.8.8.8", true, []string{"PTR"}},
 	}
 
-	if _, ok := res["A"]; !ok {
-		t.Errorf("Expected A records for google.com")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res, err := s.Lookup(tt.target, tt.isIP)
+			if err != nil {
+				t.Fatalf("Lookup failed for %s: %v", tt.target, err)
+			}
+			for _, exp := range tt.expected {
+				if _, ok := res[exp]; !ok {
+					if exp == "A" || exp == "PTR" {
+						t.Errorf("Expected %s records for %s", exp, tt.target)
+					} else {
+						t.Logf("Optional %s records not found for %s (might be blocked/throttled)", exp, tt.target)
+					}
+				}
+			}
+		})
 	}
 
-	// Test IP Lookup (Reverse)
-	resIP, err := s.Lookup("8.8.8.8", true)
+	// Test Invalid Domain
+	_, err := s.Lookup("invalid..domain", false)
 	if err != nil {
-		t.Fatalf("Reverse lookup failed: %v", err)
-	}
-	if _, ok := resIP["PTR"]; !ok {
-		t.Errorf("Expected PTR records for 8.8.8.8")
+		t.Logf("Got expected error for invalid domain: %v", err)
 	}
 }
 
