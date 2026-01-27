@@ -22,7 +22,7 @@ func TestHandlers(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		
+
 		// This will fail if templates are not loaded, but Render is mocked in Echo tests often.
 		// For simplicity, let's just check if it doesn't panic.
 		_ = h.Index(c)

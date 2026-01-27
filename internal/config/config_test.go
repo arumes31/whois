@@ -6,8 +6,8 @@ import (
 )
 
 func TestGetEnv(t *testing.T) {
-	os.Setenv("TEST_KEY", "test_value")
-	defer os.Unsetenv("TEST_KEY")
+	_ = os.Setenv("TEST_KEY", "test_value")
+	defer func() { _ = os.Unsetenv("TEST_KEY") }()
 
 	val := getEnv("TEST_KEY", "fallback")
 	if val != "test_value" {
@@ -37,27 +37,27 @@ func TestGetEnvBool(t *testing.T) {
 
 	for _, tt := range tests {
 		if tt.val != "" {
-			os.Setenv(tt.key, tt.val)
+			_ = os.Setenv(tt.key, tt.val)
 		}
 		res := getEnvBool(tt.key, tt.fallback)
 		if res != tt.expected {
 			t.Errorf("For %s=%s (fallback %v), expected %v, got %v", tt.key, tt.val, tt.fallback, tt.expected, res)
 		}
-		os.Unsetenv(tt.key)
+		_ = os.Unsetenv(tt.key)
 	}
 }
 
 func TestLoadConfig(t *testing.T) {
 	// Test failure without SECRET_KEY
-	os.Unsetenv("SECRET_KEY")
+	_ = os.Unsetenv("SECRET_KEY")
 	_, err := LoadConfig()
 	if err == nil {
 		t.Error("Expected error without SECRET_KEY")
 	}
 
 	// Test success with SECRET_KEY
-	os.Setenv("SECRET_KEY", "test_secret")
-	defer os.Unsetenv("SECRET_KEY")
+	_ = os.Setenv("SECRET_KEY", "test_secret")
+	defer func() { _ = os.Unsetenv("SECRET_KEY") }()
 
 	cfg, err := LoadConfig()
 	if err != nil {

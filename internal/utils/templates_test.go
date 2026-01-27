@@ -39,8 +39,8 @@ func TestIsValidTarget(t *testing.T) {
 		{"8.8.8.8", true},
 		{"sub-domain.example.co.uk", true},
 		{"invalid_chars!", false},
-		{"localhost", false}, // Not contains "."
-		{"127.0.0.1", false}, // Loopback
+		{"localhost", false},                       // Not contains "."
+		{"127.0.0.1", false},                       // Loopback
 		{strings.Repeat("a", 256) + ".com", false}, // Too long
 	}
 
@@ -74,7 +74,7 @@ func TestIsTrustedIP(t *testing.T) {
 
 func TestExtractIP(t *testing.T) {
 	e := echo.New()
-	
+
 	t.Run("Cloudflare", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("CF-Connecting-IP", "1.1.1.1")

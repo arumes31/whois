@@ -16,11 +16,9 @@ func TestGetSSLInfo(t *testing.T) {
 
 	defer ts.Close()
 
-
-
 	// actually GetSSLInfo always appends :443, so it's hard to test with httptest server easily
 	// without changing the service code.
-	
+
 	t.Run("Online Test Fallback", func(t *testing.T) {
 		info := GetSSLInfo("google.com")
 		if info.Error != "" {

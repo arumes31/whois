@@ -18,6 +18,6 @@ func TestField(t *testing.T) {
 		t.Errorf("Expected key, got %s", f.Key)
 	}
 	if f.String != "value" && f.Interface != "value" {
-		// zap.Field is complex, but we can check the key at least
+		t.Errorf("Expected value, got String=%s Interface=%v", f.String, f.Interface)
 	}
 }

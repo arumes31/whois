@@ -11,13 +11,13 @@ func TestGetHTTPInfo(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("ok"))
 	}))
 	defer ts.Close()
 
 	// ts.URL will be like http://127.0.0.1:12345
 	host := strings.TrimPrefix(ts.URL, "http://")
-	
+
 	info := GetHTTPInfo(host)
 	if info.Error != "" {
 		t.Fatalf("GetHTTPInfo failed: %s", info.Error)
