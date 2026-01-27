@@ -242,7 +242,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		}()
 	}
 
-	if cfg.Ports != "" {
+	if cfg.Ports != "" && isIP {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
