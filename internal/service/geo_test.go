@@ -38,7 +38,7 @@ func TestDownloadGeoDB(t *testing.T) {
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
-	
+
 	content := []byte("fake mmdb content")
 	header := &tar.Header{
 		Name: "test.mmdb",
