@@ -12,6 +12,7 @@ func TestWhois(t *testing.T) {
 		{"Valid Domain", "google.com"},
 		{"Valid IP", "8.8.8.8"},
 		{"Invalid Target", "this.is.not.a.real.domain.at.all.nonexistent"},
+		{"Empty Target", ""},
 	}
 
 	for _, tt := range tests {

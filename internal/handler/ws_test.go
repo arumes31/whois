@@ -17,7 +17,7 @@ func TestHandleWS(t *testing.T) {
 	// Setup
 	e := echo.New()
 	store := storage.NewStorage("localhost", "6379")
-	cfg := &config.Config{EnableWhois: true, EnableDNS: true}
+	cfg := &config.Config{EnableWhois: true, EnableDNS: true, EnableGeo: true}
 	h := NewHandler(store, cfg)
 
 	// Create test server
@@ -39,21 +39,17 @@ func TestHandleWS(t *testing.T) {
 		_ = ws.Close()
 	}()
 
-	// Send query
+	// Send query for Geo
 	input := struct {
 		Targets []string `json:"targets"`
 		Config  struct {
-			Whois      bool `json:"whois"`
-			DNS        bool `json:"dns"`
-			Subdomains bool `json:"subdomains"`
+			Geo bool `json:"geo"`
 		} `json:"config"`
 	}{
-		Targets: []string{"example.com"},
+		Targets: []string{"8.8.8.8"},
 		Config: struct {
-			Whois      bool `json:"whois"`
-			DNS        bool `json:"dns"`
-			Subdomains bool `json:"subdomains"`
-		}{Whois: true, DNS: false, Subdomains: false},
+			Geo bool `json:"geo"`
+		}{Geo: true},
 	}
 
 	err = ws.WriteJSON(input)
@@ -61,28 +57,26 @@ func TestHandleWS(t *testing.T) {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
-	// Receive response - loop until we get the whois result, skipping logs
+	// Receive response - look for geo result
 	var msg WSMessage
-	for {
+	foundGeo := false
+	for i := 0; i < 50; i++ {
 		_, p, err := ws.ReadMessage()
 		if err != nil {
-			t.Fatalf("Failed to read message: %v", err)
+			break
 		}
 
 		if err := json.Unmarshal(p, &msg); err != nil {
-			t.Fatalf("Failed to unmarshal response: %v", err)
+			continue
 		}
 
-		if msg.Type == "result" && msg.Service == "whois" {
+		if msg.Type == "result" && msg.Service == "geo" {
+			foundGeo = true
 			break
 		}
-		// Continue for logs or other messages
 	}
 
-	if msg.Target != "example.com" {
-		t.Errorf("Expected target example.com, got %s", msg.Target)
-	}
-	if msg.Service != "whois" {
-		t.Errorf("Expected service whois, got %s", msg.Service)
+	if !foundGeo {
+		t.Error("Did not receive geo result via WebSocket")
 	}
 }

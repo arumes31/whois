@@ -6,3 +6,13 @@ steps.md
 .gemini
 .env
 whois.exe
+whois-app
+server.log
+server.err
+*.jpg
+*.png
+*.ico
+data/oui.txt
+data/GeoLite2-City.mmdb
+data/*.mmdb
+data/*.tar.gz

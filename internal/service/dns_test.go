@@ -54,3 +54,14 @@ func TestDNSService_DiscoverSubdomains(t *testing.T) {
 		t.Logf("Found %d well-known subdomains", len(res))
 	}
 }
+
+func TestDNSService_Trace(t *testing.T) {
+	s := NewDNSService("")
+	res, err := s.Trace("google.com")
+	if err != nil {
+		t.Logf("Trace failed: %v (expected in some environments)", err)
+	}
+	if len(res) == 0 {
+		t.Log("Trace output was empty")
+	}
+}

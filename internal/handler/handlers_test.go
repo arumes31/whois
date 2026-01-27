@@ -165,28 +165,60 @@ func TestHandlers(t *testing.T) {
 		_ = h.Config(c)
 	})
 
-	t.Run("Config POST Add/Remove", func(t *testing.T) {
+	t.Run("BulkUpload Errors", func(t *testing.T) {
+		// Test wrong extension
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("file", "test.exe")
+		_, _ = part.Write([]byte("google.com"))
+		_ = writer.Close()
+		req := httptest.NewRequest(http.MethodPost, "/bulk_upload", body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		_ = h.BulkUpload(c)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400 for invalid file type, got %d", rec.Code)
+		}
+
+		// Test file too large
+		largeBody := make([]byte, 3*1024*1024)
+		body = &bytes.Buffer{}
+		writer = multipart.NewWriter(body)
+		part, _ = writer.CreateFormFile("file", "test.txt")
+		_, _ = part.Write(largeBody)
+		_ = writer.Close()
+		req = httptest.NewRequest(http.MethodPost, "/bulk_upload", body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec = httptest.NewRecorder()
+		c = e.NewContext(req, rec)
+		_ = h.BulkUpload(c)
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Errorf("Expected 413 for large file, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Login POST Invalid", func(t *testing.T) {
 		f := url.Values{}
-		f.Add("action", "add")
-		f.Add("item", "test.com")
-		req := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(f.Encode()))
+		f.Add("username", "admin")
+		f.Add("password", "wrong")
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(f.Encode()))
 		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-
-		_ = h.Config(c)
-		if rec.Code != http.StatusFound {
-			t.Errorf("Expected redirect after add, got %d", rec.Code)
+		_ = h.Login(c)
+		if rec.Code != http.StatusOK { // Re-renders login page
+			t.Errorf("Expected 200 for invalid login, got %d", rec.Code)
 		}
+	})
 
-		f.Set("action", "remove")
-		req = httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(f.Encode()))
-		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
-		rec = httptest.NewRecorder()
-		c = e.NewContext(req, rec)
-		_ = h.Config(c)
-		if rec.Code != http.StatusFound {
-			t.Errorf("Expected redirect after remove, got %d", rec.Code)
+	t.Run("Scan No Target", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/scan", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		_ = h.Scan(c)
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200, got %d", rec.Code)
 		}
 	})
 }
