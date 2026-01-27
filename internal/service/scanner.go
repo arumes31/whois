@@ -15,7 +15,7 @@ type ScanResult struct {
 	Elapsed float64        `json:"elapsed"`
 }
 
-func ScanPorts(target string, ports []int) ScanResult {
+func ScanPortsStream(target string, ports []int, onResult func(port int, banner string, err error)) ScanResult {
 	start := time.Now()
 	var res ScanResult
 	res.Open = make(map[int]string)
@@ -33,13 +33,16 @@ func ScanPorts(target string, ports []int) ScanResult {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			address := fmt.Sprintf("%s:%d", target, p)
+			address := net.JoinHostPort(target, fmt.Sprintf("%d", p))
 			conn, err := net.DialTimeout("tcp", address, 2*time.Second)
-			mu.Lock()
-			defer mu.Unlock()
 
 			if err != nil {
+				mu.Lock()
 				res.Closed = append(res.Closed, p)
+				mu.Unlock()
+				if onResult != nil {
+					onResult(p, "", err)
+				}
 			} else {
 				defer func() {
 					_ = conn.Close()
@@ -53,15 +56,22 @@ func ScanPorts(target string, ports []int) ScanResult {
 				if n > 0 {
 					bannerStr = string(banner[:n])
 				}
+				mu.Lock()
 				res.Open[p] = bannerStr
+				mu.Unlock()
+				if onResult != nil {
+					onResult(p, bannerStr, nil)
+				}
 			}
 		}(port)
 	}
 
 	wg.Wait()
 	res.Elapsed = time.Since(start).Seconds()
-
 	sort.Ints(res.Closed)
-
 	return res
+}
+
+func ScanPorts(target string, ports []int) ScanResult {
+	return ScanPortsStream(target, ports, nil)
 }

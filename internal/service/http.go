@@ -6,14 +6,17 @@ import (
 )
 
 type HTTPInfo struct {
-	Status   string            `json:"status"`
-	Protocol string            `json:"protocol"`
-	Headers  map[string]string `json:"headers"`
-	Security map[string]string `json:"security"`
-	Error    string            `json:"error,omitempty"`
+	Status       string            `json:"status"`
+	Protocol     string            `json:"protocol"`
+	Headers      map[string]string `json:"headers"`
+	Security     map[string]string `json:"security"`
+	ResponseTime int64             `json:"response_time_ms"`
+	IP           string            `json:"ip"`
+	Error        string            `json:"error,omitempty"`
 }
 
 func GetHTTPInfo(host string) *HTTPInfo {
+	start := time.Now()
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -38,11 +41,14 @@ func GetHTTPInfo(host string) *HTTPInfo {
 		_ = resp.Body.Close()
 	}()
 
+	elapsed := time.Since(start).Milliseconds()
+
 	info := &HTTPInfo{
-		Status:   resp.Status,
-		Protocol: resp.Proto,
-		Headers:  make(map[string]string),
-		Security: make(map[string]string),
+		Status:       resp.Status,
+		Protocol:     resp.Proto,
+		Headers:      make(map[string]string),
+		Security:     make(map[string]string),
+		ResponseTime: elapsed,
 	}
 
 	securityHeaders := []string{

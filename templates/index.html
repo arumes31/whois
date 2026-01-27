@@ -64,30 +64,58 @@
                 <input class="form-check-input" type="checkbox" id="cfg-route">
                 <label class="form-check-label small text-muted">ROUTE</label>
             </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="cfg-portscan">
+                <label class="form-check-label small text-muted">PORT SCAN</label>
+            </div>
+            <div id="portsInputWrapper" style="display:none;">
+                <input type="text" id="cfg-ports" class="form-control matrix-input py-0" style="font-size: 0.7rem; width: 120px;" value="80,443,22,21,3389" placeholder="Ports...">
+            </div>
         </div>
     </div>
 </div>
 
+<script>
+document.getElementById('cfg-portscan').addEventListener('change', function() {
+    document.getElementById('portsInputWrapper').style.display = this.checked ? 'block' : 'none';
+});
+</script>
+
 <!-- Dynamic Results Grid -->
-<div class="d-flex justify-content-between align-items-center mb-3 mt-4">
-    <h5 class="mb-0 text-muted small"><i class="fas fa-list me-2"></i> SCAN RESULTS</h5>
-    <div class="d-flex gap-2">
-        <button onclick="exportToCSV()" class="btn btn-sm btn-outline-secondary">
-            <i class="fas fa-download me-1"></i> EXPORT CSV
-        </button>
-        <button onclick="exportToJSON()" class="btn btn-sm btn-outline-secondary">
-            <i class="fas fa-file-code me-1"></i> EXPORT JSON
-        </button>
-        <button onclick="copyAllJSON()" class="btn btn-sm btn-outline-info">
-            <i class="fas fa-copy me-1"></i> COPY ALL
-        </button>
-        <button onclick="clearResults()" class="btn btn-sm btn-outline-danger">
-            <i class="fas fa-trash-alt me-1"></i> CLEAR ALL
-        </button>
+<div class="row g-4">
+    <div class="col-xl-9">
+        <div class="d-flex justify-content-between align-items-center mb-3 mt-4">
+            <h5 class="mb-0 text-muted small"><i class="fas fa-list me-2"></i> SCAN RESULTS</h5>
+            <div class="d-flex gap-2">
+                <button onclick="exportToCSV()" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-download me-1"></i> EXPORT CSV
+                </button>
+                <button onclick="exportToJSON()" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-file-code me-1"></i> EXPORT JSON
+                </button>
+                <button onclick="copyAllJSON()" class="btn btn-sm btn-outline-info">
+                    <i class="fas fa-copy me-1"></i> COPY ALL
+                </button>
+                <button onclick="clearResults()" class="btn btn-sm btn-outline-danger">
+                    <i class="fas fa-trash-alt me-1"></i> CLEAR ALL
+                </button>
+            </div>
+        </div>
+        <div id="resultsGrid" class="results-grid">
+            <!-- Cards injected here -->
+        </div>
     </div>
-</div>
-<div id="resultsGrid" class="results-grid">
-    <!-- Cards injected here -->
+    
+    <div class="col-xl-3 mt-xl-4">
+        <div class="glass-panel h-100" style="min-height: 400px; display: flex; flex-direction: column;">
+            <h6 class="text-muted small border-bottom border-secondary pb-2 mb-3">
+                <i class="fas fa-satellite-dish me-2 text-danger"></i> LIVE ACTIVITY
+            </h6>
+            <div id="liveLog" class="flex-grow-1 font-monospace" style="font-size: 0.7rem; overflow-y: auto; max-height: 600px;">
+                <div class="text-muted italic">Waiting for scan data...</div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <template id="resultCardTemplate">
@@ -106,6 +134,7 @@
         </div>
         <div class="diagnostic-content">
             <div class="service-section" data-service="geo"></div>
+            <div class="service-section" data-service="portscan"></div>
             <div class="service-section" data-service="ping"></div>
             <div class="service-section" data-service="route"></div>
             <div class="service-section" data-service="trace"></div>
@@ -162,6 +191,20 @@ function handleFileUpload(input) {
     });
 }
 
+function appendLog(target, message) {
+    const log = document.getElementById('liveLog');
+    const time = new Date().toLocaleTimeString();
+    const entry = document.createElement('div');
+    entry.className = "mb-1";
+    entry.innerHTML = `<span class="text-muted">[${time}]</span> <span class="text-danger">${target}</span>: ${message}`;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+    
+    // Remove "Waiting" message if present
+    const waiting = log.querySelector('.italic');
+    if (waiting) waiting.remove();
+}
+
 function startQuery() {
     const targets = document.getElementById('targetInput').value.split(',').map(t => t.trim()).filter(t => t !== "");
     if (targets.length === 0) return;
@@ -176,9 +219,10 @@ function startQuery() {
         ping: document.getElementById('cfg-ping').checked,
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
+        ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
     };
 
-    const enabledServices = Object.values(config).filter(v => v).length;
+    const enabledServices = Object.values(config).filter(v => v && v !== "").length;
 
     targets.forEach(t => {
         createCard(t);
@@ -216,6 +260,7 @@ function createCard(target) {
         ping: document.getElementById('cfg-ping').checked,
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
+        portscan: document.getElementById('cfg-portscan').checked,
     };
 
     for (const [service, enabled] of Object.entries(config)) {
@@ -257,22 +302,27 @@ function updateProgressBar(target) {
 }
 
 function updateUI(msg) {
-    const card = document.querySelector(`[data-target="${msg.Target}"]`);
+    if (msg.type === 'log') {
+        appendLog(msg.target, msg.data);
+        return;
+    }
+
+    const card = document.querySelector(`[data-target="${msg.target}"]`);
     if (!card) return;
 
-    const section = card.querySelector(`[data-service="${msg.Service}"]`);
+    const section = card.querySelector(`[data-service="${msg.service}"]`);
     if (!section) return;
 
-    const scan = activeScans.get(msg.Target);
+    const scan = activeScans.get(msg.target);
     if (scan) {
         scan.completed++;
-        updateProgressBar(msg.Target);
+        updateProgressBar(msg.target);
     }
 
     let html = "";
-    const data = msg.Data;
+    const data = msg.data;
 
-    switch(msg.Service) {
+    switch(msg.service) {
         case 'geo':
             if (data && !data.error) {
                 html = `<details open><summary>LOCATION & ASN <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Physical location and network owner data"></i></summary>
@@ -297,6 +347,21 @@ function updateUI(msg) {
                         </div></details>`;
             } else {
                 html = `<details><summary>LOCATION & ASN</summary><div class="p-2 text-muted small">Geo data unavailable</div></details>`;
+            }
+            break;
+        case 'portscan':
+            if (data && Object.keys(data).length > 0) {
+                html = `<details open><summary>PORT SCAN <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Open ports and service banners"></i></summary>
+                        <div class="p-2">`;
+                for (const [port, banner] of Object.entries(data)) {
+                    html += `<div class="d-flex justify-content-between align-items-center mb-1 small">
+                                <span class="badge bg-danger-dim text-danger" style="width: 60px;">${port}</span>
+                                <span class="text-info font-monospace flex-grow-1 ms-2" style="font-size: 0.65rem;">${banner || 'Open (No Banner)'}</span>
+                             </div>`;
+                }
+                html += `</div></details>`;
+            } else {
+                html = `<details><summary>PORT SCAN</summary><div class="p-2 text-muted small">No open ports found</div></details>`;
             }
             break;
         case 'ping':
@@ -354,8 +419,9 @@ function updateUI(msg) {
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center">
                                 <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${data.status}</span>
-                                <span class="text-muted" style="font-size: 0.7rem;">${data.protocol}</span>
+                                <span class="badge bg-dark border border-secondary text-info">${data.response_time_ms}ms</span>
                             </div>
+                            <div class="mb-2"><strong>Protocol:</strong> ${data.protocol}</div>
                             <div class="mb-2"><strong>Server:</strong> ${data.headers.Server || 'Unknown'}</div>
                             <div class="security-headers-minimal mb-2">
                                 ${securityHtml}
@@ -493,9 +559,10 @@ function reScanTarget(btn) {
         ping: document.getElementById('cfg-ping').checked,
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
+        ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
     };
     
-    const enabledServices = Object.values(config).filter(v => v).length;
+    const enabledServices = Object.values(config).filter(v => v && v !== "").length;
     createCard(target);
     activeScans.set(target, {
         total: enabledServices,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"whois/internal/service"
@@ -42,15 +43,16 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		var input struct {
 			Targets []string `json:"targets"`
 			Config  struct {
-				Whois bool `json:"whois"`
-				DNS   bool `json:"dns"`
-				CT    bool `json:"ct"`
-				SSL   bool `json:"ssl"`
-				HTTP  bool `json:"http"`
-				Geo   bool `json:"geo"`
-				Ping  bool `json:"ping"`
-				Trace bool `json:"trace"`
-				Route bool `json:"route"`
+				Whois bool   `json:"whois"`
+				DNS   bool   `json:"dns"`
+				CT    bool   `json:"ct"`
+				SSL   bool   `json:"ssl"`
+				HTTP  bool   `json:"http"`
+				Geo   bool   `json:"geo"`
+				Ping  bool   `json:"ping"`
+				Trace bool   `json:"trace"`
+				Route bool   `json:"route"`
+				Ports string `json:"ports"`
 			} `json:"config"`
 		}
 
@@ -71,15 +73,16 @@ func (h *Handler) HandleWS(c echo.Context) error {
 }
 
 func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
-	Whois bool `json:"whois"`
-	DNS   bool `json:"dns"`
-	CT    bool `json:"ct"`
-	SSL   bool `json:"ssl"`
-	HTTP  bool `json:"http"`
-	Geo   bool `json:"geo"`
-	Ping  bool `json:"ping"`
-	Trace bool `json:"trace"`
-	Route bool `json:"route"`
+	Whois bool   `json:"whois"`
+	DNS   bool   `json:"dns"`
+	CT    bool   `json:"ct"`
+	SSL   bool   `json:"ssl"`
+	HTTP  bool   `json:"http"`
+	Geo   bool   `json:"geo"`
+	Ping  bool   `json:"ping"`
+	Trace bool   `json:"trace"`
+	Route bool   `json:"route"`
+	Ports string `json:"ports"`
 }) {
 	var wg sync.WaitGroup
 	ctx := context.Background()
@@ -99,15 +102,32 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		h.wsMu.Unlock()
 	}
 
+	sendLog := func(message string) {
+		msg := WSMessage{
+			Type:    "log",
+			Target:  target,
+			Service: "system",
+			Data:    message,
+		}
+		b, _ := json.Marshal(msg)
+		h.wsMu.Lock()
+		_ = ws.WriteMessage(websocket.TextMessage, b)
+		h.wsMu.Unlock()
+	}
+
+	sendLog("Initializing diagnostic chain for " + target)
+
 	if cfg.Route {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Starting traceroute to " + target)
 			var lines []string
 			service.Traceroute(ctx, target, func(line string) {
 				lines = append(lines, line)
 				send("route", lines)
 			})
+			sendLog("Traceroute completed for " + target)
 		}()
 	}
 
@@ -115,8 +135,10 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Starting recursive DNS trace for " + target)
 			res, _ := h.DNS.Trace(target)
 			send("trace", res)
+			sendLog("DNS trace completed for " + target)
 		}()
 	}
 
@@ -124,11 +146,13 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Initiating ICMP ping to " + target)
 			var lines []string
 			service.Ping(ctx, target, 4, func(line string) {
 				lines = append(lines, line)
 				send("ping", lines) // Send updated lines
 			})
+			sendLog("Ping sequence finished for " + target)
 		}()
 	}
 
@@ -136,7 +160,9 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Querying WHOIS records for " + target)
 			send("whois", service.Whois(target))
+			sendLog("WHOIS data retrieved for " + target)
 		}()
 	}
 
@@ -144,11 +170,13 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Resolving DNS records for " + target)
 			d, err := h.DNS.Lookup(target, isIP)
 			if err == nil {
 				send("dns", d)
 				_ = h.Storage.AddDNSHistory(ctx, target, d)
 			}
+			sendLog("DNS resolution finished for " + target)
 		}()
 	}
 
@@ -156,10 +184,12 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Searching Certificate Transparency logs for " + target)
 			c, err := service.FetchCTSubdomains(target)
 			if err == nil {
 				send("ct", c)
 			}
+			sendLog("CT log search finished for " + target)
 		}()
 	}
 
@@ -167,7 +197,9 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Analyzing SSL/TLS configuration for " + target)
 			send("ssl", service.GetSSLInfo(target))
+			sendLog("SSL/TLS analysis complete for " + target)
 		}()
 	}
 
@@ -175,7 +207,9 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Inspecting HTTP response from " + target)
 			send("http", service.GetHTTPInfo(target))
+			sendLog("HTTP inspection finished for " + target)
 		}()
 	}
 
@@ -183,10 +217,40 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			sendLog("Locating IP and ASN data for " + target)
 			g, _ := service.GetGeoInfo(target)
 			send("geo", g)
+			sendLog("Geolocation data updated for " + target)
 		}()
 	}
 
-	wg.Wait()
+	if cfg.Ports != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sendLog("Starting port scan on " + target)
+			var portList []int
+			for _, p := range strings.Split(cfg.Ports, ",") {
+				if i, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
+					portList = append(portList, i)
+				}
+			}
+
+			if len(portList) > 0 {
+				results := make(map[int]string)
+				service.ScanPortsStream(target, portList, func(port int, banner string, err error) {
+					if err == nil {
+						results[port] = banner
+						send("portscan", results)
+					}
+				})
+			}
+			sendLog("Port scan completed for " + target)
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		sendLog("All tasks completed for " + target)
+	}()
 }

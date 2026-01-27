@@ -59,15 +59,22 @@ func TestHandleWS(t *testing.T) {
 		t.Fatalf("Failed to send message: %v", err)
 	}
 
-	// Receive response
-	_, p, err := ws.ReadMessage()
-	if err != nil {
-		t.Fatalf("Failed to read message: %v", err)
-	}
-
+	// Receive response - loop until we get the whois result, skipping logs
 	var msg WSMessage
-	if err := json.Unmarshal(p, &msg); err != nil {
-		t.Fatalf("Failed to unmarshal response: %v", err)
+	for {
+		_, p, err := ws.ReadMessage()
+		if err != nil {
+			t.Fatalf("Failed to read message: %v", err)
+		}
+
+		if err := json.Unmarshal(p, &msg); err != nil {
+			t.Fatalf("Failed to unmarshal response: %v", err)
+		}
+
+		if msg.Type == "result" && msg.Service == "whois" {
+			break
+		}
+		// Continue for logs or other messages
 	}
 
 	if msg.Target != "example.com" {
