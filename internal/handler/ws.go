@@ -43,16 +43,17 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		var input struct {
 			Targets []string `json:"targets"`
 			Config  struct {
-				Whois bool   `json:"whois"`
-				DNS   bool   `json:"dns"`
-				CT    bool   `json:"ct"`
-				SSL   bool   `json:"ssl"`
-				HTTP  bool   `json:"http"`
-				Geo   bool   `json:"geo"`
-				Ping  bool   `json:"ping"`
-				Trace bool   `json:"trace"`
-				Route bool   `json:"route"`
-				Ports string `json:"ports"`
+				Whois      bool   `json:"whois"`
+				DNS        bool   `json:"dns"`
+				CT         bool   `json:"ct"`
+				SSL        bool   `json:"ssl"`
+				HTTP       bool   `json:"http"`
+				Geo        bool   `json:"geo"`
+				Ping       bool   `json:"ping"`
+				Trace      bool   `json:"trace"`
+				Route      bool   `json:"route"`
+				Subdomains bool   `json:"subdomains"`
+				Ports      string `json:"ports"`
 			} `json:"config"`
 		}
 
@@ -73,16 +74,17 @@ func (h *Handler) HandleWS(c echo.Context) error {
 }
 
 func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
-	Whois bool   `json:"whois"`
-	DNS   bool   `json:"dns"`
-	CT    bool   `json:"ct"`
-	SSL   bool   `json:"ssl"`
-	HTTP  bool   `json:"http"`
-	Geo   bool   `json:"geo"`
-	Ping  bool   `json:"ping"`
-	Trace bool   `json:"trace"`
-	Route bool   `json:"route"`
-	Ports string `json:"ports"`
+	Whois      bool   `json:"whois"`
+	DNS        bool   `json:"dns"`
+	CT         bool   `json:"ct"`
+	SSL        bool   `json:"ssl"`
+	HTTP       bool   `json:"http"`
+	Geo        bool   `json:"geo"`
+	Ping       bool   `json:"ping"`
+	Trace      bool   `json:"trace"`
+	Route      bool   `json:"route"`
+	Subdomains bool   `json:"subdomains"`
+	Ports      string `json:"ports"`
 }) {
 	var wg sync.WaitGroup
 	ctx := context.Background()
@@ -116,6 +118,16 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 	}
 
 	sendLog("Initializing diagnostic chain for " + target)
+
+	if cfg.Subdomains && !isIP {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sendLog("Discovering subdomains for " + target)
+			send("subdomains", h.DNS.DiscoverSubdomains(target, nil))
+			sendLog("Subdomain discovery completed for " + target)
+		}()
+	}
 
 	if cfg.Route {
 		wg.Add(1)

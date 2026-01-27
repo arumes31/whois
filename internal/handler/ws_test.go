@@ -43,15 +43,17 @@ func TestHandleWS(t *testing.T) {
 	input := struct {
 		Targets []string `json:"targets"`
 		Config  struct {
-			Whois bool `json:"whois"`
-			DNS   bool `json:"dns"`
+			Whois      bool `json:"whois"`
+			DNS        bool `json:"dns"`
+			Subdomains bool `json:"subdomains"`
 		} `json:"config"`
 	}{
 		Targets: []string{"example.com"},
 		Config: struct {
-			Whois bool `json:"whois"`
-			DNS   bool `json:"dns"`
-		}{Whois: true, DNS: false},
+			Whois      bool `json:"whois"`
+			DNS        bool `json:"dns"`
+			Subdomains bool `json:"subdomains"`
+		}{Whois: true, DNS: false, Subdomains: false},
 	}
 
 	err = ws.WriteJSON(input)

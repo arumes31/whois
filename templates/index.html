@@ -1,75 +1,87 @@
 {{ template "header" . }}
 
-<div class="search-section">
-    <div class="glass-panel">
-        <div class="row g-3">
-            <div class="col-md-8">
-                <div class="input-group">
-                    <textarea 
-                      id="targetInput"
-                      class="form-control matrix-input" 
-                      rows="1"
-                      placeholder="Enter domains or IPs (comma separated)..."
-                      required></textarea>
-                    <button class="btn btn-outline-secondary matrix-input px-3" onclick="document.getElementById('fileInput').click()" title="Upload File">
-                        <i class="fas fa-file-upload"></i>
-                    </button>
-                    <input type="file" id="fileInput" style="display:none" onchange="handleFileUpload(this)">
-                </div>
+<div class="search-section mb-4">
+    <div class="glass-panel border-nordic">
+        <div class="d-flex align-items-center mb-3">
+            <div class="flex-grow-1">
+                <h5 class="mb-0 fw-bold"><i class="fas fa-terminal me-2 text-danger"></i> INTEL GATHERING</h5>
+                <small class="text-muted">Enter targets for multi-vector diagnostic analysis</small>
             </div>
-            <div class="col-md-4 d-flex gap-2">
-                <button onclick="startQuery()" class="btn btn-danger flex-grow-1 fw-bold">
-                    <i class="fas fa-bolt me-2"></i> EXECUTE SCAN
-                </button>
-                <button onclick="clearResults()" class="btn btn-outline-secondary">
-                    <i class="fas fa-trash"></i>
+            <div class="d-flex gap-2">
+                <button onclick="clearResults()" class="btn btn-sm btn-outline-danger">
+                    <i class="fas fa-eraser me-1"></i> RESET
                 </button>
             </div>
         </div>
         
-        <div class="d-flex flex-wrap gap-4 mt-3">
-            <div class="form-check form-switch" {{ if not .config.EnableWhois }}style="display:none;"{{ end }}>
-                <input class="form-check-input" type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
-                <label class="form-check-label small text-muted">WHOIS</label>
+        <div class="row g-3">
+            <div class="col-md-9">
+                <div class="input-group">
+                    <span class="input-group-text bg-dark border-secondary text-muted"><i class="fas fa-at"></i></span>
+                    <textarea 
+                      id="targetInput"
+                      class="form-control matrix-input" 
+                      rows="1"
+                      placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
+                      required></textarea>
+                    <button class="btn btn-outline-secondary matrix-input px-3" onclick="document.getElementById('fileInput').click()" title="Batch Upload">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                    </button>
+                    <input type="file" id="fileInput" style="display:none" onchange="handleFileUpload(this)">
+                </div>
             </div>
-            <div class="form-check form-switch" {{ if not .config.EnableDNS }}style="display:none;"{{ end }}>
-                <input class="form-check-input" type="checkbox" id="cfg-dns" {{ if .config.EnableDNS }}checked{{ end }}>
-                <label class="form-check-label small text-muted">DNS</label>
+            <div class="col-md-3">
+                <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100">
+                    <i class="fas fa-radar me-2"></i> INITIATE SCAN
+                </button>
             </div>
-            <div class="form-check form-switch" {{ if not .config.EnableSSL }}style="display:none;"{{ end }}>
-                <input class="form-check-input" type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}>
-                <label class="form-check-label small text-muted">SSL/TLS</label>
-            </div>
-            <div class="form-check form-switch" {{ if not .config.EnableHTTP }}style="display:none;"{{ end }}>
-                <input class="form-check-input" type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}>
-                <label class="form-check-label small text-muted">HTTP</label>
-            </div>
-            <div class="form-check form-switch" {{ if not .config.EnableGeo }}style="display:none;"{{ end }}>
-                <input class="form-check-input" type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
-                <label class="form-check-label small text-muted">Geo/ASN</label>
-            </div>
-            <div class="form-check form-switch" {{ if not .config.EnableCT }}style="display:none;"{{ end }}>
-                <input class="form-check-input" type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
-                <label class="form-check-label small text-muted">CT Logs</label>
-            </div>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="cfg-ping">
-                <label class="form-check-label small text-muted">PING</label>
-            </div>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="cfg-trace">
-                <label class="form-check-label small text-muted">TRACE</label>
-            </div>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="cfg-route">
-                <label class="form-check-label small text-muted">ROUTE</label>
-            </div>
-            <div class="form-check form-switch">
-                <input class="form-check-input" type="checkbox" id="cfg-portscan">
-                <label class="form-check-label small text-muted">PORT SCAN</label>
-            </div>
-            <div id="portsInputWrapper" style="display:none;">
-                <input type="text" id="cfg-ports" class="form-control matrix-input py-0" style="font-size: 0.7rem; width: 120px;" value="80,443,22,21,3389" placeholder="Ports...">
+        </div>
+        
+        <div class="mt-3 pt-3 border-top border-secondary opacity-25">
+            <div class="d-flex flex-wrap gap-3">
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
+                    <label for="cfg-whois">WHOIS</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-dns" {{ if .config.EnableDNS }}checked{{ end }}>
+                    <label for="cfg-dns">DNS</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-subdomains">
+                    <label for="cfg-subdomains">PREFIXES</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}>
+                    <label for="cfg-ssl">SSL/TLS</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}>
+                    <label for="cfg-http">HTTP</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
+                    <label for="cfg-geo">GEO/ASN</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
+                    <label for="cfg-ct">CT LOGS</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-ping">
+                    <label for="cfg-ping">PING</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-trace">
+                    <label for="cfg-trace">TRACE</label>
+                </div>
+                <div class="feature-toggle">
+                    <input type="checkbox" id="cfg-portscan">
+                    <label for="cfg-portscan">PORTS</label>
+                </div>
+                <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
+                    <input type="text" id="cfg-ports" class="form-control matrix-input py-1" style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389" placeholder="Specific ports...">
+                </div>
             </div>
         </div>
     </div>
@@ -134,6 +146,7 @@ document.getElementById('cfg-portscan').addEventListener('change', function() {
         </div>
         <div class="diagnostic-content">
             <div class="service-section" data-service="geo"></div>
+            <div class="service-section" data-service="subdomains"></div>
             <div class="service-section" data-service="portscan"></div>
             <div class="service-section" data-service="ping"></div>
             <div class="service-section" data-service="route"></div>
@@ -219,6 +232,7 @@ function startQuery() {
         ping: document.getElementById('cfg-ping').checked,
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
+        subdomains: document.getElementById('cfg-subdomains').checked,
         ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
     };
 
@@ -261,6 +275,7 @@ function createCard(target) {
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
         portscan: document.getElementById('cfg-portscan').checked,
+        subdomains: document.getElementById('cfg-subdomains').checked,
     };
 
     for (const [service, enabled] of Object.entries(config)) {
@@ -347,6 +362,24 @@ function updateUI(msg) {
                         </div></details>`;
             } else {
                 html = `<details><summary>LOCATION & ASN</summary><div class="p-2 text-muted small">Geo data unavailable</div></details>`;
+            }
+            break;
+        case 'subdomains':
+            if (data && Object.keys(data).length > 0) {
+                html = `<details open><summary>SUBDOMAIN DISCOVERY <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Brute-forced common prefixes"></i></summary>
+                        <div class="p-2 small">`;
+                for (const [fqdn, records] of Object.entries(data)) {
+                    html += `<div class="mb-2 pb-1 border-bottom border-secondary opacity-25">
+                                <div class="text-danger fw-bold">${fqdn}</div>
+                                <div class="ps-2">`;
+                    for (const [type, vals] of Object.entries(records)) {
+                        html += `<div class="text-muted" style="font-size: 0.65rem;"><span class="text-info">${type}:</span> ${vals.join(', ')}</div>`;
+                    }
+                    html += `</div></div>`;
+                }
+                html += `</div></details>`;
+            } else {
+                html = `<details><summary>SUBDOMAIN DISCOVERY</summary><div class="p-2 text-muted small">No common subdomains found</div></details>`;
             }
             break;
         case 'portscan':
@@ -559,6 +592,7 @@ function reScanTarget(btn) {
         ping: document.getElementById('cfg-ping').checked,
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
+        subdomains: document.getElementById('cfg-subdomains').checked,
         ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
     };
     

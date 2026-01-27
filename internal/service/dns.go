@@ -82,7 +82,7 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 
 	// Well-known subdomains
 	if !isIP {
-		results["Well-Known"] = s.QueryWellKnown(target)
+		results["Subdomains"] = s.DiscoverSubdomains(target, nil)
 	}
 
 	// Post-process TXT for SPF
@@ -105,7 +105,8 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 	return results, nil
 }
 
-func (s *DNSService) QueryWellKnown(domain string) map[string]interface{} {
+// DiscoverSubdomains performs a brute-force search for common subdomains
+func (s *DNSService) DiscoverSubdomains(domain string, customSubs []string) map[string]interface{} {
 	subs := []string{
 		"www", "mail", "ftp", "webmail", "admin", "cpanel", "login", "secure",
 		"smtp", "pop", "imap", "autodiscover", "autoconfig", "mta-sts",
@@ -120,14 +121,24 @@ func (s *DNSService) QueryWellKnown(domain string) map[string]interface{} {
 		"k8s", "kubernetes", "aws", "azure", "gcp", "mail1", "mail2",
 	}
 
+	if len(customSubs) > 0 {
+		subs = customSubs
+	}
+
 	results := make(map[string]interface{})
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+
+	// Limit concurrency for subdomain discovery
+	sem := make(chan struct{}, 20)
 
 	for _, sub := range subs {
 		wg.Add(1)
 		go func(sub string) {
 			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
 			fqdn := sub + "." + domain
 			res := make(map[string][]string)
 

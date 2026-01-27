@@ -233,12 +233,47 @@ summary:hover .section-copy-btn {
     background-color: var(--glass-border) !important;
 }
 
-.progress-bar {
-    transition: width 0.3s ease;
+.border-nordic {
+    border-color: var(--nordic-blue-glow) !important;
+    box-shadow: 0 0 15px rgba(56, 189, 248, 0.05);
 }
 
-.service-section {
-    margin-bottom: 0.5rem;
+/* Feature Toggles */
+.feature-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.02);
+    padding: 4px 12px;
+    border-radius: 20px;
+    border: 1px solid var(--glass-border);
+    transition: all 0.2s ease;
+}
+
+.feature-toggle:has(input:checked) {
+    background: var(--nordic-blue-dim);
+    border-color: var(--nordic-blue-glow);
+}
+
+.feature-toggle input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--nordic-blue);
+    cursor: pointer;
+}
+
+.feature-toggle label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    letter-spacing: 0.5px;
+    margin-bottom: 0;
+}
+
+.feature-toggle:has(input:checked) label {
+    color: var(--nordic-blue);
 }
 
 .service-section:empty {

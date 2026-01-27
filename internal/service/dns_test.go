@@ -27,9 +27,9 @@ func TestDNSService_Lookup(t *testing.T) {
 	}
 }
 
-func TestDNSService_QueryWellKnown(t *testing.T) {
+func TestDNSService_DiscoverSubdomains(t *testing.T) {
 	s := NewDNSService()
-	res := s.QueryWellKnown("google.com")
+	res := s.DiscoverSubdomains("google.com", nil)
 
 	if len(res) == 0 {
 		t.Log("No well-known subdomains found for google.com (this might happen depending on DNS)")

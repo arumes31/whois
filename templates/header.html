@@ -33,25 +33,30 @@
         </div>
         
         <nav class="flex-grow-1">
+            <div class="small text-muted px-3 mb-2 opacity-50">CORE MODULES</div>
             <a href="/" class="nav-link {{ if eq .Request.URL.Path "/" }}active{{ end }}">
-                <i class="fas fa-search"></i> Dashboard
+                <i class="fas fa-microchip"></i> RECON DASHBOARD
             </a>
             <a href="/scanner" class="nav-link {{ if eq .Request.URL.Path "/scanner" }}active{{ end }}">
-                <i class="fas fa-shield-halved"></i> Port Scanner
+                <i class="fas fa-bullseye"></i> TARGET SCANNER
             </a>
             <a href="/config" class="nav-link {{ if eq .Request.URL.Path "/config" }}active{{ end }}">
-                <i class="fas fa-cog"></i> Monitoring
+                <i class="fas fa-satellite-dish"></i> MONITORING
             </a>
-            <a href="/metrics" target="_blank" class="nav-link">
-                <i class="fas fa-chart-line"></i> System Metrics
-            </a>
+            
             <hr class="border-secondary opacity-25">
-            <div class="small text-muted px-3 mb-2">NETWORK TOOLS</div>
+            <div class="small text-muted px-3 mb-2 opacity-50">QUICK TOOLS</div>
             <a href="#" onclick="openTool('dns')" class="nav-link">
-                <i class="fas fa-globe"></i> DNS Lookup
+                <i class="fas fa-search-plus"></i> DNS LOOKUP
             </a>
             <a href="#" onclick="openTool('mac')" class="nav-link">
-                <i class="fas fa-microchip"></i> MAC Vendor
+                <i class="fas fa-barcode"></i> MAC VENDOR
+            </a>
+
+            <hr class="border-secondary opacity-25">
+            <div class="small text-muted px-3 mb-2 opacity-50">ANALYTICS</div>
+            <a href="/metrics" target="_blank" class="nav-link">
+                <i class="fas fa-project-diagram"></i> SYSTEM METRICS
             </a>
         </nav>
         
