@@ -16,7 +16,9 @@ func FetchCTSubdomains(domain string) (map[string]interface{}, error) {
 	if err != nil {
 		return nil, fmt.Errorf("CT request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != 200 {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)

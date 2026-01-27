@@ -80,7 +80,7 @@ func InitializeGeoDB(updateURL, licenseKey, accountID string) {
 			}
 			if stat, err := os.Stat(geoPath); err == nil {
 				if time.Since(stat.ModTime()) > 72*time.Hour {
-					DownloadGeoDB(updateURL)
+					_ = DownloadGeoDB(updateURL)
 					ReloadGeoDB()
 				}
 			}
@@ -93,7 +93,7 @@ func ReloadGeoDB() {
 	defer geoMu.Unlock()
 
 	if geoReader != nil {
-		geoReader.Close()
+		_ = geoReader.Close()
 	}
 
 	reader, err := geoip2.Open(geoPath)
@@ -118,7 +118,9 @@ func DownloadGeoDB(url string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("bad status: %s", resp.Status)
@@ -134,7 +136,9 @@ func DownloadGeoDB(url string) error {
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		_ = out.Close()
+	}()
 	_, err = io.Copy(out, resp.Body)
 	return err
 }
@@ -144,7 +148,9 @@ func extractTarGz(r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	defer gzr.Close()
+	defer func() {
+		_ = gzr.Close()
+	}()
 
 	tr := tar.NewReader(gzr)
 	for {
@@ -162,7 +168,7 @@ func extractTarGz(r io.Reader) error {
 				return err
 			}
 			_, err = io.Copy(out, tr)
-			out.Close()
+			_ = out.Close()
 			return err
 		}
 	}
@@ -199,7 +205,9 @@ func GetGeoInfo(target string) (*GeoInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	var info GeoInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
@@ -211,9 +219,4 @@ func GetGeoInfo(target string) (*GeoInfo, error) {
 	}
 
 	return &info, nil
-}
-
-func localGeoLookup(target string) (*GeoInfo, error) {
-	// Obsolete but keeping for signature consistency if needed elsewhere
-	return nil, fmt.Errorf("use GetGeoInfo")
 }

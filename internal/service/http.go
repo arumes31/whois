@@ -34,7 +34,9 @@ func GetHTTPInfo(host string) *HTTPInfo {
 			return &HTTPInfo{Error: err.Error()}
 		}
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	info := &HTTPInfo{
 		Status:   resp.Status,

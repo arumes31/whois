@@ -19,7 +19,7 @@ func TestStorage(t *testing.T) {
 
 	// Test Monitored Items
 	item := "test-domain.com"
-	s.AddMonitoredItem(ctx, item)
+	_ = s.AddMonitoredItem(ctx, item)
 	items, _ := s.GetMonitoredItems(ctx)
 	found := false
 	for _, v := range items {
@@ -32,10 +32,10 @@ func TestStorage(t *testing.T) {
 		t.Errorf("Item %s not found in monitored items", item)
 	}
 
-	s.RemoveMonitoredItem(ctx, item)
+	_ = s.RemoveMonitoredItem(ctx, item)
 
 	// Test Cache
-	s.SetCache(ctx, "test-key", "test-value", 1*time.Minute)
+	_ = s.SetCache(ctx, "test-key", "test-value", 1*time.Minute)
 	val, err := s.GetCache(ctx, "test-key")
 	if err != nil || val != "\"test-value\"" { // go-redis Marshals strings with quotes if we use SetCache interface
 		t.Errorf("Cache failed: got %v, want %v", val, "test-value")

@@ -23,7 +23,7 @@ func TestHandleWS(t *testing.T) {
 	// Create test server
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := e.NewContext(r, w)
-		h.HandleWS(c)
+		_ = h.HandleWS(c)
 	}))
 	defer srv.Close()
 
@@ -35,7 +35,9 @@ func TestHandleWS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to connect to WebSocket: %v", err)
 	}
-	defer ws.Close()
+	defer func() {
+		_ = ws.Close()
+	}()
 
 	// Send query
 	input := struct {

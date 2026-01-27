@@ -22,7 +22,9 @@ func LookupMacVendor(mac string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode == 200 {
@@ -38,7 +40,9 @@ func localOUILookup(mac string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	prefix := strings.ReplaceAll(strings.ToUpper(mac), ":", "")
 	if len(prefix) > 6 {

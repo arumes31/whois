@@ -69,8 +69,8 @@ func (s *Storage) GetHistoryWithDiffs(ctx context.Context, item string) ([]model
 
 		// Pretty print JSON for better diff
 		var currentObj, previousObj interface{}
-		json.Unmarshal([]byte(currentRaw), &currentObj)
-		json.Unmarshal([]byte(previousRaw), &previousObj)
+		_ = json.Unmarshal([]byte(currentRaw), &currentObj)
+		_ = json.Unmarshal([]byte(previousRaw), &previousObj)
 
 		currentPretty, _ := json.MarshalIndent(currentObj, "", "  ")
 		previousPretty, _ := json.MarshalIndent(previousObj, "", "  ")

@@ -20,7 +20,9 @@ import (
 
 func main() {
 	utils.InitLogger()
-	defer utils.Log.Sync()
+	defer func() {
+		_ = utils.Log.Sync()
+	}()
 
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -52,7 +54,17 @@ func main() {
 	})
 
 	// Security Middlewares
-	e.Use(middleware.Logger())
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogStatus: true,
+		LogURI:    true,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			utils.Log.Info("request",
+				utils.Field("uri", v.URI),
+				utils.Field("status", v.Status),
+			)
+			return nil
+		},
+	}))
 	e.Use(middleware.Recover())
 	e.Use(middleware.BodyLimit("1M")) // Prevent large payload attacks
 	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(20)))

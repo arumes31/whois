@@ -11,7 +11,7 @@ func TestFetchCTSubdomains(t *testing.T) {
 	// Mock crt.sh response
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintln(w, `[{"name_value":"api.example.com"},{"name_value":"www.example.com\ndev.example.com"}]`)
+		_, _ = fmt.Fprintln(w, `[{"name_value":"api.example.com"},{"name_value":"www.example.com\ndev.example.com"}]`)
 	}))
 	defer server.Close()
 

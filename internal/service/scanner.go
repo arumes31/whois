@@ -41,10 +41,12 @@ func ScanPorts(target string, ports []int) ScanResult {
 			if err != nil {
 				res.Closed = append(res.Closed, p)
 			} else {
-				defer conn.Close()
+				defer func() {
+					_ = conn.Close()
+				}()
 
 				// Attempt to grab banner
-				conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+				_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 				banner := make([]byte, 256)
 				n, _ := conn.Read(banner)
 				bannerStr := ""

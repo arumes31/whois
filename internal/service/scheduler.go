@@ -29,14 +29,14 @@ func NewScheduler(s *storage.Storage) *Scheduler {
 
 func (s *Scheduler) Start() {
 	// Background image update every 6 hours
-	s.Cron.AddFunc("@every 6h", func() {
+	_, _ = s.Cron.AddFunc("@every 6h", func() {
 		DownloadBackground()
 	})
 
 	// Monitoring refresh every 5 minutes (to reschedule if items changed)
 	// Simplified: just run all monitored items once a day or spread them.
 	// For now, let's just add a job that runs through monitored items.
-	s.Cron.AddFunc("0 2 * * *", func() { // Every day at 2 AM
+	_, _ = s.Cron.AddFunc("0 2 * * *", func() { // Every day at 2 AM
 		items, err := s.Storage.GetMonitoredItems(context.Background())
 		if err != nil {
 			log.Printf("Scheduler error getting items: %v", err)
@@ -58,7 +58,9 @@ func DownloadBackground() {
 		log.Printf("Failed to download background: %v", err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	outPath := filepath.Join("static", "background.jpg")
 	out, err := os.Create(outPath)
@@ -66,7 +68,9 @@ func DownloadBackground() {
 		log.Printf("Failed to create background file: %v", err)
 		return
 	}
-	defer out.Close()
+	defer func() {
+		_ = out.Close()
+	}()
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {

@@ -31,5 +31,5 @@ func Ping(ctx context.Context, target string, count int, callback func(string)) 
 	for scanner.Scan() {
 		callback(scanner.Text())
 	}
-	cmd.Wait()
+	_ = cmd.Wait()
 }

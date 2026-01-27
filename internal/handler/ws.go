@@ -29,7 +29,9 @@ func (h *Handler) HandleWS(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	defer ws.Close()
+	defer func() {
+		_ = ws.Close()
+	}()
 
 	for {
 		_, msg, err := ws.ReadMessage()
@@ -93,7 +95,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		}
 		b, _ := json.Marshal(msg)
 		h.wsMu.Lock()
-		ws.WriteMessage(websocket.TextMessage, b)
+		_ = ws.WriteMessage(websocket.TextMessage, b)
 		h.wsMu.Unlock()
 	}
 
@@ -145,7 +147,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 			d, err := h.DNS.Lookup(target, isIP)
 			if err == nil {
 				send("dns", d)
-				h.Storage.AddDNSHistory(ctx, target, d)
+				_ = h.Storage.AddDNSHistory(ctx, target, d)
 			}
 		}()
 	}

@@ -26,7 +26,9 @@ func GetSSLInfo(host string) *SSLInfo {
 	if err != nil {
 		return &SSLInfo{Error: err.Error()}
 	}
-	defer conn.Close()
+	defer func() {
+		_ = conn.Close()
+	}()
 
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {

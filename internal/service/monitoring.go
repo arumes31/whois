@@ -43,7 +43,7 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 		d, err := m.DNS.Lookup(item, isIP)
 		if err == nil {
 			res.DNS = d
-			m.Storage.AddDNSHistory(ctx, item, d)
+			_ = m.Storage.AddDNSHistory(ctx, item, d)
 		}
 	}()
 

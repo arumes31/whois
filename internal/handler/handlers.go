@@ -143,7 +143,9 @@ func (h *Handler) BulkUpload(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	defer src.Close()
+	defer func() {
+		_ = src.Close()
+	}()
 
 	var targets []string
 	if strings.HasSuffix(ext, ".csv") {
@@ -191,21 +193,21 @@ func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult
 	writer := csv.NewWriter(c.Response().Writer)
 	defer writer.Flush()
 
-	writer.Write([]string{"Item", "Type", "Data"})
+	_ = writer.Write([]string{"Item", "Type", "Data"})
 
 	for item, data := range results {
 		if data.Whois != nil {
 			if w, ok := data.Whois.(string); ok {
-				writer.Write([]string{item, "WHOIS", w})
+				_ = writer.Write([]string{item, "WHOIS", w})
 			}
 		}
 		if data.DNS != nil {
 			dnsBytes, _ := json.Marshal(data.DNS)
-			writer.Write([]string{item, "DNS", string(dnsBytes)})
+			_ = writer.Write([]string{item, "DNS", string(dnsBytes)})
 		}
 		if data.CT != nil {
 			ctBytes, _ := json.Marshal(data.CT)
-			writer.Write([]string{item, "CT", string(ctBytes)})
+			_ = writer.Write([]string{item, "CT", string(ctBytes)})
 		}
 	}
 	return nil
@@ -242,7 +244,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 			d, err := h.DNS.Lookup(item, isIP)
 			if err == nil {
 				res.DNS = d
-				h.Storage.AddDNSHistory(ctx, item, d)
+				_ = h.Storage.AddDNSHistory(ctx, item, d)
 			}
 		}()
 	}
@@ -266,7 +268,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 					res.CT = map[string]string{"error": err.Error()}
 				} else {
 					res.CT = c
-					h.Storage.SetCache(ctx, ctCacheKey, c, 1*time.Hour)
+					_ = h.Storage.SetCache(ctx, ctCacheKey, c, 1*time.Hour)
 				}
 			}()
 		} else {
@@ -304,7 +306,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 	}
 
 	wg.Wait()
-	h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
+	_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
 	return res
 }
 
@@ -388,7 +390,7 @@ func (h *Handler) MacLookup(c echo.Context) error {
 		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", err))
 	}
 
-	h.Storage.SetCache(ctx, cacheKey, vendor, 24*time.Hour)
+	_ = h.Storage.SetCache(ctx, cacheKey, vendor, 24*time.Hour)
 	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", mac, vendor))
 }
 
@@ -425,9 +427,9 @@ func (h *Handler) Config(c echo.Context) error {
 		action := c.FormValue("action")
 		item := strings.TrimSpace(c.FormValue("item"))
 		if action == "add" && item != "" {
-			h.Storage.AddMonitoredItem(ctx, item)
+			_ = h.Storage.AddMonitoredItem(ctx, item)
 		} else if action == "remove" && item != "" {
-			h.Storage.RemoveMonitoredItem(ctx, item)
+			_ = h.Storage.RemoveMonitoredItem(ctx, item)
 		}
 		return c.Redirect(http.StatusFound, "/config")
 	}

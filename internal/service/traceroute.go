@@ -31,5 +31,5 @@ func Traceroute(ctx context.Context, target string, callback func(string)) {
 	for scanner.Scan() {
 		callback(scanner.Text())
 	}
-	cmd.Wait()
+	_ = cmd.Wait()
 }
