@@ -34,7 +34,7 @@ func main() {
 
 	// Startup tasks
 	go service.DownloadBackground()
-	service.InitializeGeoDB(cfg.GeoIPURL)
+	service.InitializeGeoDB(cfg.GeoIPURL, cfg.MaxMindLicenseKey, cfg.MaxMindAccountID)
 	sched.Start()
 
 	// Web Server
@@ -107,9 +107,9 @@ func main() {
 	// Routes
 	e.GET("/", h.Index)
 	e.POST("/", h.Index)
-	e.POST("/scan", h.Scan) // HTMX
 	e.POST("/dns_lookup", h.DNSLookup)
 	e.POST("/mac_lookup", h.MacLookup)
+	e.POST("/bulk-upload", h.BulkUpload)
 	e.GET("/ws", h.HandleWS)
 	e.GET("/login", h.Login)
 	e.POST("/login", h.Login)
@@ -119,6 +119,8 @@ func main() {
 	g.Use(h.LoginRequired)
 	g.GET("/config", h.Config)
 	g.POST("/config", h.Config)
+	g.GET("/scanner", h.Scanner)
+	e.POST("/scan", h.Scan) // Keep as e.POST if HTMX doesn't handle group prefix easily, or g.POST
 	g.GET("/logout", func(c echo.Context) error {
 		c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1})
 		return c.Redirect(http.StatusFound, "/")

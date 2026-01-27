@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -117,6 +118,65 @@ func (h *Handler) Index(c echo.Context) error {
 		"real_ip":     realIP,
 		"stats":       stats,
 		"config":      h.AppConfig,
+	})
+}
+
+func (h *Handler) BulkUpload(c echo.Context) error {
+	file, err := c.FormFile("file")
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "No file uploaded"})
+	}
+
+	if file.Size > 2*1024*1024 {
+		return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "File too large (max 2MB)"})
+	}
+
+	ext := strings.ToLower(file.Filename)
+	if !strings.HasSuffix(ext, ".txt") && !strings.HasSuffix(ext, ".csv") {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid file type (only .txt, .csv allowed)"})
+	}
+
+	src, err := file.Open()
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	var targets []string
+	if strings.HasSuffix(ext, ".csv") {
+		r := csv.NewReader(src)
+		records, err := r.ReadAll()
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid CSV format"})
+		}
+		for _, record := range records {
+			for _, field := range record {
+				trimmed := strings.TrimSpace(field)
+				if utils.IsValidTarget(trimmed) {
+					targets = append(targets, trimmed)
+				}
+			}
+		}
+	} else {
+		buf := new(strings.Builder)
+		if _, err := io.Copy(buf, src); err != nil {
+			return err
+		}
+		lines := strings.Split(buf.String(), "\n")
+		for _, line := range lines {
+			parts := strings.Split(line, ",")
+			for _, part := range parts {
+				trimmed := strings.TrimSpace(part)
+				if utils.IsValidTarget(trimmed) {
+					targets = append(targets, trimmed)
+				}
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"targets": targets,
+		"count":   len(targets),
 	})
 }
 
@@ -243,6 +303,15 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 	wg.Wait()
 	h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
 	return res
+}
+
+func (h *Handler) Scanner(c echo.Context) error {
+	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
+	realIP := utils.ExtractIP(c, pCfg)
+	return c.Render(http.StatusOK, "scanner.html", map[string]interface{}{
+		"real_ip": realIP,
+		"config":  h.AppConfig,
+	})
 }
 
 func (h *Handler) Scan(c echo.Context) error {

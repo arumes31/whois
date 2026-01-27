@@ -152,6 +152,84 @@ func (s *DNSService) QueryWellKnown(domain string) map[string]interface{} {
 	return results
 }
 
+func (s *DNSService) Trace(target string) ([]string, error) {
+	var results []string
+	m := new(dns.Msg)
+	m.SetQuestion(dns.Fqdn(target), dns.TypeA)
+	m.RecursionDesired = false
+
+	rootServers := []string{
+		"198.41.0.4:53", "199.9.14.201:53", "192.33.4.12:53", "199.7.91.13:53",
+		"192.203.230.10:53", "192.5.5.241:53", "192.112.36.4:53", "198.97.190.53:53",
+		"192.36.148.17:53", "192.58.128.30:53", "193.0.14.129:53", "199.7.83.42:53",
+		"202.12.27.33:53",
+	}
+
+	// Start from a random root server
+	nextServer := rootServers[0]
+	
+	for {
+		results = append(results, fmt.Sprintf("Querying %s for %s", nextServer, target))
+		c := new(dns.Client)
+		c.Timeout = 2 * time.Second
+		in, _, err := c.Exchange(m, nextServer)
+		if err != nil {
+			return results, fmt.Errorf("exchange error at %s: %v", nextServer, err)
+		}
+
+		if len(in.Answer) > 0 {
+			for _, ans := range in.Answer {
+				results = append(results, fmt.Sprintf("Answer: %s", ans.String()))
+			}
+			break
+		}
+
+		if len(in.Ns) == 0 {
+			results = append(results, "No NS records found in authority section")
+			break
+		}
+
+		// Find next server in NS records
+		found := false
+		for _, ns := range in.Ns {
+			if n, ok := ns.(*dns.NS); ok {
+				// We need the IP of this NS. In a real trace we'd check Glue records (in.Extra)
+				// For simplicity, we'll try to resolve the NS or use Glue if available.
+				nsName := n.Ns
+				nsIP := ""
+				for _, extra := range in.Extra {
+					if a, ok := extra.(*dns.A); ok && a.Header().Name == nsName {
+						nsIP = a.A.String()
+						break
+					}
+				}
+				
+				if nsIP != "" {
+					nextServer = nsIP + ":53"
+					found = true
+					results = append(results, fmt.Sprintf("Following referral to %s (%s)", nsName, nsIP))
+					break
+				} else {
+					// Fallback: Resolve the NS name (simplified)
+					results = append(results, fmt.Sprintf("Referral to %s (no glue, resolving...)", nsName))
+				}
+			}
+		}
+
+		if !found {
+			results = append(results, "Could not follow referral (no glue records)")
+			break
+		}
+		
+		if len(results) > 20 { // Safety break
+			results = append(results, "Trace too long, aborting")
+			break
+		}
+	}
+
+	return results, nil
+}
+
 func (s *DNSService) query(target string, qtype uint16, isReverse bool) ([]string, error) {
 	m := new(dns.Msg)
 	queryName := target

@@ -20,6 +20,8 @@ var (
 	geoReader *geoip2.Reader
 	geoMu     sync.RWMutex
 	geoPath   = "data/GeoLite2-City.mmdb"
+	geoAccountID string
+	geoLicenseKey string
 )
 
 type GeoInfo struct {
@@ -39,7 +41,14 @@ type GeoInfo struct {
 	Message     string  `json:"message,omitempty"`
 }
 
-func InitializeGeoDB(updateURL string) {
+func InitializeGeoDB(updateURL, licenseKey, accountID string) {
+	geoAccountID = accountID
+	geoLicenseKey = licenseKey
+
+	if updateURL == "" && licenseKey != "" {
+		updateURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", licenseKey)
+	}
+
 	info, err := os.Stat(geoPath)
 	shouldUpdate := false
 
@@ -96,7 +105,16 @@ func ReloadGeoDB() {
 
 func DownloadGeoDB(url string) error {
 	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	if geoAccountID != "" && geoLicenseKey != "" {
+		req.SetBasicAuth(geoAccountID, geoLicenseKey)
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

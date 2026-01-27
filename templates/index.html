@@ -4,12 +4,18 @@
     <div class="glass-panel">
         <div class="row g-3">
             <div class="col-md-8">
-                <textarea 
-                  id="targetInput"
-                  class="form-control matrix-input" 
-                  rows="1"
-                  placeholder="Enter domains or IPs (comma separated)..."
-                  required></textarea>
+                <div class="input-group">
+                    <textarea 
+                      id="targetInput"
+                      class="form-control matrix-input" 
+                      rows="1"
+                      placeholder="Enter domains or IPs (comma separated)..."
+                      required></textarea>
+                    <button class="btn btn-outline-secondary matrix-input px-3" onclick="document.getElementById('fileInput').click()" title="Upload File">
+                        <i class="fas fa-file-upload"></i>
+                    </button>
+                    <input type="file" id="fileInput" style="display:none" onchange="handleFileUpload(this)">
+                </div>
             </div>
             <div class="col-md-4 d-flex gap-2">
                 <button onclick="startQuery()" class="btn btn-danger flex-grow-1 fw-bold">
@@ -46,11 +52,34 @@
                 <input class="form-check-input" type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
                 <label class="form-check-label small text-muted">CT Logs</label>
             </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="cfg-ping">
+                <label class="form-check-label small text-muted">PING</label>
+            </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="cfg-trace">
+                <label class="form-check-label small text-muted">TRACE</label>
+            </div>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="cfg-route">
+                <label class="form-check-label small text-muted">ROUTE</label>
+            </div>
         </div>
     </div>
 </div>
 
 <!-- Dynamic Results Grid -->
+<div class="d-flex justify-content-between align-items-center mb-3 mt-4">
+    <h5 class="mb-0 text-muted small"><i class="fas fa-list me-2"></i> SCAN RESULTS</h5>
+    <div class="d-flex gap-2">
+        <button onclick="exportToCSV()" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-download me-1"></i> EXPORT CSV
+        </button>
+        <button onclick="clearResults()" class="btn btn-sm btn-outline-danger">
+            <i class="fas fa-trash-alt me-1"></i> CLEAR ALL
+        </button>
+    </div>
+</div>
 <div id="resultsGrid" class="results-grid">
     <!-- Cards injected here -->
 </div>
@@ -59,29 +88,32 @@
     <div class="result-card glass-panel" data-target="">
         <div class="d-flex justify-content-between align-items-start mb-3">
             <h5 class="target-name mb-0 font-monospace text-danger"></h5>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 align-items-center">
+                <span class="badge bg-nordic-blue-dim text-nordic-blue small status-badge">pending</span>
                 <i class="fas fa-copy copy-btn" onclick="copyTarget(this)" title="Copy Target"></i>
                 <div class="streaming-indicator"></div>
             </div>
         </div>
+        <div class="progress mb-3" style="height: 2px; background: var(--glass-border);">
+            <div class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+        </div>
         <div class="diagnostic-content">
-            <div class="service-section" data-service="geo">
-                <div class="skeleton skeleton-title"></div>
-                <div class="skeleton skeleton-text"></div>
-            </div>
-            <div class="service-section" data-service="dns">
-                <div class="skeleton skeleton-title"></div>
-                <div class="skeleton skeleton-text"></div>
-                <div class="skeleton skeleton-text" style="width: 60%"></div>
-            </div>
+            <div class="service-section" data-service="geo"></div>
+            <div class="service-section" data-service="ping"></div>
+            <div class="service-section" data-service="route"></div>
+            <div class="service-section" data-service="trace"></div>
+            <div class="service-section" data-service="dns"></div>
             <div class="service-section" data-service="ssl"></div>
             <div class="service-section" data-service="http"></div>
+            <div class="service-section" data-service="whois"></div>
+            <div class="service-section" data-service="ct"></div>
         </div>
     </div>
 </template>
 
 <script>
 let socket;
+const activeScans = new Map();
 
 function connectWS() {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -98,6 +130,31 @@ function connectWS() {
     };
 }
 
+function handleFileUpload(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/bulk-upload', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert(data.error);
+        } else {
+            document.getElementById('targetInput').value = data.targets.join(', ');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Upload failed');
+    });
+}
+
 function startQuery() {
     const targets = document.getElementById('targetInput').value.split(',').map(t => t.trim()).filter(t => t !== "");
     if (targets.length === 0) return;
@@ -109,25 +166,87 @@ function startQuery() {
         http: document.getElementById('cfg-http').checked,
         geo: document.getElementById('cfg-geo').checked,
         ct: document.getElementById('cfg-ct').checked,
+        ping: document.getElementById('cfg-ping').checked,
+        trace: document.getElementById('cfg-trace').checked,
+        route: document.getElementById('cfg-route').checked,
     };
 
-    // Create cards for each target
-    targets.forEach(t => createCard(t));
+    const enabledServices = Object.values(config).filter(v => v).length;
+
+    targets.forEach(t => {
+        createCard(t);
+        activeScans.set(t, {
+            total: enabledServices,
+            completed: 0
+        });
+        updateProgressBar(t);
+    });
 
     socket.send(JSON.stringify({ targets, config }));
 }
 
 function createCard(target) {
-    if (document.querySelector(`[data-target="${target}"]`)) return;
+    let card = document.querySelector(`[data-target="${target}"]`);
+    if (card) {
+        card.remove(); // Re-create for fresh scan
+    }
 
     const template = document.getElementById('resultCardTemplate');
     const clone = template.content.cloneNode(true);
-    const card = clone.querySelector('.result-card');
+    card = clone.querySelector('.result-card');
     
     card.setAttribute('data-target', target);
     card.querySelector('.target-name').innerText = target;
     
+    // Add skeletons to enabled services
+    const config = {
+        whois: document.getElementById('cfg-whois').checked,
+        dns: document.getElementById('cfg-dns').checked,
+        ssl: document.getElementById('cfg-ssl').checked,
+        http: document.getElementById('cfg-http').checked,
+        geo: document.getElementById('cfg-geo').checked,
+        ct: document.getElementById('cfg-ct').checked,
+        ping: document.getElementById('cfg-ping').checked,
+        trace: document.getElementById('cfg-trace').checked,
+        route: document.getElementById('cfg-route').checked,
+    };
+
+    for (const [service, enabled] of Object.entries(config)) {
+        if (enabled) {
+            const section = card.querySelector(`[data-service="${service}"]`);
+            if (section) {
+                section.innerHTML = `
+                    <div class="skeleton-wrapper p-2">
+                        <div class="skeleton mb-2" style="height: 12px; width: 40%"></div>
+                        <div class="skeleton" style="height: 8px; width: 80%"></div>
+                    </div>`;
+            }
+        }
+    }
+
     document.getElementById('resultsGrid').prepend(card);
+}
+
+function updateProgressBar(target) {
+    const card = document.querySelector(`[data-target="${target}"]`);
+    if (!card) return;
+
+    const scan = activeScans.get(target);
+    if (!scan) return;
+
+    const percent = (scan.completed / scan.total) * 100;
+    const bar = card.querySelector('.progress-bar');
+    bar.style.width = `${percent}%`;
+
+    const statusBadge = card.querySelector('.status-badge');
+    if (scan.completed === scan.total) {
+        statusBadge.innerText = "completed";
+        statusBadge.classList.replace('bg-nordic-blue-dim', 'bg-success-dim');
+        statusBadge.classList.replace('text-nordic-blue', 'text-success');
+        card.querySelector('.streaming-indicator').style.display = 'none';
+    } else {
+        statusBadge.innerText = "scanning...";
+    }
 }
 
 function updateUI(msg) {
@@ -137,9 +256,10 @@ function updateUI(msg) {
     const section = card.querySelector(`[data-service="${msg.Service}"]`);
     if (!section) return;
 
-    // Remove streaming indicator if all services done (simple heuristic: after WHOIS or CT)
-    if (msg.Service === 'whois' || msg.Service === 'ct') {
-        card.querySelector('.streaming-indicator').style.display = 'none';
+    const scan = activeScans.get(msg.Target);
+    if (scan) {
+        scan.completed++;
+        updateProgressBar(msg.Target);
     }
 
     let html = "";
@@ -147,20 +267,41 @@ function updateUI(msg) {
 
     switch(msg.Service) {
         case 'geo':
-            if (data) {
+            if (data && !data.error) {
                 html = `<details open><summary>LOCATION & ASN <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Physical location and network owner data"></i></summary>
                         <div class="p-2 small">
                             <i class="fas fa-map-marker-alt me-2 text-danger"></i>${data.city}, ${data.country} (${data.countryCode})<br>
                             <i class="fas fa-network-wired me-2 text-danger"></i>${data.as}
                         </div></details>`;
+            } else {
+                html = `<details><summary>LOCATION & ASN</summary><div class="p-2 text-muted small">Geo data unavailable</div></details>`;
             }
             break;
+        case 'ping':
+            html = `<details open><summary>PING ICMP <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Real-time latency check"></i></summary>
+                    <pre class="p-2 mt-1 rounded bg-dark text-success" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
+                    </details>`;
+            break;
+        case 'route':
+            html = `<details><summary>TRACEROUTE <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Network hop analysis"></i></summary>
+                    <pre class="p-2 mt-1 rounded bg-dark text-info" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
+                    </details>`;
+            break;
+        case 'trace':
+            html = `<details><summary>DNS TRACE <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Recursive resolution from root"></i></summary>
+                    <pre class="p-2 mt-1 rounded" style="font-size: 0.7rem;"><code>${data.join('\n')}</code></pre>
+                    </details>`;
+            break;
         case 'dns':
-            html = `<details><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
-            for (const [type, records] of Object.entries(data)) {
-                html += `[${type}]\n${records.join('\n')}\n\n`;
+            if (data && Object.keys(data).length > 0) {
+                html = `<details><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
+                for (const [type, records] of Object.entries(data)) {
+                    html += `[${type}]\n${records.join('\n')}\n\n`;
+                }
+                html += `</code></pre></details>`;
+            } else {
+                html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-muted small">No records found</div></details>`;
             }
-            html += `</code></pre></details>`;
             break;
         case 'ssl':
             if (data.error) {
@@ -178,15 +319,33 @@ function updateUI(msg) {
             if (data.error) {
                 html = `<details><summary>HTTP</summary><div class="p-2 text-muted small">${data.error}</div></details>`;
             } else {
+                let securityHtml = "";
+                for (const [h, val] of Object.entries(data.security)) {
+                    const isSet = val !== "Not Set";
+                    securityHtml += `<div class="d-flex justify-content-between mb-1">
+                        <span class="text-muted" style="font-size: 0.65rem;">${h}</span>
+                        <span class="badge ${isSet ? 'bg-success-dim text-success' : 'bg-danger-dim text-danger'}" style="font-size: 0.6rem;">${isSet ? 'SECURE' : 'MISSING'}</span>
+                    </div>`;
+                }
+
                 html = `<details><summary>HTTP INSPECTOR <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Security headers and response metadata"></i></summary>
                         <div class="p-2 small">
-                            <strong>Status:</strong> ${data.status}<br>
-                            <strong>Server:</strong> ${data.headers.Server || 'Unknown'}
+                            <div class="d-flex justify-content-between mb-2 align-items-center">
+                                <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${data.status}</span>
+                                <span class="text-muted" style="font-size: 0.7rem;">${data.protocol}</span>
+                            </div>
+                            <div class="mb-2"><strong>Server:</strong> ${data.headers.Server || 'Unknown'}</div>
+                            <div class="security-headers-minimal mb-2">
+                                ${securityHtml}
+                            </div>
+                            <details class="mt-2"><summary><small>FULL HEADERS</small></summary>
+                            <pre class="p-2 mt-1 rounded" style="font-size: 0.7rem;"><code>${JSON.stringify(data.headers, null, 2)}</code></pre>
+                            </details>
                         </div></details>`;
             }
             break;
         case 'whois':
-            if (typeof data === 'object') {
+            if (data && typeof data === 'object') {
                 html = `<details open><summary>WHOIS INTEL</summary>
                         <div class="p-2 small">
                             <strong>Registrar:</strong> ${data.registrar || 'Unknown'}<br>
@@ -196,16 +355,22 @@ function updateUI(msg) {
                         <details><summary><small>RAW DATA</small></summary>
                         <pre class="p-2 mt-1 rounded"><code>${data.raw}</code></pre>
                         </details></details>`;
-            } else {
+            } else if (data) {
                 html = `<details><summary>WHOIS RAW</summary><pre class="p-2 mt-1 rounded"><code>${data}</code></pre></details>`;
+            } else {
+                html = `<details><summary>WHOIS</summary><div class="p-2 text-muted small">No WHOIS data</div></details>`;
             }
             break;
         case 'ct':
-            html = `<details><summary>CT SUBDOMAINS</summary><ul class="list-unstyled p-2 small">`;
-            for (const [sub, _] of Object.entries(data)) {
-                html += `<li><i class="fas fa-caret-right me-2 text-danger"></i>${sub}</li>`;
+            if (data && Object.keys(data).length > 0) {
+                html = `<details><summary>CT SUBDOMAINS</summary><ul class="list-unstyled p-2 small m-0" style="max-height: 150px; overflow-y: auto;">`;
+                for (const [sub, _] of Object.entries(data)) {
+                    html += `<li><i class="fas fa-caret-right me-2 text-danger"></i>${sub}</li>`;
+                }
+                html += `</ul></details>`;
+            } else {
+                html = `<details><summary>CT SUBDOMAINS</summary><div class="p-2 text-muted small">No subdomains found</div></details>`;
             }
-            html += `</ul></details>`;
             break;
     }
 
@@ -218,6 +383,29 @@ function updateUI(msg) {
     });
 
     Prism.highlightAllUnder(section);
+}
+
+function exportToCSV() {
+    const cards = document.querySelectorAll('.result-card');
+    if (cards.length === 0) return;
+
+    let csv = "Target,Service,Data\n";
+    cards.forEach(card => {
+        const target = card.getAttribute('data-target');
+        const sections = card.querySelectorAll('.service-section');
+        sections.forEach(section => {
+            const service = section.getAttribute('data-service');
+            const data = section.innerText.replace(/"/g, '""');
+            csv += `"${target}","${service}","${data}"\n`;
+        });
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `scan_results_${new Date().getTime()}.csv`);
+    a.click();
 }
 
 function copyTarget(btn) {

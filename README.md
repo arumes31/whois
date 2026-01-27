@@ -53,8 +53,9 @@ Set these environment variables to customize the installation:
 - `TRUSTED_IPS`: Comma-separated list of IPs or CIDRs allowed to access `/metrics`.
 - `TRUST_PROXY`: Set to `true` to use `X-Forwarded-For` for client IP (Default: `true`).
 - `USE_CLOUDFLARE`: Set to `true` to use `CF-Connecting-IP` header.
+- `GEOIP_URL`: (Optional) Direct download link for a MaxMind `GeoLite2-City.mmdb` (or `.tar.gz`).
+- `MAXMIND_LICENSE_KEY`: (Recommended) Your MaxMind license key for automatic GeoIP updates.
 - `ENABLE_GEO`, `ENABLE_SSL`, `ENABLE_WHOIS`, `ENABLE_DNS`, `ENABLE_CT`, `ENABLE_HTTP`: Toggle individual diagnostic features (Default: `true`).
-- `GEOIP_URL`: (Optional) Direct download link for a MaxMind `GeoLite2-City.mmdb` (or `.tar.gz`). If provided, the app will automatically download the database on startup (if missing) and update it every 72 hours.
 
 ## Deployment
 

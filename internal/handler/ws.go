@@ -46,6 +46,9 @@ func (h *Handler) HandleWS(c echo.Context) error {
 				SSL   bool `json:"ssl"`
 				HTTP  bool `json:"http"`
 				Geo   bool `json:"geo"`
+				Ping  bool `json:"ping"`
+				Trace bool `json:"trace"`
+				Route bool `json:"route"`
 			} `json:"config"`
 		}
 
@@ -70,6 +73,9 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 	SSL   bool `json:"ssl"`
 	HTTP  bool `json:"http"`
 	Geo   bool `json:"geo"`
+	Ping  bool `json:"ping"`
+	Trace bool `json:"trace"`
+	Route bool `json:"route"`
 }) {
 	var wg sync.WaitGroup
 	ctx := context.Background()
@@ -87,6 +93,39 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		h.wsMu.Lock()
 		ws.WriteMessage(websocket.TextMessage, b)
 		h.wsMu.Unlock()
+	}
+
+	if cfg.Route {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var lines []string
+			service.Traceroute(ctx, target, func(line string) {
+				lines = append(lines, line)
+				send("route", lines)
+			})
+		}()
+	}
+
+	if cfg.Trace && !isIP {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, _ := h.DNS.Trace(target)
+			send("trace", res)
+		}()
+	}
+
+	if cfg.Ping {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var lines []string
+			service.Ping(ctx, target, 4, func(line string) {
+				lines = append(lines, line)
+				send("ping", lines) // Send updated lines
+			})
+		}()
 	}
 
 	if cfg.Whois && h.AppConfig.EnableWhois {

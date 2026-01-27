@@ -12,6 +12,9 @@ services:
       - CONFIG_USER=${CONFIG_USER:-admin}
       - CONFIG_PASS=${CONFIG_PASS:-admin}
       - SECRET_KEY=${SECRET_KEY:-change-me-for-production}
+      - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
+      - MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
+      - GEOIP_URL=${GEOIP_URL}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

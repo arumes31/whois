@@ -32,20 +32,20 @@
         </div>
         
         <nav class="flex-grow-1">
-            <a href="/" class="nav-link active">
+            <a href="/" class="nav-link {{ if eq .Request.URL.Path "/" }}active{{ end }}">
                 <i class="fas fa-search"></i> Dashboard
             </a>
-            <a href="/login" class="nav-link">
-                <i class="fas fa-shield-halved"></i> Scanner
+            <a href="/scanner" class="nav-link {{ if eq .Request.URL.Path "/scanner" }}active{{ end }}">
+                <i class="fas fa-shield-halved"></i> Port Scanner
             </a>
-            <a href="/config" class="nav-link">
-                <i class="fas fa-cog"></i> Configuration
+            <a href="/config" class="nav-link {{ if eq .Request.URL.Path "/config" }}active{{ end }}">
+                <i class="fas fa-cog"></i> Monitoring
             </a>
             <a href="/metrics" target="_blank" class="nav-link">
                 <i class="fas fa-chart-line"></i> System Metrics
             </a>
             <hr class="border-secondary opacity-25">
-            <div class="small text-muted px-3 mb-2">SYSTEM TOOLS</div>
+            <div class="small text-muted px-3 mb-2">NETWORK TOOLS</div>
             <a href="#" onclick="openTool('dns')" class="nav-link">
                 <i class="fas fa-globe"></i> DNS Lookup
             </a>
