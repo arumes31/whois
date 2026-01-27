@@ -1,0 +1,4 @@
+2026/01/27 20:22:06 Downloading background image...
+2026/01/27 20:22:06 Scheduler started
+{"level":"info","ts":"2026-01-27T20:22:06.753+0100","caller":"server/main.go:155","msg":"starting server","port":"5000"}
+2026/01/27 20:22:07 Background image updated
