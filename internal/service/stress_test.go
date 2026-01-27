@@ -26,7 +26,7 @@ func TestStressPortScanner(t *testing.T) {
 }
 
 func TestStressDNSLookup(t *testing.T) {
-	s := NewDNSService()
+	s := NewDNSService("")
 	target := "google.com"
 
 	var wg sync.WaitGroup

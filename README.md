@@ -34,7 +34,7 @@ go test -v ./...
 
 ### Running Stress Tests
 ```bash
-go test -v -tags=stress ./internal/service/stress_test.go
+go test -v -tags=stress ./internal/service
 ```
 
 ## Redis Integration
