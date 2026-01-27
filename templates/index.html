@@ -135,7 +135,16 @@ document.getElementById('cfg-portscan').addEventListener('change', function() {
 </div>
 
 <template id="resultCardTemplate">
-    <div class="result-card glass-panel" data-target="">
+    <div class="result-card glass-panel" data-target="" draggable="true">
+        <div class="card-handle">
+            <div class="d-flex align-items-center gap-2">
+                <i class="fas fa-grip-vertical text-muted"></i>
+                <small class="text-muted fw-bold">WIDGET</small>
+            </div>
+            <button class="btn btn-link btn-sm text-muted p-0" onclick="this.closest('.result-card').remove()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
         <div class="d-flex justify-content-between align-items-start mb-3">
             <h5 class="target-name mb-0 font-monospace text-danger"></h5>
             <div class="d-flex gap-2 align-items-center">
@@ -267,7 +276,31 @@ function createCard(target) {
     card.setAttribute('data-target', target);
     card.querySelector('.target-name').innerText = target;
     
-    // Add skeletons to enabled services
+    // Drag Events
+    card.addEventListener('dragstart', (e) => {
+        card.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', target);
+    });
+
+    card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+    });
+
+    const resultsGrid = document.getElementById('resultsGrid');
+    resultsGrid.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        const draggable = document.querySelector('.dragging');
+        if (!draggable) return;
+        
+        const afterElement = getDragAfterElement(resultsGrid, e.clientX, e.clientY);
+        if (afterElement == null) {
+            resultsGrid.appendChild(draggable);
+        } else {
+            resultsGrid.insertBefore(draggable, afterElement);
+        }
+    });
+
+    // Add skeletons
     const config = {
         whois: document.getElementById('cfg-whois').checked,
         dns: document.getElementById('cfg-dns').checked,
@@ -296,6 +329,23 @@ function createCard(target) {
     }
 
     document.getElementById('resultsGrid').prepend(card);
+}
+
+function getDragAfterElement(container, x, y) {
+    const draggableElements = [...container.querySelectorAll('.result-card:not(.dragging)')];
+
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offsetX = x - box.left - box.width / 2;
+        const offsetY = y - box.top - box.height / 2;
+        const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+        
+        if (distance < closest.distance) {
+            return { distance: distance, element: child };
+        } else {
+            return closest;
+        }
+    }, { distance: Number.POSITIVE_INFINITY }).element;
 }
 
 function updateProgressBar(target) {
@@ -417,7 +467,9 @@ function updateUI(msg) {
                     </details>`;
             break;
         case 'dns':
-            if (data && Object.keys(data).length > 0) {
+            if (data && data.error) {
+                html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
+            } else if (data && Object.keys(data).length > 0) {
                 html = `<details><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
                 for (const [type, records] of Object.entries(data)) {
                     html += `[${type}]\n${records.join('\n')}\n\n`;
@@ -487,7 +539,9 @@ function updateUI(msg) {
             }
             break;
         case 'ct':
-            if (data && Object.keys(data).length > 0) {
+            if (data && data.error) {
+                html = `<details><summary>CT SUBDOMAINS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
+            } else if (data && Object.keys(data).length > 0) {
                 html = `<details><summary>CT SUBDOMAINS</summary><ul class="list-unstyled p-2 small m-0" style="max-height: 150px; overflow-y: auto;">`;
                 for (const [sub, _] of Object.entries(data)) {
                     html += `<li><i class="fas fa-caret-right me-2 text-danger"></i>${sub}</li>`;
@@ -636,11 +690,62 @@ function clearResults() {
     document.getElementById('targetInput').value = "";
 }
 
-// Initialize connection
+// Cookie Management
+function setCookie(name, value, days = 7) {
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = name + '=' + encodeURIComponent(value) + '; expires=' + expires + '; path=/; SameSite=Lax';
+}
+
+function getCookie(name) {
+    return document.cookie.split('; ').reduce((r, v) => {
+        const parts = v.split('=');
+        return parts[0] === name ? decodeURIComponent(parts[1]) : r;
+    }, '');
+}
+
+function saveSettings() {
+    const config = {
+        whois: document.getElementById('cfg-whois').checked,
+        dns: document.getElementById('cfg-dns').checked,
+        ssl: document.getElementById('cfg-ssl').checked,
+        http: document.getElementById('cfg-http').checked,
+        geo: document.getElementById('cfg-geo').checked,
+        ct: document.getElementById('cfg-ct').checked,
+        ping: document.getElementById('cfg-ping').checked,
+        trace: document.getElementById('cfg-trace').checked,
+        route: document.getElementById('cfg-route').checked,
+        subdomains: document.getElementById('cfg-subdomains').checked,
+        portscan: document.getElementById('cfg-portscan').checked,
+        ports: document.getElementById('cfg-ports').value
+    };
+    setCookie('whois_settings', JSON.stringify(config));
+}
+
+function loadSettings() {
+    const saved = getCookie('whois_settings');
+    if (!saved) return;
+    try {
+        const config = JSON.parse(saved);
+        Object.keys(config).forEach(key => {
+            const el = document.getElementById('cfg-' + key);
+            if (el) {
+                if (el.type === 'checkbox') el.checked = config[key];
+                else el.value = config[key];
+            }
+        });
+        // Trigger visibility for ports wrapper
+        document.getElementById('portsInputWrapper').style.display = config.portscan ? 'block' : 'none';
+    } catch (e) { console.error("Failed to load settings", e); }
+}
+
+// Add event listeners for saving
+document.querySelectorAll('.feature-toggle input, #cfg-ports').forEach(el => {
+    el.addEventListener('change', saveSettings);
+});
+
+// Initialize connection and settings
+loadSettings();
 connectWS();
 
-// Initial global tooltips
-tippy('[title]', { theme: 'matrix' });
-</script>
 
 {{ template "footer" . }}

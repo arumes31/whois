@@ -119,17 +119,43 @@ body {
     border-color: var(--nordic-blue);
 }
 
-/* Results Cards */
+/* Results Workspace */
 .results-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
     gap: 1.5rem;
     padding-bottom: 3rem;
+    min-height: 500px;
+    position: relative;
 }
 
 .result-card {
-    animation: cardAppear 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    opacity: 0;
+    position: relative;
+    cursor: default;
+    user-select: none;
+    transition: transform 0.2s, box-shadow 0.2s;
+    height: fit-content;
+}
+
+.result-card.dragging {
+    opacity: 0.5;
+    transform: scale(1.02);
+    cursor: grabbing;
+}
+
+.card-handle {
+    cursor: grab;
+    padding: 0.5rem;
+    margin: -0.5rem -0.5rem 0.5rem -0.5rem;
+    border-bottom: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-handle:active {
+    cursor: grabbing;
 }
 
 @keyframes cardAppear {

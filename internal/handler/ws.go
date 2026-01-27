@@ -187,6 +187,9 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 			if err == nil {
 				send("dns", d)
 				_ = h.Storage.AddDNSHistory(ctx, target, d)
+			} else {
+				send("dns", map[string]string{"error": err.Error()})
+				sendLog("DNS Error: " + err.Error())
 			}
 			sendLog("DNS resolution finished for " + target)
 		}()
@@ -200,6 +203,9 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 			c, err := service.FetchCTSubdomains(target)
 			if err == nil {
 				send("ct", c)
+			} else {
+				send("ct", map[string]string{"error": err.Error()})
+				sendLog("CT Error: " + err.Error())
 			}
 			sendLog("CT log search finished for " + target)
 		}()
