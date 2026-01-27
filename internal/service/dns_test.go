@@ -5,6 +5,7 @@ import (
 )
 
 func TestDNSService_Lookup(t *testing.T) {
+	t.Parallel()
 	s := NewDNSService("")
 
 	tests := []struct {
@@ -45,6 +46,7 @@ func TestDNSService_Lookup(t *testing.T) {
 }
 
 func TestDNSService_DiscoverSubdomains(t *testing.T) {
+	t.Parallel()
 	s := NewDNSService("")
 	res := s.DiscoverSubdomains("google.com", nil)
 
@@ -56,6 +58,7 @@ func TestDNSService_DiscoverSubdomains(t *testing.T) {
 }
 
 func TestDNSService_Trace(t *testing.T) {
+	t.Parallel()
 	s := NewDNSService("")
 	res, err := s.Trace("google.com")
 	if err != nil {

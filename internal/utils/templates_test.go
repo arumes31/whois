@@ -10,6 +10,7 @@ import (
 )
 
 func TestIsIP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    interface{}
 		expected bool
@@ -31,6 +32,7 @@ func TestIsIP(t *testing.T) {
 }
 
 func TestIsValidTarget(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		input    string
 		expected bool
@@ -52,6 +54,7 @@ func TestIsValidTarget(t *testing.T) {
 }
 
 func TestIsTrustedIP(t *testing.T) {
+	t.Parallel()
 	trusted := "127.0.0.1, 192.168.1.0/24"
 	tests := []struct {
 		input    string
@@ -73,6 +76,7 @@ func TestIsTrustedIP(t *testing.T) {
 }
 
 func TestExtractIP(t *testing.T) {
+	t.Parallel()
 	e := echo.New()
 
 	t.Run("Cloudflare", func(t *testing.T) {

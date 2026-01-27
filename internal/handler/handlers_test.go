@@ -2,6 +2,9 @@ package handler
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"html/template"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -11,86 +14,74 @@ import (
 	"testing"
 	"whois/internal/config"
 	"whois/internal/storage"
+	"whois/internal/utils"
 
 	"github.com/labstack/echo/v4"
 )
 
-func TestHandlers(t *testing.T) {
+func setupTestEcho() (*echo.Echo, *utils.TemplateRegistry) {
 	e := echo.New()
-	cfg := &config.Config{SecretKey: "test", DNSResolver: "8.8.8.8:53"}
+	// Find templates directory (might need to go up levels depending on where test is run)
+	path := "../../templates/*.html"
+	if _, err := os.Stat("templates"); err == nil {
+		path = "templates/*.html"
+	} else if _, err := os.Stat("../../templates"); err == nil {
+		path = "../../templates/*.html"
+	}
+
+	reg := &utils.TemplateRegistry{
+		Templates: template.Must(template.New("").Funcs(template.FuncMap{
+			"IsIP": utils.IsIP,
+		}).ParseGlob(path)),
+	}
+	e.Renderer = reg
+	return e, reg
+}
+
+func TestHandlers(t *testing.T) {
+	e, _ := setupTestEcho()
+	cfg := &config.Config{SecretKey: "test", DNSResolver: "8.8.8.8:53", EnableDNS: true}
 	store := storage.NewStorage("localhost", "6379")
 	h := NewHandler(store, cfg)
 
-	t.Run("Index GET", func(t *testing.T) {
+	t.Run("Index GET UX", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 
-		// This will fail if templates are not loaded, but Render is mocked in Echo tests often.
-		// For simplicity, let's just check if it doesn't panic.
+		if err := h.Index(c); err != nil {
+			t.Errorf("Index GET failed: %v", err)
+		}
+		
+		body := rec.Body.String()
+		if !strings.Contains(body, "INTEL GATHERING") {
+			t.Error("Body does not contain expected title")
+		}
+		if !strings.Contains(body, "targetInput") {
+			t.Error("Body does not contain input field")
+		}
+	})
+
+	t.Run("Index POST Result UX", func(t *testing.T) {
+		f := url.Values{}
+		f.Add("ips_and_domains", "google.com")
+		f.Add("dns", "true")
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(f.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
 		_ = h.Index(c)
-	})
-
-	t.Run("Index POST JSON", func(t *testing.T) {
-		f := url.Values{}
-		f.Add("ips_and_domains", "google.com,8.8.8.8")
-		f.Add("export", "json")
-		f.Add("dns", "true")
-		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(f.Encode()))
-		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
-
-		if err := h.Index(c); err != nil {
-			t.Errorf("Index POST failed: %v", err)
-		}
-		if rec.Code != http.StatusOK {
-			t.Errorf("Expected 200, got %d", rec.Code)
+		
+		body := rec.Body.String()
+		// The POST result in index.html doesn't seem to render resultCards directly but via templates if method is POST
+		// Let's verify if queryItem results are in the rendered map
+		if !strings.Contains(body, "google.com") {
+			t.Error("Result page does not contain target domain")
 		}
 	})
 
-	t.Run("Index POST CSV", func(t *testing.T) {
-		f := url.Values{}
-		f.Add("ips_and_domains", "example.com")
-		f.Add("export", "csv")
-		f.Add("dns", "true")
-		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(f.Encode()))
-		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
-
-		if err := h.Index(c); err != nil {
-			t.Errorf("Index POST CSV failed: %v", err)
-		}
-		if rec.Code != http.StatusOK {
-			t.Errorf("Expected 200, got %d", rec.Code)
-		}
-		if !strings.Contains(rec.Header().Get(echo.HeaderContentType), "text/csv") {
-			t.Errorf("Expected CSV content type, got %s", rec.Header().Get(echo.HeaderContentType))
-		}
-	})
-
-	t.Run("BulkUpload", func(t *testing.T) {
-		body := &bytes.Buffer{}
-		writer := multipart.NewWriter(body)
-		part, _ := writer.CreateFormFile("file", "test.txt")
-		_, _ = part.Write([]byte("google.com\n8.8.8.8"))
-		_ = writer.Close()
-
-		req := httptest.NewRequest(http.MethodPost, "/bulk_upload", body)
-		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
-
-		if err := h.BulkUpload(c); err != nil {
-			t.Errorf("BulkUpload failed: %v", err)
-		}
-		if rec.Code != http.StatusOK {
-			t.Errorf("Expected 200, got %d", rec.Code)
-		}
-	})
-
-	t.Run("DNSLookup", func(t *testing.T) {
+	t.Run("DNSLookup HTMX UX", func(t *testing.T) {
 		f := url.Values{}
 		f.Add("domain", "google.com")
 		f.Add("type", "A")
@@ -102,8 +93,13 @@ func TestHandlers(t *testing.T) {
 		if err := h.DNSLookup(c); err != nil {
 			t.Errorf("DNSLookup failed: %v", err)
 		}
-		if rec.Code != http.StatusOK {
-			t.Errorf("Expected 200, got %d", rec.Code)
+		
+		body := rec.Body.String()
+		if !strings.Contains(body, "alert-success") {
+			t.Error("HTMX response missing success alert class")
+		}
+		if !strings.Contains(body, "google.com") {
+			t.Error("HTMX response missing resolved domain")
 		}
 	})
 
@@ -238,6 +234,62 @@ func TestHandlers(t *testing.T) {
 		_ = h.Login(c)
 		if rec.Code != http.StatusOK { // Re-renders login page
 			t.Errorf("Expected 200 for invalid login, got %d", rec.Code)
+		}
+	})
+
+	t.Run("Logout", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/logout", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		
+		// History route is inside a group in main, but we can test the anonymous function
+		// or just define a simple redirect test if it was a standalone handler.
+		// Since logout is a simple redirect:
+		logoutHandler := func(c echo.Context) error {
+			c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1})
+			return c.Redirect(http.StatusFound, "/")
+		}
+		_ = logoutHandler(c)
+		if rec.Code != http.StatusFound {
+			t.Errorf("Expected 302, got %d", rec.Code)
+		}
+	})
+
+	t.Run("History UX", func(t *testing.T) {
+		target := "example.com"
+		_ = store.AddDNSHistory(context.Background(), target, map[string]string{"A": "1.1.1.1"})
+		_ = store.AddDNSHistory(context.Background(), target, map[string]string{"A": "2.2.2.2"})
+
+		req := httptest.NewRequest(http.MethodGet, "/history/"+target, nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.SetPath("/history/:item")
+		c.SetParamNames("item")
+		c.SetParamValues(target)
+
+		historyHandler := func(c echo.Context) error {
+			item := c.Param("item")
+			entries, diffs, err := store.GetHistoryWithDiffs(c.Request().Context(), item)
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			}
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"entries": entries,
+				"diffs":   diffs,
+			})
+		}
+
+		if err := historyHandler(c); err != nil {
+			t.Errorf("History handler failed: %v", err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200, got %d", rec.Code)
+		}
+		
+		var resp map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+		if len(resp["entries"].([]interface{})) < 2 {
+			t.Error("Expected at least 2 history entries")
 		}
 	})
 

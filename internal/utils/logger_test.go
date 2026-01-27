@@ -5,6 +5,7 @@ import (
 )
 
 func TestInitLogger(t *testing.T) {
+	t.Parallel()
 	// Should not panic
 	InitLogger()
 	if Log == nil {
@@ -13,6 +14,7 @@ func TestInitLogger(t *testing.T) {
 }
 
 func TestField(t *testing.T) {
+	t.Parallel()
 	f := Field("key", "value")
 	if f.Key != "key" {
 		t.Errorf("Expected key, got %s", f.Key)

@@ -7,7 +7,9 @@ import (
 )
 
 func TestPing(t *testing.T) {
-	ctx := context.Background()
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	found := false
 	Ping(ctx, "127.0.0.1", 1, func(line string) {
 		if strings.Contains(strings.ToLower(line), "reply from") || strings.Contains(strings.ToLower(line), "64 bytes from") || strings.Contains(line, "127.0.0.1") {

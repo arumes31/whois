@@ -5,6 +5,7 @@ import (
 )
 
 func TestGetGeoInfo(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		target string
 	}{

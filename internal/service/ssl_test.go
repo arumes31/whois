@@ -7,7 +7,7 @@ import (
 )
 
 func TestGetSSLInfo(t *testing.T) {
-
+	t.Parallel()
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusOK)

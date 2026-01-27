@@ -6,6 +6,7 @@ import (
 )
 
 func TestGetEnv(t *testing.T) {
+	t.Parallel()
 	_ = os.Setenv("TEST_KEY", "test_value")
 	defer func() { _ = os.Unsetenv("TEST_KEY") }()
 
@@ -21,6 +22,7 @@ func TestGetEnv(t *testing.T) {
 }
 
 func TestGetEnvBool(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		key      string
 		val      string
@@ -48,6 +50,7 @@ func TestGetEnvBool(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
+	t.Parallel()
 	// Test failure without SECRET_KEY
 	_ = os.Unsetenv("SECRET_KEY")
 	_, err := LoadConfig()
