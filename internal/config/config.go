@@ -22,7 +22,6 @@ type Config struct {
 	EnableDNS         bool
 	EnableCT          bool
 	EnableHTTP        bool
-	GeoIPURL          string
 	MaxMindLicenseKey string
 	MaxMindAccountID  string
 	DNSResolver       string
@@ -45,7 +44,6 @@ func LoadConfig() (*Config, error) {
 		EnableDNS:         getEnvBool("ENABLE_DNS", true),
 		EnableCT:          getEnvBool("ENABLE_CT", true),
 		EnableHTTP:        getEnvBool("ENABLE_HTTP", true),
-		GeoIPURL:          os.Getenv("GEOIP_URL"),
 		MaxMindLicenseKey: os.Getenv("MAXMIND_LICENSE_KEY"),
 		MaxMindAccountID:  os.Getenv("MAXMIND_ACCOUNT_ID"),
 		DNSResolver:       getEnv("DNS_RESOLVER", "8.8.8.8:53"),

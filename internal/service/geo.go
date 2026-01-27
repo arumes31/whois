@@ -41,11 +41,12 @@ type GeoInfo struct {
 	Message     string  `json:"message,omitempty"`
 }
 
-func InitializeGeoDB(updateURL, licenseKey, accountID string) {
+func InitializeGeoDB(licenseKey, accountID string) {
 	geoAccountID = accountID
 	geoLicenseKey = licenseKey
 
-	if updateURL == "" && licenseKey != "" {
+	updateURL := ""
+	if licenseKey != "" {
 		updateURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", licenseKey)
 	}
 

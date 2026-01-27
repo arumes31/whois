@@ -58,7 +58,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 
 	// Startup tasks
 	go service.DownloadBackground()
-	service.InitializeGeoDB(cfg.GeoIPURL, cfg.MaxMindLicenseKey, cfg.MaxMindAccountID)
+	service.InitializeGeoDB(cfg.MaxMindLicenseKey, cfg.MaxMindAccountID)
 	sched.Start()
 
 	// Web Server
