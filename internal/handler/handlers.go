@@ -439,3 +439,29 @@ func (h *Handler) Config(c echo.Context) error {
 		"monitored": items,
 	})
 }
+
+func (h *Handler) Logout(c echo.Context) error {
+	c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1, Path: "/"})
+	return c.Redirect(http.StatusFound, "/")
+}
+
+func (h *Handler) GetHistory(c echo.Context) error {
+	item := c.Param("item")
+	entries, diffs, err := h.Storage.GetHistoryWithDiffs(c.Request().Context(), item)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"entries": entries,
+		"diffs":   diffs,
+	})
+}
+
+func (h *Handler) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if utils.IsTrustedIP(c.RealIP(), h.AppConfig.TrustedIPs) {
+			return next(c)
+		}
+		return c.NoContent(http.StatusForbidden)
+	}
+}

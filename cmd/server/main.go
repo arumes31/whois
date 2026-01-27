@@ -44,14 +44,7 @@ func main() {
 	e.HideBanner = true
 
 	// Prometheus endpoint with IP restriction
-	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			if utils.IsTrustedIP(c.RealIP(), cfg.TrustedIPs) {
-				return next(c)
-			}
-			return c.NoContent(http.StatusForbidden)
-		}
-	})
+	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), h.Metrics)
 
 	// Security Middlewares
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -134,21 +127,8 @@ func main() {
 	g.Use(h.LoginRequired)
 	g.GET("/config", h.Config)
 	g.POST("/config", h.Config)
-	g.GET("/logout", func(c echo.Context) error {
-		c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1})
-		return c.Redirect(http.StatusFound, "/")
-	})
-	g.GET("/history/:item", func(c echo.Context) error {
-		item := c.Param("item")
-		entries, diffs, err := store.GetHistoryWithDiffs(c.Request().Context(), item)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-		}
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"entries": entries,
-			"diffs":   diffs,
-		})
-	})
+	g.GET("/logout", h.Logout)
+	g.GET("/history/:item", h.GetHistory)
 
 	// Start server
 	go func() {

@@ -7,6 +7,7 @@ import (
 )
 
 func TestMonitorService(t *testing.T) {
+	t.Parallel()
 	s := storage.NewStorage("localhost", "6379")
 	ctx := context.Background()
 

@@ -7,6 +7,7 @@ import (
 )
 
 func TestNewScheduler(t *testing.T) {
+	t.Parallel()
 	s := storage.NewStorage("localhost", "6379")
 	sched := NewScheduler(s, "")
 	if sched == nil {
@@ -15,6 +16,7 @@ func TestNewScheduler(t *testing.T) {
 }
 
 func TestDownloadBackground(t *testing.T) {
+	t.Parallel()
 	// Create static dir if not exists
 	_ = os.MkdirAll("static", 0755)
 

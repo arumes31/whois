@@ -7,6 +7,7 @@ import (
 )
 
 func TestStorage(t *testing.T) {
+	t.Parallel()
 	// Attempt to connect to local redis or container
 	s := NewStorage("localhost", "6379")
 	ctx := context.Background()

@@ -242,14 +242,9 @@ func TestHandlers(t *testing.T) {
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 		
-		// History route is inside a group in main, but we can test the anonymous function
-		// or just define a simple redirect test if it was a standalone handler.
-		// Since logout is a simple redirect:
-		logoutHandler := func(c echo.Context) error {
-			c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1})
-			return c.Redirect(http.StatusFound, "/")
+		if err := h.Logout(c); err != nil {
+			t.Errorf("Logout handler failed: %v", err)
 		}
-		_ = logoutHandler(c)
 		if rec.Code != http.StatusFound {
 			t.Errorf("Expected 302, got %d", rec.Code)
 		}
@@ -267,19 +262,7 @@ func TestHandlers(t *testing.T) {
 		c.SetParamNames("item")
 		c.SetParamValues(target)
 
-		historyHandler := func(c echo.Context) error {
-			item := c.Param("item")
-			entries, diffs, err := store.GetHistoryWithDiffs(c.Request().Context(), item)
-			if err != nil {
-				return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
-			}
-			return c.JSON(http.StatusOK, map[string]interface{}{
-				"entries": entries,
-				"diffs":   diffs,
-			})
-		}
-
-		if err := historyHandler(c); err != nil {
+		if err := h.GetHistory(c); err != nil {
 			t.Errorf("History handler failed: %v", err)
 		}
 		if rec.Code != http.StatusOK {
@@ -290,6 +273,36 @@ func TestHandlers(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &resp)
 		if len(resp["entries"].([]interface{})) < 2 {
 			t.Error("Expected at least 2 history entries")
+		}
+	})
+
+	t.Run("Metrics IP Restriction", func(t *testing.T) {
+		h.AppConfig.TrustedIPs = "192.168.1.1"
+		
+		dummyHandler := func(c echo.Context) error {
+			return c.String(http.StatusOK, "ok")
+		}
+		
+		// Test allowed
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "192.168.1.1:1234"
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		
+		mw := h.Metrics(dummyHandler)
+		_ = mw(c)
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200 for trusted IP, got %d", rec.Code)
+		}
+		
+		// Test forbidden
+		req = httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "1.1.1.1:1234"
+		rec = httptest.NewRecorder()
+		c = e.NewContext(req, rec)
+		_ = mw(c)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("Expected 403 for untrusted IP, got %d", rec.Code)
 		}
 	})
 
