@@ -1,129 +1,126 @@
 {{ template "header" . }}
 
-<div class="search-section">
-    <div class="glass-panel border-nordic">
-        <div class="d-flex align-items-center mb-4">
-            <div class="flex-grow-1">
-                <h4 class="mb-0 fw-bold"><i class="fas fa-satellite me-2 text-info"></i> INTEL GATHERING</h4>
-                <p class="text-muted small mb-0">Multi-vector diagnostic analysis for network recon</p>
-            </div>
-            <div class="d-flex gap-2">
-                <button onclick="clearResults()" class="btn btn-sm btn-outline-secondary">
-                    <i class="fas fa-sync-alt me-1"></i> RESET
-                </button>
-            </div>
-        </div>
-        
-        <div class="row g-3">
-            <div class="col-md-9">
-                <div class="input-group">
-                    <span class="input-group-text bg-dark border-secondary text-muted"><i class="fas fa-at"></i></span>
-                    <textarea 
-                      id="targetInput"
-                      class="form-control matrix-input" 
-                      rows="1"
-                      placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
-                      required></textarea>
-                    <button class="btn btn-outline-secondary matrix-input px-3" onclick="document.getElementById('fileInput').click()" title="Batch Upload">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                    </button>
-                    <input type="file" id="fileInput" style="display:none" onchange="handleFileUpload(this)">
-                </div>
-            </div>
-            <div class="col-md-3">
-                <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100">
-                    <i class="fas fa-bolt me-2"></i> INITIATE SCAN
-                </button>
-            </div>
-        </div>
-        
-        <div class="mt-4 pt-3 border-top border-secondary opacity-25">
-            <div class="d-flex flex-wrap gap-2">
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
-                    <label for="cfg-whois"><i class="fas fa-id-card me-1 opacity-50"></i>WHOIS</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-dns" {{ if .config.EnableDNS }}checked{{ end }}>
-                    <label for="cfg-dns"><i class="fas fa-server me-1 opacity-50"></i>DNS</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-subdomains">
-                    <label for="cfg-subdomains"><i class="fas fa-sitemap me-1 opacity-50"></i>PREFIXES</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}>
-                    <label for="cfg-ssl"><i class="fas fa-lock me-1 opacity-50"></i>SSL/TLS</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}>
-                    <label for="cfg-http"><i class="fas fa-browser me-1 opacity-50"></i>HTTP</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
-                    <label for="cfg-geo"><i class="fas fa-globe-americas me-1 opacity-50"></i>GEO/ASN</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
-                    <label for="cfg-ct"><i class="fas fa-history me-1 opacity-50"></i>CT LOGS</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-ping">
-                    <label for="cfg-ping"><i class="fas fa-signal me-1 opacity-50"></i>PING</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-trace">
-                    <label for="cfg-trace"><i class="fas fa-route me-1 opacity-50"></i>TRACE</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-route">
-                    <label for="cfg-route"><i class="fas fa-map-signs me-1 opacity-50"></i>ROUTE</label>
-                </div>
-                <div class="feature-toggle">
-                    <input type="checkbox" id="cfg-portscan">
-                    <label for="cfg-portscan"><i class="fas fa-door-open me-1 opacity-50"></i>PORTS</label>
-                </div>
-                <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
-                    <input type="text" id="cfg-ports" class="form-control matrix-input py-1" style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389" placeholder="Specific ports...">
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-document.getElementById('cfg-portscan').addEventListener('change', function() {
-    document.getElementById('portsInputWrapper').style.display = this.checked ? 'block' : 'none';
-});
-</script>
-
-<!-- Dynamic Results Grid -->
 <div class="row g-4">
-    <div class="col-xl-9">
-        <div class="d-flex justify-content-between align-items-center mb-3 mt-4">
-            <h5 class="mb-0 text-muted small"><i class="fas fa-list me-2"></i> SCAN RESULTS</h5>
-            <div class="d-flex gap-2">
-                <button onclick="exportToCSV()" class="btn btn-sm btn-outline-secondary">
-                    <i class="fas fa-download me-1"></i> EXPORT CSV
-                </button>
-                <button onclick="exportToJSON()" class="btn btn-sm btn-outline-secondary">
-                    <i class="fas fa-file-code me-1"></i> EXPORT JSON
-                </button>
-                <button onclick="copyAllJSON()" class="btn btn-sm btn-outline-info">
-                    <i class="fas fa-copy me-1"></i> COPY ALL
-                </button>
-                <button onclick="clearResults()" class="btn btn-sm btn-outline-danger">
-                    <i class="fas fa-trash-alt me-1"></i> CLEAR ALL
-                </button>
+    <!-- Main Search & Config -->
+    <div class="col-xl-8">
+        <div class="search-section mt-0 mb-4" style="max-width: 100%;">
+            <div class="glass-panel border-nordic">
+                <div class="d-flex align-items-center mb-4">
+                    <div class="flex-grow-1">
+                        <h4 class="mb-0 fw-bold"><i class="fas fa-satellite me-2 text-info"></i> INTEL GATHERING</h4>
+                        <p class="text-muted small mb-0">Multi-vector diagnostic analysis for network recon</p>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button onclick="clearResults()" class="btn btn-sm btn-outline-secondary">
+                            <i class="fas fa-sync-alt me-1"></i> RESET
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="row g-3">
+                    <div class="col-md-9">
+                        <div class="input-group">
+                            <span class="input-group-text bg-dark border-secondary text-muted"><i class="fas fa-at"></i></span>
+                            <textarea 
+                              id="targetInput"
+                              class="form-control matrix-input" 
+                              rows="1"
+                              placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
+                              required></textarea>
+                            <button class="btn btn-outline-secondary matrix-input px-3" onclick="document.getElementById('fileInput').click()" title="Batch Upload">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                            </button>
+                            <input type="file" id="fileInput" style="display:none" onchange="handleFileUpload(this)">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100">
+                            <i class="fas fa-bolt me-2"></i> INITIATE SCAN
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="mt-4 pt-3 border-top border-secondary opacity-25">
+                    <div class="d-flex flex-wrap gap-2">
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
+                            <label for="cfg-whois"><i class="fas fa-id-card me-1 opacity-50"></i>WHOIS</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-dns" {{ if .config.EnableDNS }}checked{{ end }}>
+                            <label for="cfg-dns"><i class="fas fa-server me-1 opacity-50"></i>DNS</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-subdomains">
+                            <label for="cfg-subdomains"><i class="fas fa-sitemap me-1 opacity-50"></i>PREFIXES</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}>
+                            <label for="cfg-ssl"><i class="fas fa-lock me-1 opacity-50"></i>SSL/TLS</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}>
+                            <label for="cfg-http"><i class="fas fa-browser me-1 opacity-50"></i>HTTP</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
+                            <label for="cfg-geo"><i class="fas fa-globe-americas me-1 opacity-50"></i>GEO/ASN</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
+                            <label for="cfg-ct"><i class="fas fa-history me-1 opacity-50"></i>CT LOGS</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-ping">
+                            <label for="cfg-ping"><i class="fas fa-signal me-1 opacity-50"></i>PING</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-trace">
+                            <label for="cfg-trace"><i class="fas fa-route me-1 opacity-50"></i>TRACE</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-route">
+                            <label for="cfg-route"><i class="fas fa-map-signs me-1 opacity-50"></i>ROUTE</label>
+                        </div>
+                        <div class="feature-toggle">
+                            <input type="checkbox" id="cfg-portscan">
+                            <label for="cfg-portscan"><i class="fas fa-door-open me-1 opacity-50"></i>PORTS</label>
+                        </div>
+                        <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
+                            <input type="text" id="cfg-ports" class="form-control matrix-input py-1" style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389" placeholder="Specific ports...">
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
+
+        <!-- Workspace Area -->
         <div id="resultsGrid" class="results-grid">
-            <!-- Cards injected here -->
+            <!-- Widgets injected here -->
         </div>
     </div>
-    
-    <div class="col-xl-3 mt-xl-4">
-        <div class="glass-panel h-100" style="min-height: 400px; display: flex; flex-direction: column;">
+
+    <!-- Quick Tools & Side Info -->
+    <div class="col-xl-4">
+        <div class="glass-panel border-nordic mb-4">
+            <h5 class="fw-bold mb-3"><i class="fas fa-toolbox me-2 text-warning"></i> QUICK TOOLS</h5>
+            <div class="list-group list-group-flush bg-transparent">
+                <a href="#" onclick="openTool('dns')" class="list-group-item bg-transparent text-muted border-secondary py-3 px-0 d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-search-plus me-3 text-info"></i> SINGLE DNS LOOKUP</span>
+                    <i class="fas fa-chevron-right small opacity-50"></i>
+                </a>
+                <a href="#" onclick="openTool('mac')" class="list-group-item bg-transparent text-muted border-secondary py-3 px-0 d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-barcode me-3 text-warning"></i> MAC VENDOR LOOKUP</span>
+                    <i class="fas fa-chevron-right small opacity-50"></i>
+                </a>
+                <a href="/metrics" target="_blank" class="list-group-item bg-transparent text-muted border-0 py-3 px-0 d-flex justify-content-between align-items-center">
+                    <span><i class="fas fa-project-diagram me-3 text-danger"></i> SYSTEM METRICS</span>
+                    <i class="fas fa-external-link-alt small opacity-50"></i>
+                </a>
+            </div>
+        </div>
+
+        <div class="glass-panel border-nordic mb-4 h-100" style="min-height: 400px; display: flex; flex-direction: column;">
             <h6 class="text-muted small border-bottom border-secondary pb-2 mb-3">
                 <i class="fas fa-satellite-dish me-2 text-danger"></i> LIVE ACTIVITY
             </h6>
@@ -246,6 +243,7 @@ function startQuery() {
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
         subdomains: document.getElementById('cfg-subdomains').checked,
+        portscan: document.getElementById('cfg-portscan').checked,
         ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
     };
 
@@ -261,6 +259,23 @@ function startQuery() {
     });
 
     socket.send(JSON.stringify({ targets, config }));
+}
+
+function getDragAfterElement(container, x, y) {
+    const draggableElements = [...container.querySelectorAll('.result-card:not(.dragging)')];
+
+    return draggableElements.reduce((closest, child) => {
+        const box = child.getBoundingClientRect();
+        const offsetX = x - box.left - box.width / 2;
+        const offsetY = y - box.top - box.height / 2;
+        const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
+        
+        if (distance < closest.distance) {
+            return { distance: distance, element: child };
+        } else {
+            return closest;
+        }
+    }, { distance: Number.POSITIVE_INFINITY }).element;
 }
 
 function createCard(target) {
@@ -300,7 +315,7 @@ function createCard(target) {
         }
     });
 
-    // Add skeletons
+    // Add skeletons to enabled services
     const config = {
         whois: document.getElementById('cfg-whois').checked,
         dns: document.getElementById('cfg-dns').checked,
@@ -329,23 +344,6 @@ function createCard(target) {
     }
 
     document.getElementById('resultsGrid').prepend(card);
-}
-
-function getDragAfterElement(container, x, y) {
-    const draggableElements = [...container.querySelectorAll('.result-card:not(.dragging)')];
-
-    return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offsetX = x - box.left - box.width / 2;
-        const offsetY = y - box.top - box.height / 2;
-        const distance = Math.sqrt(offsetX * offsetX + offsetY * offsetY);
-        
-        if (distance < closest.distance) {
-            return { distance: distance, element: child };
-        } else {
-            return closest;
-        }
-    }, { distance: Number.POSITIVE_INFINITY }).element;
 }
 
 function updateProgressBar(target) {
@@ -421,11 +419,13 @@ function updateUI(msg) {
         case 'subdomains':
             if (data && Object.keys(data).length > 0) {
                 html = `<details open><summary>SUBDOMAIN DISCOVERY <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Brute-forced common prefixes"></i></summary>
-                        <div class="p-2 small">`;
+                        <div class="p-2 small">
+`;
                 for (const [fqdn, records] of Object.entries(data)) {
                     html += `<div class="mb-2 pb-1 border-bottom border-secondary opacity-25">
                                 <div class="text-danger fw-bold">${fqdn}</div>
-                                <div class="ps-2">`;
+                                <div class="ps-2">
+`;
                     for (const [type, vals] of Object.entries(records)) {
                         html += `<div class="text-muted" style="font-size: 0.65rem;"><span class="text-info">${type}:</span> ${vals.join(', ')}</div>`;
                     }
@@ -439,7 +439,8 @@ function updateUI(msg) {
         case 'portscan':
             if (data && Object.keys(data).length > 0) {
                 html = `<details open><summary>PORT SCAN <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Open ports and service banners"></i></summary>
-                        <div class="p-2">`;
+                        <div class="p-2">
+`;
                 for (const [port, banner] of Object.entries(data)) {
                     html += `<div class="d-flex justify-content-between align-items-center mb-1 small">
                                 <span class="badge bg-danger-dim text-danger" style="width: 60px;">${port}</span>
@@ -651,6 +652,7 @@ function reScanTarget(btn) {
         trace: document.getElementById('cfg-trace').checked,
         route: document.getElementById('cfg-route').checked,
         subdomains: document.getElementById('cfg-subdomains').checked,
+        portscan: document.getElementById('cfg-portscan').checked,
         ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
     };
     
@@ -670,24 +672,6 @@ function copyTarget(btn) {
     const originalIcon = btn.className;
     btn.className = "fas fa-check text-success";
     setTimeout(() => btn.className = originalIcon, 2000);
-}
-
-// Keyboard Shortcuts
-document.addEventListener('keydown', (e) => {
-    // Ctrl + Enter to scan
-    if (e.ctrlKey && e.key === 'Enter') {
-        startQuery();
-    }
-    // '/' to focus search
-    if (e.key === '/' && document.activeElement.tagName !== 'TEXTAREA') {
-        e.preventDefault();
-        document.getElementById('targetInput').focus();
-    }
-});
-
-function clearResults() {
-    document.getElementById('resultsGrid').innerHTML = "";
-    document.getElementById('targetInput').value = "";
 }
 
 // Cookie Management
@@ -738,6 +722,24 @@ function loadSettings() {
     } catch (e) { console.error("Failed to load settings", e); }
 }
 
+// Keyboard Shortcuts
+document.addEventListener('keydown', (e) => {
+    // Ctrl + Enter to scan
+    if (e.ctrlKey && e.key === 'Enter') {
+        startQuery();
+    }
+    // '/' to focus search
+    if (e.key === '/' && document.activeElement.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        document.getElementById('targetInput').focus();
+    }
+});
+
+function clearResults() {
+    document.getElementById('resultsGrid').innerHTML = "";
+    document.getElementById('targetInput').value = "";
+}
+
 // Add event listeners for saving
 document.querySelectorAll('.feature-toggle input, #cfg-ports').forEach(el => {
     el.addEventListener('change', saveSettings);
@@ -747,5 +749,8 @@ document.querySelectorAll('.feature-toggle input, #cfg-ports').forEach(el => {
 loadSettings();
 connectWS();
 
+// Initial global tooltips
+tippy('[title]', { theme: 'matrix' });
+</script>
 
 {{ template "footer" . }}

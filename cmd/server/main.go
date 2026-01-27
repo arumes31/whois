@@ -109,6 +109,7 @@ func main() {
 		errorData := map[string]interface{}{
 			"Code":    code,
 			"Message": http.StatusText(code),
+			"real_ip": c.RealIP(),
 		}
 
 		if renderErr := c.Render(code, "error.html", errorData); renderErr != nil {
@@ -125,14 +126,14 @@ func main() {
 	e.GET("/ws", h.HandleWS)
 	e.GET("/login", h.Login)
 	e.POST("/login", h.Login)
+	e.GET("/scanner", h.Scanner)
+	e.POST("/scan", h.Scan)
 
 	// Protected
 	g := e.Group("")
 	g.Use(h.LoginRequired)
 	g.GET("/config", h.Config)
 	g.POST("/config", h.Config)
-	g.GET("/scanner", h.Scanner)
-	e.POST("/scan", h.Scan) // Keep as e.POST if HTMX doesn't handle group prefix easily, or g.POST
 	g.GET("/logout", func(c echo.Context) error {
 		c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1})
 		return c.Redirect(http.StatusFound, "/")

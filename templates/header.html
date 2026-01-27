@@ -22,70 +22,19 @@
 <body>
 
 <div class="app-container flex-column">
-    <!-- Top Navigation Bar -->
-    <nav class="navbar navbar-expand-lg border-bottom border-secondary py-3 px-4 glass-panel rounded-0 mb-4 shadow-lg">
-        <div class="container-fluid">
-            <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="/" style="color: var(--nordic-blue)">
+    <header class="py-4 px-4 glass-panel rounded-0 mb-4 border-bottom border-secondary shadow-lg">
+        <div class="container-fluid d-flex justify-content-between align-items-center">
+            <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="/" style="color: var(--nordic-blue); font-size: 1.5rem; text-decoration: none;">
                 <i class="fas fa-shield-halved"></i> WHOIS.IO
             </a>
-            <button class="navbar-toggler border-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-3 ms-lg-4">
-                    <li class="nav-item">
-                        <a class="nav-link px-3 {{ if eq .Request.URL.Path "/" }}active{{ end }}" href="/">
-                            <i class="fas fa-microchip me-2"></i> RECON
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link px-3 {{ if eq .Request.URL.Path "/scanner" }}active{{ end }}" href="/scanner">
-                            <i class="fas fa-bullseye me-2"></i> SCANNER
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link px-3 {{ if eq .Request.URL.Path "/config" }}active{{ end }}" href="/config">
-                            <i class="fas fa-satellite-dish me-2"></i> MONITOR
-                        </a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle px-3" href="#" id="toolsDropdown" role="button" data-bs-toggle="dropdown">
-                            <i class="fas fa-tools me-2"></i> TOOLS
-                        </a>
-                        <ul class="dropdown-menu dropdown-menu-dark glass-panel border-nordic mt-2">
-                            <li><a class="dropdown-item py-2" href="#" onclick="openTool('dns')"><i class="fas fa-search-plus me-2 text-info"></i> DNS Lookup</a></li>
-                            <li><a class="dropdown-item py-2" href="#" onclick="openTool('mac')"><i class="fas fa-barcode me-2 text-warning"></i> MAC Vendor</a></li>
-                            <li><hr class="dropdown-divider opacity-25"></li>
-                            <li><a class="dropdown-item py-2" href="/metrics" target="_blank"><i class="fas fa-project-diagram me-2 text-danger"></i> System Metrics</a></li>
-                        </ul>
-                    </li>
-                </ul>
-                <div class="d-flex align-items-center gap-3">
-                    <span class="badge bg-dark border border-secondary p-2 d-none d-md-block">
-                        <i class="fas fa-network-wired me-1 text-danger"></i> {{ .real_ip }}
-                    </span>
-                    {{ if .stats }}
-                    <div class="d-flex gap-3 me-2">
-                        <span class="small text-muted d-none d-xl-block" title="Monitored Targets">
-                            <i class="fas fa-eye text-info me-1"></i> {{ .stats.MonitoredCount }}
-                        </span>
-                    </div>
-                    {{ end }}
-                </div>
+            <div class="d-flex align-items-center gap-3">
+                <span class="badge bg-dark border border-secondary p-2">
+                    <i class="fas fa-network-wired me-1 text-danger"></i> {{ .real_ip }}
+                </span>
+                <a href="/login" class="btn btn-sm btn-outline-secondary"><i class="fas fa-sign-in-alt me-1"></i> LOGON</a>
             </div>
         </div>
-    </nav>
-
-    <script>
-    function openTool(tool) {
-        // We now use the more robust tool handler in footer.html if available,
-        // but for immediate migration we can keep this or rely on footer's openTool.
-        // The one in footer.html is better as it uses HTMX.
-        if (typeof window.openTool === 'function') {
-            window.openTool(tool);
-        }
-    }
-    </script>
+    </header>
 
     <!-- Main Content Area -->
     <main class="main-content pt-0">
