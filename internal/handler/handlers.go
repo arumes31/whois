@@ -96,6 +96,9 @@ func (h *Handler) Index(c echo.Context) error {
 		if exportType == "csv" {
 			return h.exportCSV(c, results)
 		}
+		if exportType == "json" {
+			return c.JSON(http.StatusOK, results)
+		}
 
 		return c.Render(http.StatusOK, "index.html", map[string]interface{}{
 			"results":       results,

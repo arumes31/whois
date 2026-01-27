@@ -75,6 +75,12 @@
         <button onclick="exportToCSV()" class="btn btn-sm btn-outline-secondary">
             <i class="fas fa-download me-1"></i> EXPORT CSV
         </button>
+        <button onclick="exportToJSON()" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-file-code me-1"></i> EXPORT JSON
+        </button>
+        <button onclick="copyAllJSON()" class="btn btn-sm btn-outline-info">
+            <i class="fas fa-copy me-1"></i> COPY ALL
+        </button>
         <button onclick="clearResults()" class="btn btn-sm btn-outline-danger">
             <i class="fas fa-trash-alt me-1"></i> CLEAR ALL
         </button>
@@ -90,6 +96,7 @@
             <h5 class="target-name mb-0 font-monospace text-danger"></h5>
             <div class="d-flex gap-2 align-items-center">
                 <span class="badge bg-nordic-blue-dim text-nordic-blue small status-badge">pending</span>
+                <i class="fas fa-sync-alt text-muted" style="cursor:pointer; font-size: 0.8rem;" onclick="reScanTarget(this)" title="Re-scan Target"></i>
                 <i class="fas fa-copy copy-btn" onclick="copyTarget(this)" title="Copy Target"></i>
                 <div class="streaming-indicator"></div>
             </div>
@@ -270,8 +277,23 @@ function updateUI(msg) {
             if (data && !data.error) {
                 html = `<details open><summary>LOCATION & ASN <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Physical location and network owner data"></i></summary>
                         <div class="p-2 small">
-                            <i class="fas fa-map-marker-alt me-2 text-danger"></i>${data.city}, ${data.country} (${data.countryCode})<br>
-                            <i class="fas fa-network-wired me-2 text-danger"></i>${data.as}
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-map-marker-alt me-3 text-danger fa-lg"></i>
+                                <div>
+                                    <div class="fw-bold">${data.city || 'Unknown City'}, ${data.country}</div>
+                                    <div class="text-muted" style="font-size:0.65rem;">${data.timezone || ''}</div>
+                                </div>
+                            </div>
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="fas fa-network-wired me-3 text-info fa-lg"></i>
+                                <div>
+                                    <div class="fw-bold">${data.as || 'Unknown AS'}</div>
+                                    <div class="text-muted" style="font-size:0.65rem;">IP: ${data.query}</div>
+                                </div>
+                            </div>
+                            <div class="mt-2 pt-2 border-top border-secondary opacity-25">
+                                <div class="text-muted" style="font-size:0.6rem; letter-spacing:1px;">COORDINATES: ${data.lat}, ${data.lon}</div>
+                            </div>
                         </div></details>`;
             } else {
                 html = `<details><summary>LOCATION & ASN</summary><div class="p-2 text-muted small">Geo data unavailable</div></details>`;
@@ -376,6 +398,26 @@ function updateUI(msg) {
 
     section.innerHTML = html;
     
+    // Add copy button to summary if it doesn't have one
+    section.querySelectorAll('summary').forEach(s => {
+        if (!s.querySelector('.section-copy-btn')) {
+            const btn = document.createElement('i');
+            btn.className = "fas fa-copy ms-2 text-muted section-copy-btn";
+            btn.style = "cursor:pointer; font-size: 0.7rem;";
+            btn.title = "Copy Section";
+            btn.onclick = (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const text = s.parentElement.querySelector('div, pre, ul').innerText;
+                navigator.clipboard.writeText(text.trim());
+                const original = btn.className;
+                btn.className = "fas fa-check text-success ms-2";
+                setTimeout(() => btn.className = original, 1500);
+            };
+            s.appendChild(btn);
+        }
+    });
+
     // Initialize tooltips for new content
     tippy(section.querySelectorAll('.help-icon'), {
         theme: 'matrix',
@@ -406,6 +448,61 @@ function exportToCSV() {
     a.setAttribute('href', url);
     a.setAttribute('download', `scan_results_${new Date().getTime()}.csv`);
     a.click();
+}
+
+function exportToJSON() {
+    const data = getAllResultsData();
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.setAttribute('href', url);
+    a.setAttribute('download', `scan_results_${new Date().getTime()}.json`);
+    a.click();
+}
+
+function copyAllJSON() {
+    const data = getAllResultsData();
+    navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+    alert("All results copied to clipboard as JSON");
+}
+
+function getAllResultsData() {
+    const cards = document.querySelectorAll('.result-card');
+    const results = [];
+    cards.forEach(card => {
+        const target = card.getAttribute('data-target');
+        const sections = {};
+        card.querySelectorAll('.service-section').forEach(section => {
+            const service = section.getAttribute('data-service');
+            sections[service] = section.innerText.trim();
+        });
+        results.push({ target, services: sections });
+    });
+    return results;
+}
+
+function reScanTarget(btn) {
+    const target = btn.closest('.result-card').getAttribute('data-target');
+    const config = {
+        whois: document.getElementById('cfg-whois').checked,
+        dns: document.getElementById('cfg-dns').checked,
+        ssl: document.getElementById('cfg-ssl').checked,
+        http: document.getElementById('cfg-http').checked,
+        geo: document.getElementById('cfg-geo').checked,
+        ct: document.getElementById('cfg-ct').checked,
+        ping: document.getElementById('cfg-ping').checked,
+        trace: document.getElementById('cfg-trace').checked,
+        route: document.getElementById('cfg-route').checked,
+    };
+    
+    const enabledServices = Object.values(config).filter(v => v).length;
+    createCard(target);
+    activeScans.set(target, {
+        total: enabledServices,
+        completed: 0
+    });
+    updateProgressBar(target);
+    socket.send(JSON.stringify({ targets: [target], config }));
 }
 
 function copyTarget(btn) {

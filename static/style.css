@@ -167,6 +167,26 @@ pre, code {
     font-weight: 600;
 }
 
+.btn-outline-secondary, .btn-outline-info, .btn-outline-danger {
+    border-color: var(--glass-border);
+    color: var(--text-muted);
+}
+
+.btn-outline-secondary:hover, .btn-outline-info:hover, .btn-outline-danger:hover {
+    background: var(--nordic-blue-dim);
+    border-color: var(--nordic-blue);
+    color: var(--nordic-blue);
+}
+
+.section-copy-btn {
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+summary:hover .section-copy-btn {
+    opacity: 1;
+}
+
 .streaming-indicator {
     width: 8px;
     height: 8px;
