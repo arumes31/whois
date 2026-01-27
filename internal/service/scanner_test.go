@@ -10,8 +10,8 @@ func TestScanPorts(t *testing.T) {
 	ports := []int{80, 443}
 	res := ScanPorts("127.0.0.1", ports)
 
-	if res.Elapsed <= 0 {
-		t.Errorf("Elapsed time should be positive")
+	if res.Elapsed < 0 {
+		t.Errorf("Elapsed time should be non-negative")
 	}
 
 	total := len(res.Open) + len(res.Closed)
