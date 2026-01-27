@@ -13,9 +13,12 @@ type DNSService struct {
 	Resolver string
 }
 
-func NewDNSService() *DNSService {
+func NewDNSService(resolver string) *DNSService {
+	if resolver == "" {
+		resolver = "8.8.8.8:53"
+	}
 	return &DNSService{
-		Resolver: "8.8.8.8:53",
+		Resolver: resolver,
 	}
 }
 

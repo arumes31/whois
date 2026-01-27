@@ -5,7 +5,7 @@ import (
 )
 
 func TestDNSService_Lookup(t *testing.T) {
-	s := NewDNSService()
+	s := NewDNSService("")
 
 	// Test Domain Lookup
 	res, err := s.Lookup("google.com", false)
@@ -28,7 +28,7 @@ func TestDNSService_Lookup(t *testing.T) {
 }
 
 func TestDNSService_DiscoverSubdomains(t *testing.T) {
-	s := NewDNSService()
+	s := NewDNSService("")
 	res := s.DiscoverSubdomains("google.com", nil)
 
 	if len(res) == 0 {

@@ -32,7 +32,7 @@ func main() {
 	// Dependencies
 	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
 	h := handler.NewHandler(store, cfg)
-	sched := service.NewScheduler(store)
+	sched := service.NewScheduler(store, cfg.DNSResolver)
 
 	// Startup tasks
 	go service.DownloadBackground()

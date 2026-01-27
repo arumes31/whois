@@ -25,6 +25,7 @@ type Config struct {
 	GeoIPURL          string
 	MaxMindLicenseKey string
 	MaxMindAccountID  string
+	DNSResolver       string
 }
 
 func LoadConfig() (*Config, error) {
@@ -47,6 +48,7 @@ func LoadConfig() (*Config, error) {
 		GeoIPURL:          os.Getenv("GEOIP_URL"),
 		MaxMindLicenseKey: os.Getenv("MAXMIND_LICENSE_KEY"),
 		MaxMindAccountID:  os.Getenv("MAXMIND_ACCOUNT_ID"),
+		DNSResolver:       getEnv("DNS_RESOLVER", "8.8.8.8:53"),
 	}
 
 	if cfg.SecretKey == "" {

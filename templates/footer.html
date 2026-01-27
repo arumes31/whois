@@ -1,4 +1,5 @@
 {{ define "footer" }}
+</div> <!-- End container-fluid -->
 </main> <!-- End Main Content -->
 </div> <!-- End App Container -->
 
@@ -22,7 +23,8 @@
 
 <script>
     function openTool(type) {
-        const modal = new bootstrap.Modal(document.getElementById('toolModal'));
+        const modalEl = document.getElementById('toolModal');
+        const modal = new bootstrap.Modal(modalEl);
         const title = document.getElementById('toolTitle');
         const body = document.getElementById('toolBody');
         

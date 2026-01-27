@@ -25,114 +25,73 @@
 </head>
 <body>
 
-<div class="app-container">
-    <!-- Sidebar Navigation -->
-    <aside class="sidebar">
-        <div class="sidebar-logo">
-            <i class="fas fa-terminal"></i> WHOIS.IO
-        </div>
-        
-        <nav class="flex-grow-1">
-            <div class="small text-muted px-3 mb-2 opacity-50">CORE MODULES</div>
-            <a href="/" class="nav-link {{ if eq .Request.URL.Path "/" }}active{{ end }}">
-                <i class="fas fa-microchip"></i> RECON DASHBOARD
+<div class="app-container flex-column">
+    <!-- Top Navigation Bar -->
+    <nav class="navbar navbar-expand-lg border-bottom border-secondary py-3 px-4 glass-panel rounded-0 mb-4">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold text-danger d-flex align-items-center gap-2" href="/">
+                <i class="fas fa-terminal"></i> WHOIS.IO
             </a>
-            <a href="/scanner" class="nav-link {{ if eq .Request.URL.Path "/scanner" }}active{{ end }}">
-                <i class="fas fa-bullseye"></i> TARGET SCANNER
-            </a>
-            <a href="/config" class="nav-link {{ if eq .Request.URL.Path "/config" }}active{{ end }}">
-                <i class="fas fa-satellite-dish"></i> MONITORING
-            </a>
-            
-            <hr class="border-secondary opacity-25">
-            <div class="small text-muted px-3 mb-2 opacity-50">QUICK TOOLS</div>
-            <a href="#" onclick="openTool('dns')" class="nav-link">
-                <i class="fas fa-search-plus"></i> DNS LOOKUP
-            </a>
-            <a href="#" onclick="openTool('mac')" class="nav-link">
-                <i class="fas fa-barcode"></i> MAC VENDOR
-            </a>
-
-            <hr class="border-secondary opacity-25">
-            <div class="small text-muted px-3 mb-2 opacity-50">ANALYTICS</div>
-            <a href="/metrics" target="_blank" class="nav-link">
-                <i class="fas fa-project-diagram"></i> SYSTEM METRICS
-            </a>
-        </nav>
-        
-        <div class="sidebar-footer">
-            <div class="glass-panel p-2 text-center mb-2">
-                <div class="d-flex justify-content-center gap-2 mb-2">
-                    <a href="https://github.com/arumes31/whois" target="_blank" class="text-muted small"><i class="fab fa-github"></i></a>
-                    <a href="#" class="text-muted small"><i class="fas fa-book"></i></a>
+            <button class="navbar-toggler border-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-3 ms-lg-4">
+                    <li class="nav-item">
+                        <a class="nav-link px-3 {{ if eq .Request.URL.Path "/" }}active{{ end }}" href="/">
+                            <i class="fas fa-microchip me-2"></i> RECON
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link px-3 {{ if eq .Request.URL.Path "/scanner" }}active{{ end }}" href="/scanner">
+                            <i class="fas fa-bullseye me-2"></i> SCANNER
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link px-3 {{ if eq .Request.URL.Path "/config" }}active{{ end }}" href="/config">
+                            <i class="fas fa-satellite-dish me-2"></i> MONITOR
+                        </a>
+                    </li>
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle px-3" href="#" id="toolsDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-tools me-2"></i> TOOLS
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-dark glass-panel border-nordic mt-2">
+                            <li><a class="dropdown-item py-2" href="#" onclick="openTool('dns')"><i class="fas fa-search-plus me-2 text-info"></i> DNS Lookup</a></li>
+                            <li><a class="dropdown-item py-2" href="#" onclick="openTool('mac')"><i class="fas fa-barcode me-2 text-warning"></i> MAC Vendor</a></li>
+                            <li><hr class="dropdown-divider opacity-25"></li>
+                            <li><a class="dropdown-item py-2" href="/metrics" target="_blank"><i class="fas fa-project-diagram me-2 text-danger"></i> System Metrics</a></li>
+                        </ul>
+                    </li>
+                </ul>
+                <div class="d-flex align-items-center gap-3">
+                    <span class="badge bg-dark border border-secondary p-2 d-none d-md-block">
+                        <i class="fas fa-network-wired me-1 text-danger"></i> {{ .real_ip }}
+                    </span>
+                    {{ if .stats }}
+                    <div class="d-flex gap-3 me-2">
+                        <span class="small text-muted d-none d-xl-block" title="Monitored Targets">
+                            <i class="fas fa-eye text-info me-1"></i> {{ .stats.MonitoredCount }}
+                        </span>
+                    </div>
+                    {{ end }}
                 </div>
-                <small class="text-muted">v2.5.0-Go</small>
             </div>
         </div>
-    </aside>
+    </nav>
 
     <script>
     function openTool(tool) {
-        if (tool === 'dns') {
-            const domain = prompt("Enter domain for DNS lookup:");
-            if (domain) {
-                const formData = new FormData();
-                formData.append('domain', domain);
-                formData.append('type', 'A');
-                fetch('/dns_lookup', { method: 'POST', body: formData })
-                    .then(r => r.text())
-                    .then(html => {
-                        showModal("DNS Lookup: " + domain, html);
-                    });
-            }
-        } else if (tool === 'mac') {
-            const mac = prompt("Enter MAC address:");
-            if (mac) {
-                const formData = new FormData();
-                formData.append('mac', mac);
-                fetch('/mac_lookup', { method: 'POST', body: formData })
-                    .then(r => r.text())
-                    .then(html => {
-                        showModal("MAC Lookup: " + mac, html);
-                    });
-            }
+        // We now use the more robust tool handler in footer.html if available,
+        // but for immediate migration we can keep this or rely on footer's openTool.
+        // The one in footer.html is better as it uses HTMX.
+        if (typeof window.openTool === 'function') {
+            window.openTool(tool);
         }
-    }
-
-    function showModal(title, content) {
-        // Simple dynamic modal using Bootstrap if available, or alert fallback
-        // For simplicity in this specialized tool, we use a basic overlay
-        const overlay = document.createElement('div');
-        overlay.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.8);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;";
-        overlay.onclick = (e) => { if(e.target === overlay) overlay.remove(); };
-        
-        const modal = document.createElement('div');
-        modal.className = "glass-panel";
-        modal.style = "max-width:600px; width:100%; max-height:80vh; overflow-y:auto; position:relative;";
-        modal.innerHTML = `<div class="d-flex justify-content-between mb-3"><h5>${title}</h5><button class="btn btn-sm btn-outline-secondary" onclick="this.parentElement.parentElement.parentElement.remove()">×</button></div><div>${content}</div>`;
-        
-        overlay.appendChild(modal);
-        document.body.appendChild(overlay);
     }
     </script>
 
     <!-- Main Content Area -->
-    <main class="main-content">
-        <header class="d-flex justify-content-between align-items-center mb-4">
-            <div>
-                <h4 class="mb-0">Network Diagnostics</h4>
-                <p class="text-muted small mb-0">System status: <span class="text-success">Operational</span></p>
-            </div>
-            <div class="d-flex gap-3">
-                {{ if .stats }}
-                <div class="d-flex gap-2 me-3">
-                    <span class="small text-muted"><i class="fas fa-eye me-1"></i> {{ .stats.MonitoredCount }} Monitored</span>
-                    <span class="small text-muted"><i class="fas fa-history me-1"></i> {{ .stats.HistoryCount }} Targets</span>
-                </div>
-                {{ end }}
-                <span class="badge bg-dark border border-secondary p-2">
-                    <i class="fas fa-network-wired me-1"></i> {{ .real_ip }}
-                </span>
-            </div>
-        </header>
+    <main class="main-content pt-0">
+        <div class="container-fluid px-4">
 {{ end }}
