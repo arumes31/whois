@@ -14,14 +14,14 @@ func TestNewServer(t *testing.T) {
 	t.Parallel()
 	// Setup environment
 	_ = os.Setenv("SECRET_KEY", "test-secret")
-	defer os.Unsetenv("SECRET_KEY")
+	defer func() { _ = os.Unsetenv("SECRET_KEY") }()
 
 	// Change to project root so templates can be found
 	_ = os.Chdir("../../")
 
 	utils.InitLogger()
 	cfg, _ := config.LoadConfig()
-	
+
 	e := NewServer(cfg)
 	if e == nil {
 		t.Fatal("NewServer returned nil")
@@ -30,7 +30,7 @@ func TestNewServer(t *testing.T) {
 	// Test a basic route to ensure templates are loaded and middleware works
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	
+
 	e.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {

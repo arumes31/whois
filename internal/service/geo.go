@@ -49,23 +49,17 @@ func InitializeGeoDB(updateURL, licenseKey, accountID string) {
 		updateURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", licenseKey)
 	}
 
-	info, err := os.Stat(geoPath)
+	_, err := os.Stat(geoPath)
 	shouldUpdate := false
 
 	if os.IsNotExist(err) {
 		fmt.Println("GeoIP database missing, downloading...")
 		shouldUpdate = true
-	} else if err == nil {
-		// Check age - update if older than 72 hours
-		if time.Since(info.ModTime()) > 72*time.Hour {
-			fmt.Println("GeoIP database older than 72h, queueing update...")
-			shouldUpdate = true
-		}
 	}
 
 	if shouldUpdate && updateURL != "" {
 		if err := DownloadGeoDB(updateURL); err != nil {
-			fmt.Printf("Failed to update GeoIP DB: %v\n", err)
+			fmt.Printf("Failed to download GeoIP DB: %v\n", err)
 		}
 	}
 
@@ -73,13 +67,14 @@ func InitializeGeoDB(updateURL, licenseKey, accountID string) {
 
 	// Start background watcher for 72h updates
 	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
+		ticker := time.NewTicker(6 * time.Hour) // Check every 6h instead of 1h to be more efficient
 		for range ticker.C {
 			if updateURL == "" {
 				continue
 			}
 			if stat, err := os.Stat(geoPath); err == nil {
 				if time.Since(stat.ModTime()) > 72*time.Hour {
+					fmt.Println("GeoIP database older than 72h, performing periodic update...")
 					_ = DownloadGeoDB(updateURL)
 					ReloadGeoDB()
 				}
