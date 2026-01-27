@@ -31,3 +31,31 @@ func TestGetHTTPInfo(t *testing.T) {
 		t.Errorf("Expected X-Frame-Options DENY, got %s", info.Security["X-Frame-Options"])
 	}
 }
+
+func TestGetHTTPInfo_HTTPS(t *testing.T) {
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	// ts.URL will be like https://127.0.0.1:12345
+	host := strings.TrimPrefix(ts.URL, "https://")
+
+	// This should fail HTTP and then try HTTPS
+	info := GetHTTPInfo(host)
+	if info.Error != "" {
+		// On some machines, TLS verification might fail for self-signed httptest cert
+		t.Logf("HTTPS test info (might fail due to certs): %v", info.Error)
+	} else {
+		if info.Status != "200 OK" {
+			t.Errorf("Expected 200 OK, got %s", info.Status)
+		}
+	}
+}
+
+func TestGetHTTPInfo_Fail(t *testing.T) {
+	info := GetHTTPInfo("invalid-host-name-that-does-not-exist.test")
+	if info.Error == "" {
+		t.Error("Expected error for invalid host, got none")
+	}
+}

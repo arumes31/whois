@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/tls"
 	"net/http"
 	"time"
 )
@@ -19,6 +20,9 @@ func GetHTTPInfo(host string) *HTTPInfo {
 	start := time.Now()
 	client := &http.Client{
 		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return http.ErrUseLastResponse
@@ -29,8 +33,11 @@ func GetHTTPInfo(host string) *HTTPInfo {
 
 	url := "http://" + host
 	resp, err := client.Get(url)
-	if err != nil {
-		// Try HTTPS if HTTP fails
+	if err != nil || (resp != nil && resp.StatusCode == http.StatusBadRequest) {
+		// Try HTTPS if HTTP fails or returns 400 (which happens when talking HTTP to HTTPS port)
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 		url = "https://" + host
 		resp, err = client.Get(url)
 		if err != nil {
