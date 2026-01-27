@@ -29,6 +29,28 @@ func main() {
 		utils.Log.Fatal("config load failed", utils.Field("error", err.Error()))
 	}
 
+	e := NewServer(cfg)
+
+	// Start server
+	go func() {
+		utils.Log.Info("starting server", utils.Field("port", cfg.Port))
+		if err := e.Start(":" + cfg.Port); err != nil && err != http.ErrServerClosed {
+			utils.Log.Fatal("shutting down the server")
+		}
+	}()
+
+	// Graceful Shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt)
+	<-quit
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := e.Shutdown(ctx); err != nil {
+		e.Logger.Fatal(err)
+	}
+}
+
+func NewServer(cfg *config.Config) *echo.Echo {
 	// Dependencies
 	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
 	h := handler.NewHandler(store, cfg)
@@ -130,21 +152,5 @@ func main() {
 	g.GET("/logout", h.Logout)
 	g.GET("/history/:item", h.GetHistory)
 
-	// Start server
-	go func() {
-		utils.Log.Info("starting server", utils.Field("port", cfg.Port))
-		if err := e.Start(":" + cfg.Port); err != nil && err != http.ErrServerClosed {
-			utils.Log.Fatal("shutting down the server")
-		}
-	}()
-
-	// Graceful Shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
-	<-quit
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := e.Shutdown(ctx); err != nil {
-		e.Logger.Fatal(err)
-	}
+	return e
 }
