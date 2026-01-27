@@ -8,8 +8,10 @@ import (
 	"time"
 )
 
+var CTURL = "https://crt.sh/?q=%s&output=json"
+
 func FetchCTSubdomains(domain string) (map[string]interface{}, error) {
-	url := fmt.Sprintf("https://crt.sh/?q=%s&output=json", domain)
+	url := fmt.Sprintf(CTURL, domain)
 	client := &http.Client{Timeout: 60 * time.Second}
 
 	resp, err := client.Get(url)

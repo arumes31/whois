@@ -19,3 +19,15 @@ func TestScanPorts(t *testing.T) {
 		t.Errorf("Expected %d total results, got %d", len(ports), total)
 	}
 }
+
+func TestScanPortsStream(t *testing.T) {
+	ports := []int{80, 443}
+	count := 0
+	ScanPortsStream("127.0.0.1", ports, func(port int, banner string, err error) {
+		count++
+	})
+
+	if count != len(ports) {
+		t.Errorf("Expected %d callbacks, got %d", len(ports), count)
+	}
+}

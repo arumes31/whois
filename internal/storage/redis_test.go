@@ -40,4 +40,32 @@ func TestStorage(t *testing.T) {
 	if err != nil || val != "\"test-value\"" { // go-redis Marshals strings with quotes if we use SetCache interface
 		t.Errorf("Cache failed: got %v, want %v", val, "test-value")
 	}
+
+	// Test DNS History
+	target := "example.com"
+	res1 := map[string]string{"A": "1.1.1.1"}
+	res2 := map[string]string{"A": "2.2.2.2"}
+
+	_ = s.AddDNSHistory(ctx, target, res1)
+	_ = s.AddDNSHistory(ctx, target, res2)
+
+	history, err := s.GetDNSHistory(ctx, target)
+	if err != nil || len(history) < 2 {
+		t.Errorf("Failed to get history: %v", err)
+	}
+
+	// Test Diffs
+	_, diffs, err := s.GetHistoryWithDiffs(ctx, target)
+	if err != nil || len(diffs) < 1 {
+		t.Errorf("Failed to get diffs: %v", err)
+	}
+
+	// Test Stats
+	stats, err := s.GetSystemStats(ctx)
+	if err != nil {
+		t.Errorf("Failed to get stats: %v", err)
+	}
+	if stats.HistoryCount < 1 {
+		t.Errorf("Expected at least 1 history key, got %d", stats.HistoryCount)
+	}
 }

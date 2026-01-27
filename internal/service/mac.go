@@ -10,13 +10,15 @@ import (
 	"time"
 )
 
+var MacVendorsURL = "https://api.macvendors.com/%s"
+
 func LookupMacVendor(mac string) (string, error) {
 	// Try local lookup first
 	if vendor, err := localOUILookup(mac); err == nil && vendor != "" {
 		return vendor, nil
 	}
 
-	url := fmt.Sprintf("https://api.macvendors.com/%s", mac)
+	url := fmt.Sprintf(MacVendorsURL, mac)
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(url)
 	if err != nil {

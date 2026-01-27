@@ -15,10 +15,22 @@ func TestFetchCTSubdomains(t *testing.T) {
 	}))
 	defer server.Close()
 
-	// Redirect crt.sh URL to mock server
-	// Note: In real code we'd need to inject the URL, but for unit test we can wrap the logic
-	// or modify the service to accept a base URL.
-	// Since I cannot easily change the service code without permission, I will test the logic
-	// by manually triggering a failure or using a real domain if allowed.
-	// Actually, I'll update the service to support a base URL for better testability.
+	originalURL := CTURL
+	CTURL = server.URL + "/?q=%s&output=json"
+	defer func() { CTURL = originalURL }()
+
+	subs, err := FetchCTSubdomains("example.com")
+	if err != nil {
+		t.Fatalf("FetchCTSubdomains failed: %v", err)
+	}
+
+	if len(subs) != 3 {
+		t.Errorf("Expected 3 subdomains, got %d", len(subs))
+	}
+
+	for _, s := range []string{"api.example.com", "www.example.com", "dev.example.com"} {
+		if _, ok := subs[s]; !ok {
+			t.Errorf("Expected subdomain %s not found", s)
+		}
+	}
 }
