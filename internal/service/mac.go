@@ -15,6 +15,7 @@ var (
 	MacVendorsURL = "https://api.macvendors.com/%s"
 	OUIURL        = "https://standards-oui.ieee.org/oui/oui.txt"
 	OUIPath       = "data/oui.txt"
+	TestMode      = false
 )
 
 func InitializeMACService() {
@@ -24,6 +25,10 @@ func InitializeMACService() {
 	// Initial download if missing
 	if _, err := os.Stat(OUIPath); os.IsNotExist(err) {
 		_ = DownloadOUI()
+	}
+
+	if TestMode {
+		return
 	}
 
 	// Start background watcher for 72h updates
@@ -92,7 +97,11 @@ func LookupMacVendor(ctx context.Context, mac string) (string, error) {
 }
 
 func localOUILookup(mac string) (string, error) {
-	file, err := os.Open("data/oui.txt")
+	if _, err := os.Stat(OUIPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("OUI database missing")
+	}
+
+	file, err := os.Open(OUIPath)
 	if err != nil {
 		return "", err
 	}
