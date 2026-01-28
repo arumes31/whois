@@ -481,3 +481,10 @@ func (h *Handler) Health(c echo.Context) error {
 		"redis":  "connected",
 	})
 }
+
+func (h *Handler) UpdateGeoDB(c echo.Context) error {
+	if err := service.ManualUpdateGeoDB(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"status": "GeoIP database updated successfully"})
+}

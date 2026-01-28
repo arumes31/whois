@@ -2,12 +2,12 @@
 
 <div class="row justify-content-center mt-5">
     <div class="col-md-8 text-center">
-        <div class="card glass p-5">
-            <h1 class="display-1 matrix-primary">ERROR</h1>
-            <h2 class="mb-4">{{ .Code }}</h2>
-            <p class="lead mb-4">{{ .Message }}</p>
-            <hr class="bg-danger">
-            <a href="/" class="btn btn-outline-info btn-lg">RETURN TO CONSOLE</a>
+        <div class="glass-panel p-5">
+            <h1 class="display-1 text-danger fw-bold">ERROR</h1>
+            <h2 class="mb-4 text-nordic-blue">{{ .Code }}</h2>
+            <p class="lead mb-4 text-muted font-monospace italic">{{ .Message }}</p>
+            <hr class="border-secondary opacity-25">
+            <a href="/" class="btn btn-danger btn-lg px-5 fw-bold">RETURN TO CONSOLE</a>
         </div>
     </div>
 </div>

@@ -47,7 +47,7 @@ func TestDownloadGeoDB(t *testing.T) {
 
 	content := []byte("fake mmdb content")
 	header := &tar.Header{
-		Name: "test.mmdb",
+		Name: "GeoLite2-City.mmdb",
 		Size: int64(len(content)),
 	}
 	_ = tw.WriteHeader(header)

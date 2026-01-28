@@ -154,6 +154,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	g.Use(h.LoginRequired)
 	g.GET("/config", h.Config)
 	g.POST("/config", h.Config)
+	g.POST("/config/update-geo", h.UpdateGeoDB)
 	g.GET("/logout", h.Logout)
 	g.GET("/history/:item", h.GetHistory)
 

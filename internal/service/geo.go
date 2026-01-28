@@ -177,7 +177,13 @@ func extractTarGz(r io.Reader) error {
 			return err
 		}
 
-		if strings.HasSuffix(header.Name, ".mmdb") {
+		// Skip directories
+		if header.Typeflag == tar.TypeDir {
+			continue
+		}
+
+		// Look specifically for the City database filename
+		if strings.HasSuffix(header.Name, "GeoLite2-City.mmdb") {
 			out, err := os.Create(geoPath)
 			if err != nil {
 				return err
