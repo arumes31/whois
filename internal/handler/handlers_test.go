@@ -310,6 +310,44 @@ func TestHandlers(t *testing.T) {
 		}
 	})
 
+	t.Run("MacLookup Error", func(t *testing.T) {
+		f := url.Values{}
+		f.Add("mac", "invalid-mac")
+		req := httptest.NewRequest(http.MethodPost, "/mac_lookup", strings.NewReader(f.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		_ = h.MacLookup(c)
+		if !strings.Contains(rec.Body.String(), "alert-danger") {
+			t.Error("Expected error alert for invalid MAC")
+		}
+	})
+
+	t.Run("LoginRequired Middleware", func(t *testing.T) {
+		dummy := func(c echo.Context) error { return c.String(http.StatusOK, "ok") }
+		mw := h.LoginRequired(dummy)
+
+		// No cookie
+		req := httptest.NewRequest(http.MethodGet, "/config", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		_ = mw(c)
+		if rec.Code != http.StatusFound {
+			t.Errorf("Expected redirect, got %d", rec.Code)
+		}
+
+		// Wrong cookie
+		req = httptest.NewRequest(http.MethodGet, "/config", nil)
+		req.AddCookie(&http.Cookie{Name: "session_id", Value: "wrong"})
+		rec = httptest.NewRecorder()
+		c = e.NewContext(req, rec)
+		_ = mw(c)
+		if rec.Code != http.StatusFound {
+			t.Errorf("Expected redirect for wrong session, got %d", rec.Code)
+		}
+	})
+
 	t.Run("Scan No Target", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/scan", nil)
 		rec := httptest.NewRecorder()
