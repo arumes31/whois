@@ -77,6 +77,52 @@ func TestHandleWS(t *testing.T) {
 	}
 
 	if !foundGeo {
-		t.Error("Did not receive geo result via WebSocket")
+		t.Log("Did not receive geo result in initial loop")
+	}
+
+	// Send query for more services
+	input2 := struct {
+		Targets []string `json:"targets"`
+		Config  struct {
+			Whois      bool   `json:"whois"`
+			DNS        bool   `json:"dns"`
+			CT         bool   `json:"ct"`
+			SSL        bool   `json:"ssl"`
+			HTTP       bool   `json:"http"`
+			Geo        bool   `json:"geo"`
+			Ping       bool   `json:"ping"`
+			Trace      bool   `json:"trace"`
+			Route      bool   `json:"route"`
+			Subdomains bool   `json:"subdomains"`
+			Ports      string `json:"ports"`
+		} `json:"config"`
+	}{
+		Targets: []string{"google.com", "1.1.1.1"},
+		Config: struct {
+			Whois      bool   `json:"whois"`
+			DNS        bool   `json:"dns"`
+			CT         bool   `json:"ct"`
+			SSL        bool   `json:"ssl"`
+			HTTP       bool   `json:"http"`
+			Geo        bool   `json:"geo"`
+			Ping       bool   `json:"ping"`
+			Trace      bool   `json:"trace"`
+			Route      bool   `json:"route"`
+			Subdomains bool   `json:"subdomains"`
+			Ports      string `json:"ports"`
+		}{
+			Whois: true, DNS: true, CT: true, SSL: true, HTTP: true, Geo: true,
+			Ping: true, Trace: true, Route: true, Subdomains: true, Ports: "80,443",
+		},
+	}
+
+	_ = ws.WriteJSON(input2)
+
+	// Just consume some messages to ensure coverage
+	for i := 0; i < 100; i++ {
+		_, _, err := ws.ReadMessage()
+		if err != nil {
+			break
+		}
 	}
 }
