@@ -4,7 +4,12 @@ import (
 	"context"
 	"testing"
 	"time"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestStorage(t *testing.T) {
 	t.Parallel()

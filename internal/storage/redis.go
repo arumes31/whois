@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 	"whois/internal/model"
+	"whois/internal/utils"
 
 	"github.com/hexops/gotextdiff"
 	"github.com/hexops/gotextdiff/myers"
@@ -26,22 +27,30 @@ func NewStorage(host, port string) *Storage {
 }
 
 func (s *Storage) GetMonitoredItems(ctx context.Context) ([]string, error) {
-	return s.Client.LRange(ctx, "monitored_items", 0, -1).Result()
+	res, err := s.Client.LRange(ctx, "monitored_items", 0, -1).Result()
+	if err == nil {
+		utils.Log.Debug("redis lrange", utils.Field("key", "monitored_items"), utils.Field("count", len(res)))
+	}
+	return res, err
 }
 
 func (s *Storage) AddMonitoredItem(ctx context.Context, item string) error {
+	utils.Log.Info("redis rpush", utils.Field("key", "monitored_items"), utils.Field("item", item))
 	return s.Client.RPush(ctx, "monitored_items", item).Err()
 }
 
 func (s *Storage) RemoveMonitoredItem(ctx context.Context, item string) error {
+	utils.Log.Info("redis lrem", utils.Field("key", "monitored_items"), utils.Field("item", item))
 	return s.Client.LRem(ctx, "monitored_items", 0, item).Err()
 }
 
 func (s *Storage) GetDNSHistory(ctx context.Context, item string) ([]model.HistoryEntry, error) {
-	val, err := s.Client.LRange(ctx, "dns_history:"+item, 0, -1).Result()
+	historyKey := "dns_history:" + item
+	val, err := s.Client.LRange(ctx, historyKey, 0, -1).Result()
 	if err != nil {
 		return nil, err
 	}
+	utils.Log.Debug("redis lrange", utils.Field("key", historyKey), utils.Field("count", len(val)))
 	var entries []model.HistoryEntry
 	for _, v := range val {
 		var entry model.HistoryEntry
@@ -105,6 +114,7 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 		var lastEntry model.HistoryEntry
 		if json.Unmarshal([]byte(lastEntryJSON), &lastEntry) == nil {
 			if lastEntry.Result == resStr {
+				utils.Log.Debug("redis history unchanged", utils.Field("item", item))
 				return nil
 			}
 		}
@@ -116,6 +126,7 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 	}
 	entryBytes, _ := json.Marshal(entry)
 
+	utils.Log.Info("redis history update", utils.Field("item", item))
 	pipe := s.Client.Pipeline()
 	pipe.LPush(ctx, historyKey, string(entryBytes))
 	pipe.LTrim(ctx, historyKey, 0, 99)
@@ -124,11 +135,18 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 }
 
 func (s *Storage) GetCache(ctx context.Context, key string) (string, error) {
-	return s.Client.Get(ctx, key).Result()
+	res, err := s.Client.Get(ctx, key).Result()
+	if err == nil {
+		utils.Log.Debug("redis cache hit", utils.Field("key", key))
+	} else if err != redis.Nil {
+		utils.Log.Warn("redis cache error", utils.Field("key", key), utils.Field("error", err.Error()))
+	}
+	return res, err
 }
 
 func (s *Storage) SetCache(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
 	val, _ := json.Marshal(value)
+	utils.Log.Debug("redis cache set", utils.Field("key", key), utils.Field("exp", expiration.String()))
 	return s.Client.Set(ctx, key, val, expiration).Err()
 }
 
@@ -147,6 +165,7 @@ func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 		count++
 	}
 
+	utils.Log.Debug("redis stats gathered", utils.Field("monitored", len(monitored)), utils.Field("history", count))
 	return SystemStats{
 		MonitoredCount: len(monitored),
 		HistoryCount:   count,

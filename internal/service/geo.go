@@ -47,6 +47,9 @@ func InitializeGeoDB(licenseKey, accountID string) {
 	geoAccountID = accountID
 	geoLicenseKey = licenseKey
 
+	// Ensure data directory exists
+	_ = os.MkdirAll("data", 0755)
+
 	updateURL := ""
 	if licenseKey != "" {
 		// Using the direct download URL for GeoLite2-City
@@ -85,6 +88,18 @@ func InitializeGeoDB(licenseKey, accountID string) {
 			}
 		}
 	}()
+}
+
+func ManualUpdateGeoDB() error {
+	if geoLicenseKey == "" {
+		return fmt.Errorf("MAXMIND_LICENSE_KEY is not set")
+	}
+	url := fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", geoLicenseKey)
+	err := DownloadGeoDB(url)
+	if err == nil {
+		ReloadGeoDB()
+	}
+	return err
 }
 
 func ReloadGeoDB() {

@@ -19,6 +19,10 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+func init() {
+	utils.TestInitLogger()
+}
+
 func setupTestEcho() (*echo.Echo, *utils.TemplateRegistry) {
 	e := echo.New()
 	// Find templates directory (might need to go up levels depending on where test is run)
