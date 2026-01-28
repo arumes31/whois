@@ -22,7 +22,6 @@ services:
       - ENABLE_DNS=${ENABLE_DNS:-true}
       - ENABLE_CT=${ENABLE_CT:-true}
       - ENABLE_HTTP=${ENABLE_HTTP:-true}
-      - GEOIP_URL=${GEOIP_URL}
       - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
       - MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
       - PORT=5000
