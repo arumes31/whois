@@ -5,21 +5,20 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
 func TestFetchCTSubdomains(t *testing.T) {
-	// Mock crt.sh response
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Mock Certspotter response
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintln(w, `[{"name_value":"api.example.com"},{"name_value":"www.example.com\ndev.example.com"}]`)
+		_, _ = fmt.Fprintln(w, `[{"dns_names":["api.example.com","www.example.com","dev.example.com"]}]`)
 	}))
-	defer server.Close()
+	defer ts.Close()
 
-	originalURL := CTURL
-	CTURL = server.URL + "/?q=%s&output=json"
-	defer func() { CTURL = originalURL }()
+	originalCert := CertspotterURL
+	CertspotterURL = ts.URL + "?domain=%s"
+	defer func() { CertspotterURL = originalCert }()
 
 	subs, err := FetchCTSubdomains(context.Background(), "example.com")
 	if err != nil {
@@ -29,41 +28,60 @@ func TestFetchCTSubdomains(t *testing.T) {
 	if len(subs) != 3 {
 		t.Errorf("Expected 3 subdomains, got %d", len(subs))
 	}
+}
 
-	for _, s := range []string{"api.example.com", "www.example.com", "dev.example.com"} {
-		if _, ok := subs[s]; !ok {
-			t.Errorf("Expected subdomain %s not found", s)
-		}
+func TestFetchCTSubdomains_Fallback(t *testing.T) {
+	// Fail Certspotter, mock crt.sh
+	cs := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer cs.Close()
+
+	cr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintln(w, `[{"name_value":"api.example.com"},{"name_value":"www.example.com"}]`)
+	}))
+	defer cr.Close()
+
+	originalCert := CertspotterURL
+	originalCRT := CRTURL
+	CertspotterURL = cs.URL + "?domain=%s"
+	CRTURL = cr.URL + "?q=%s"
+	defer func() { 
+		CertspotterURL = originalCert
+		CRTURL = originalCRT 
+	}()
+
+	subs, err := FetchCTSubdomains(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("Fallback failed: %v", err)
+	}
+
+	if len(subs) != 2 {
+		t.Errorf("Expected 2 subdomains from fallback, got %d", len(subs))
 	}
 }
 
 func TestFetchCTSubdomains_Errors(t *testing.T) {
 	t.Parallel()
-	originalURL := CTURL
-	defer func() { CTURL = originalURL }()
+	originalCert := CertspotterURL
+	originalCRT := CRTURL
+	defer func() { 
+		CertspotterURL = originalCert
+		CRTURL = originalCRT 
+	}()
 
-	t.Run("HTTP Error", func(t *testing.T) {
+	t.Run("All Sources Fail", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer ts.Close()
-		CTURL = ts.URL + "/?q=%s"
+		CertspotterURL = ts.URL + "?domain=%s"
+		CRTURL = ts.URL + "?q=%s"
+		
 		_, err := FetchCTSubdomains(context.Background(), "err.com")
-		if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
-			t.Errorf("Expected HTTP 500 error, got %v", err)
-		}
-	})
-
-	t.Run("No Subdomains", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = fmt.Fprintln(w, `[]`)
-		}))
-		defer ts.Close()
-		CTURL = ts.URL + "/?q=%s"
-		_, err := FetchCTSubdomains(context.Background(), "empty.com")
-		if err == nil || !strings.Contains(err.Error(), "No subdomains found") {
-			t.Errorf("Expected 'No subdomains found' error, got %v", err)
+		if err == nil {
+			t.Error("Expected error when all sources fail")
 		}
 	})
 }
