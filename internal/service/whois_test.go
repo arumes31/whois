@@ -2,7 +2,12 @@ package service
 
 import (
 	"testing"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestWhois(t *testing.T) {
 	tests := []struct {

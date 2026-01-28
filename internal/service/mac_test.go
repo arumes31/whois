@@ -8,7 +8,12 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestLookupMacVendor(t *testing.T) {
 	t.Parallel()

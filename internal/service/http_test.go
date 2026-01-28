@@ -6,7 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestGetHTTPInfo(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -6,7 +6,12 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestGetSSLInfo(t *testing.T) {
 	t.Parallel()
