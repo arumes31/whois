@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	CRTURL        = "https://crt.sh/?q=%s&output=json"
+	CRTURL         = "https://crt.sh/?q=%s&output=json"
 	CertspotterURL = "https://api.certspotter.com/v1/issuances?domain=%s&include_subdomains=true&expand=dns_names"
 )
 

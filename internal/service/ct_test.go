@@ -47,9 +47,9 @@ func TestFetchCTSubdomains_Fallback(t *testing.T) {
 	originalCRT := CRTURL
 	CertspotterURL = cs.URL + "?domain=%s"
 	CRTURL = cr.URL + "?q=%s"
-	defer func() { 
+	defer func() {
 		CertspotterURL = originalCert
-		CRTURL = originalCRT 
+		CRTURL = originalCRT
 	}()
 
 	subs, err := FetchCTSubdomains(context.Background(), "example.com")
@@ -66,9 +66,9 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 	t.Parallel()
 	originalCert := CertspotterURL
 	originalCRT := CRTURL
-	defer func() { 
+	defer func() {
 		CertspotterURL = originalCert
-		CRTURL = originalCRT 
+		CRTURL = originalCRT
 	}()
 
 	t.Run("All Sources Fail", func(t *testing.T) {
@@ -78,7 +78,7 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 		defer ts.Close()
 		CertspotterURL = ts.URL + "?domain=%s"
 		CRTURL = ts.URL + "?q=%s"
-		
+
 		_, err := FetchCTSubdomains(context.Background(), "err.com")
 		if err == nil {
 			t.Error("Expected error when all sources fail")
