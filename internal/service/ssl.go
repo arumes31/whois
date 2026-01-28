@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/tls"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -21,8 +22,13 @@ func GetSSLInfo(host string) *SSLInfo {
 		InsecureSkipVerify: true,
 	}
 
+	addr := host
+	if !strings.Contains(host, ":") {
+		addr = host + ":443"
+	}
+
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", host+":443", conf)
+	conn, err := tls.DialWithDialer(dialer, "tcp", addr, conf)
 	if err != nil {
 		return &SSLInfo{Error: err.Error()}
 	}

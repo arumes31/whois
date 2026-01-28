@@ -1,6 +1,8 @@
 package service
 
 import (
+	"net"
+	"strings"
 	"testing"
 )
 
@@ -17,6 +19,33 @@ func TestScanPorts(t *testing.T) {
 	total := len(res.Open) + len(res.Closed)
 	if total != len(ports) {
 		t.Errorf("Expected %d total results, got %d", len(ports), total)
+	}
+}
+
+func TestScanPorts_Open(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	host := "127.0.0.1"
+
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			_, _ = conn.Write([]byte("test banner"))
+			_ = conn.Close()
+		}
+	}()
+
+	res := ScanPorts(host, []int{port})
+	if _, ok := res.Open[port]; !ok {
+		t.Errorf("Expected port %d to be open", port)
+	}
+	if !strings.Contains(res.Open[port], "test banner") {
+		t.Errorf("Expected banner 'test banner', got '%s'", res.Open[port])
 	}
 }
 

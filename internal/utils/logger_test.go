@@ -13,6 +13,13 @@ func TestInitLogger(t *testing.T) {
 	}
 }
 
+func TestLoggerFunctions(t *testing.T) {
+	InitLogger()
+	// Just ensure these don't panic
+	Log.Info("test info", Field("k", "v"))
+	Log.Error("test error", Field("k", "v"))
+}
+
 func TestField(t *testing.T) {
 	t.Parallel()
 	f := Field("key", "value")
