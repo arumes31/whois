@@ -38,7 +38,7 @@ func TestNewServer(t *testing.T) {
 	}
 
 	body := rec.Body.String()
-	if !strings.Contains(body, "INTEL GATHERING") {
+	if !strings.Contains(body, "LOOKUP") {
 		t.Error("Body missing expected title, check template loading")
 	}
 }

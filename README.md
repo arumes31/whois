@@ -44,17 +44,36 @@ Access the dashboard at `http://localhost:14400`.
 |----------|-------------|---------|
 | `SECRET_KEY` | Key for session encryption (Required) | - |
 | `CONFIG_USER` | Admin username | admin |
-| `CONFIG_PASS` | Admin password | - |
+| `CONFIG_PASS` | Admin passcode | - |
 | `REDIS_HOST` | Redis server hostname | redis |
-| `TRUSTED_IPS` | IP whitelist for `/metrics` | - |
-| `MAXMIND_LICENSE_KEY` | Optional key for automated GeoIP updates | - |
+| `REDIS_PORT` | Redis server port | 6379 |
+| `PORT` | Web server port | 5000 |
+| `DNS_RESOLVER` | Recursive DNS resolver for discovery | 8.8.8.8:53 |
+| `TRUSTED_IPS` | IP whitelist for `/metrics` (CIDR supported) | - |
+| `TRUST_PROXY` | Use proxy headers for client IP | true |
+| `USE_CLOUDFLARE` | Use CF-Connecting-IP header | false |
+| `MAXMIND_ACCOUNT_ID` | MaxMind Account ID for GeoIP | - |
+| `MAXMIND_LICENSE_KEY` | MaxMind License Key for GeoIP | - |
+| `ENABLE_GEO` | Enable GeoIP/ASN diagnostics | true |
+| `ENABLE_SSL` | Enable SSL/TLS diagnostics | true |
+| `ENABLE_WHOIS` | Enable WHOIS diagnostics | true |
+| `ENABLE_DNS` | Enable advanced DNS diagnostics | true |
+| `ENABLE_CT` | Enable CT log discovery | true |
+| `ENABLE_HTTP` | Enable HTTP inspection | true |
 
-## Local Data Strategy
-To eliminate external API dependencies for GeoIP and MAC lookups, place these files in the `data/` volume:
-1. `oui.txt`: IEEE OUI database.
-2. `GeoLite2-City.mmdb`: MaxMind City database.
+## Deployment
 
-The system will automatically transition to local-first mode upon detection.
+### Docker Hub / GHCR (Recommended)
+You can pull the official image directly:
+```bash
+docker pull ghcr.io/arumes31/whois:latest
+```
+
+### Docker Compose
+```bash
+docker compose up -d
+```
+Access the dashboard at `http://localhost:14400`.
 
 ## Development & Maintenance
 
