@@ -319,7 +319,7 @@ func TestHandlers(t *testing.T) {
 		c := e.NewContext(req, rec)
 
 		_ = h.MacLookup(c)
-		if !strings.Contains(rec.Body.String(), "alert-danger") {
+		if !strings.Contains(rec.Body.String(), "Error:") {
 			t.Error("Expected error alert for invalid MAC")
 		}
 	})

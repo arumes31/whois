@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"bytes"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,6 +10,20 @@ import (
 
 	"github.com/labstack/echo/v4"
 )
+
+func TestTemplateRegistry_Render(t *testing.T) {
+	tmpl := template.Must(template.New("test").Parse("{{.}}"))
+	reg := &TemplateRegistry{Templates: tmpl}
+	
+	buf := new(bytes.Buffer)
+	err := reg.Render(buf, "test", "hello", nil)
+	if err != nil {
+		t.Fatalf("Render failed: %v", err)
+	}
+	if buf.String() != "hello" {
+		t.Errorf("Expected hello, got %s", buf.String())
+	}
+}
 
 func TestIsIP(t *testing.T) {
 	t.Parallel()
