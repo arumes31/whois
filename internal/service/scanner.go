@@ -32,7 +32,7 @@ func ScanPortsStream(ctx context.Context, target string, ports []int, onResult f
 	for _, port := range ports {
 		select {
 		case <-ctx.Done():
-			break
+			return res
 		default:
 		}
 
@@ -40,7 +40,7 @@ func ScanPortsStream(ctx context.Context, target string, ports []int, onResult f
 		select {
 		case <-ctx.Done():
 			wg.Done()
-			break
+			return res
 		case sem <- struct{}{}:
 			go func(p int) {
 				defer wg.Done()
