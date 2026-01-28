@@ -45,6 +45,7 @@ func TestHandlers(t *testing.T) {
 	h := NewHandler(store, cfg)
 
 	t.Run("Index GET UX", func(t *testing.T) {
+		t.Parallel()
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -63,6 +64,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Index POST Result UX", func(t *testing.T) {
+		t.Parallel()
 		f := url.Values{}
 		f.Add("ips_and_domains", "google.com")
 		f.Add("dns", "true")
@@ -82,6 +84,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("DNSLookup HTMX UX", func(t *testing.T) {
+		t.Parallel()
 		f := url.Values{}
 		f.Add("domain", "google.com")
 		f.Add("type", "A")
@@ -104,6 +107,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("MacLookup", func(t *testing.T) {
+		t.Parallel()
 		f := url.Values{}
 		f.Add("mac", "00:11:22:33:44:55")
 		req := httptest.NewRequest(http.MethodPost, "/mac_lookup", strings.NewReader(f.Encode()))
@@ -117,6 +121,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Login", func(t *testing.T) {
+		t.Parallel()
 		req := httptest.NewRequest(http.MethodGet, "/login", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -124,6 +129,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Scanner", func(t *testing.T) {
+		t.Parallel()
 		req := httptest.NewRequest(http.MethodGet, "/scanner", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -131,6 +137,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Login POST", func(t *testing.T) {
+		t.Parallel()
 		f := url.Values{}
 		f.Add("username", "admin")
 		f.Add("password", "pass")
@@ -157,6 +164,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Config GET", func(t *testing.T) {
+		t.Parallel()
 		req := httptest.NewRequest(http.MethodGet, "/config", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -164,6 +172,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Config POST Add/Remove", func(t *testing.T) {
+		t.Parallel()
 		f := url.Values{}
 		f.Add("action", "add")
 		f.Add("item", "example.com")
@@ -193,6 +202,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("BulkUpload Errors", func(t *testing.T) {
+		t.Parallel()
 		// Test wrong extension
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
@@ -226,6 +236,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Login POST Invalid", func(t *testing.T) {
+		t.Parallel()
 		f := url.Values{}
 		f.Add("username", "admin")
 		f.Add("password", "wrong")
@@ -240,6 +251,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Logout", func(t *testing.T) {
+		t.Parallel()
 		req := httptest.NewRequest(http.MethodGet, "/logout", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -253,6 +265,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("History UX", func(t *testing.T) {
+		t.Parallel()
 		target := "example.com"
 		_ = store.AddDNSHistory(context.Background(), target, map[string]string{"A": "1.1.1.1"})
 		_ = store.AddDNSHistory(context.Background(), target, map[string]string{"A": "2.2.2.2"})
@@ -281,6 +294,7 @@ func TestHandlers(t *testing.T) {
 		}
 	})
 	t.Run("Metrics IP Restriction", func(t *testing.T) {
+		t.Parallel()
 		h.AppConfig.TrustedIPs = "192.168.1.1"
 
 		dummyHandler := func(c echo.Context) error {
@@ -311,6 +325,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Health Check", func(t *testing.T) {
+		t.Parallel()
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -323,6 +338,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("MacLookup Error", func(t *testing.T) {
+		t.Parallel()
 		f := url.Values{}
 		f.Add("mac", "invalid-mac")
 		req := httptest.NewRequest(http.MethodPost, "/mac_lookup", strings.NewReader(f.Encode()))
@@ -337,6 +353,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("LoginRequired Middleware", func(t *testing.T) {
+		t.Parallel()
 		dummy := func(c echo.Context) error { return c.String(http.StatusOK, "ok") }
 		mw := h.LoginRequired(dummy)
 
@@ -361,6 +378,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Scan No Target", func(t *testing.T) {
+		t.Parallel()
 		req := httptest.NewRequest(http.MethodPost, "/scan", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
