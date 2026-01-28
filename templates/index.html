@@ -621,18 +621,6 @@ function updateUI(msg) {
     Prism.highlightAllUnder(section);
 }
 
-function copyToClipboard(el) {
-    let text = el.innerText;
-    // For elements with multiple parts, we might want to be smart, but innerText usually works
-    navigator.clipboard.writeText(text.trim());
-    
-    const originalBg = el.style.background;
-    el.style.background = "rgba(45, 90, 39, 0.3)";
-    setTimeout(() => {
-        el.style.background = originalBg;
-    }, 200);
-}
-
 function exportToCSV() {
     const cards = document.querySelectorAll('.result-card');
     if (cards.length === 0) return;

@@ -1,41 +1,48 @@
 {{ if .result.Error }}
-  <div class="alert alert-danger">
-    <strong>Errors:</strong>
-    <ul>
+  <div class="glass-panel p-3 border-danger mb-3">
+    <strong class="text-danger">ERRORS DETECTED:</strong>
+    <ul class="text-muted small mb-0 mt-2">
     {{ range .result.Error }}
       <li>{{ . }}</li>
     {{ end }}
     </ul>
   </div>
 {{ else }}
-  <div class="alert alert-info mb-2">
-    <strong>Target:</strong> {{ .target }} – scanned in {{ printf "%.3f" .result.Elapsed }} s
-  </div>
-
-  {{ if .result.Open }}
-    <div class="alert alert-success">
-      <strong class="text-dark">Open ({{ len .result.Open }})</strong>:
-      <div class="list-group list-group-flush mt-2">
-        {{ range $port, $banner := .result.Open }}
-          <div class="list-group-item bg-light text-dark border-secondary p-1">
-            <small><strong>Port {{ $port }}</strong></small>
-            {{ if $banner }}
-              <pre class="mb-0 text-primary" style="font-size: 0.7rem; overflow: hidden; text-overflow: ellipsis;"><code>{{ $banner }}</code></pre>
-            {{ end }}
-          </div>
-        {{ end }}
-      </div>
+  <div class="glass-panel p-3 mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong class="text-nordic-blue">TARGET: {{ .target }}</strong>
+        <span class="badge bg-nordic-blue-dim text-nordic-blue">ELAPSED: {{ printf "%.3f" .result.Elapsed }}s</span>
     </div>
-  {{ else }}
-    <div class="alert alert-secondary">No open ports detected.</div>
-  {{ end }}
 
-  {{ if .result.Closed }}
-    <details class="mt-2">
-      <summary class="text-muted">Closed ports ({{ len .result.Closed }}) – click to view</summary>
-      <code class="d-block mt-1 text-muted">
-        {{ range $i, $p := .result.Closed }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}
-      </code>
-    </details>
-  {{ end }}
+    {{ if .result.Open }}
+      <div class="mt-3">
+        <strong class="text-success small d-block mb-2">OPEN PORTS ({{ len .result.Open }})</strong>
+        <div class="list-group list-group-flush">
+          {{ range $port, $banner := .result.Open }}
+            <div class="list-group-item bg-transparent text-main border-secondary opacity-75 p-2 clickable-record" onclick="copyToClipboard(this)">
+              <div class="d-flex align-items-center gap-3">
+                  <span class="badge bg-success-dim text-success" style="width: 60px;">{{ $port }}</span>
+                  {{ if $banner }}
+                    <pre class="mb-0 text-info font-monospace" style="font-size: 0.7rem; white-space: pre-wrap;"><code>{{ $banner }}</code></pre>
+                  {{ else }}
+                    <span class="text-muted small italic">Open (No banner)</span>
+                  {{ end }}
+              </div>
+            </div>
+          {{ end }}
+        </div>
+      </div>
+    {{ else }}
+      <div class="alert bg-nordic-blue-dim text-nordic-blue border-0 small mt-3">No open ports detected.</div>
+    {{ end }}
+
+    {{ if .result.Closed }}
+      <details class="mt-3">
+        <summary class="small">CLOSED PORTS ({{ len .result.Closed }})</summary>
+        <div class="p-2 text-muted font-monospace clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;">
+          {{ range $i, $p := .result.Closed }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}
+        </div>
+      </details>
+    {{ end }}
+  </div>
 {{ end }}
