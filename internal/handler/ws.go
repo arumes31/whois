@@ -304,7 +304,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			if len(portList) > 0 {
 				results := make(map[int]string)
 				var pmu sync.Mutex
-				service.ScanPortsStream(target, portList, func(port int, banner string, err error) {
+				service.ScanPortsStream(ctx, target, portList, func(port int, banner string, err error) {
 					if err == nil {
 						pmu.Lock()
 						results[port] = banner

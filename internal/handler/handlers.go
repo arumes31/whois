@@ -336,7 +336,7 @@ func (h *Handler) Scan(c echo.Context) error {
 		}
 	}
 
-	res := service.ScanPorts(target, ports)
+	res := service.ScanPorts(c.Request().Context(), target, ports)
 
 	return c.Render(http.StatusOK, "scan_result.html", map[string]interface{}{
 		"target":    target,

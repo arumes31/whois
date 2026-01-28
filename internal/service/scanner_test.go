@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net"
 	"strings"
 	"testing"
@@ -10,7 +11,7 @@ func TestScanPorts(t *testing.T) {
 	// Scan localhost (assuming common ports might be closed/open)
 	// We'll scan a known open port if possible, but 127.0.0.1 is safe.
 	ports := []int{80, 443}
-	res := ScanPorts("127.0.0.1", ports)
+	res := ScanPorts(context.Background(), "127.0.0.1", ports)
 
 	if res.Elapsed < 0 {
 		t.Errorf("Elapsed time should be non-negative")
@@ -40,7 +41,7 @@ func TestScanPorts_Open(t *testing.T) {
 		}
 	}()
 
-	res := ScanPorts(host, []int{port})
+	res := ScanPorts(context.Background(), host, []int{port})
 	if _, ok := res.Open[port]; !ok {
 		t.Errorf("Expected port %d to be open", port)
 	}
@@ -52,7 +53,7 @@ func TestScanPorts_Open(t *testing.T) {
 func TestScanPortsStream(t *testing.T) {
 	ports := []int{80, 443}
 	count := 0
-	ScanPortsStream("127.0.0.1", ports, func(port int, banner string, err error) {
+	ScanPortsStream(context.Background(), "127.0.0.1", ports, func(port int, banner string, err error) {
 		count++
 	})
 
