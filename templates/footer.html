@@ -37,7 +37,7 @@
                         <option value="A">A</option><option value="AAAA">AAAA</option><option value="MX">MX</option>
                         <option value="TXT">TXT</option><option value="NS">NS</option><option value="PTR">PTR</option>
                     </select>
-                    <button class="btn btn-primary w-100">Execute</button>
+                    <button class="btn btn-danger w-100">EXECUTE LOOKUP</button>
                     <div id="toolSpin" class="htmx-indicator text-center mt-3"><div class="spinner-border text-danger"></div></div>
                     <div id="toolRes" class="mt-3"></div>
                 </form>`;
@@ -46,7 +46,7 @@
             body.innerHTML = `
                 <form hx-post="/mac_lookup" hx-target="#toolRes" hx-indicator="#toolSpin">
                     <input type="text" class="form-control matrix-input mb-3" name="mac" placeholder="00:11:22:33:44:55" required>
-                    <button class="btn btn-primary w-100">Execute</button>
+                    <button class="btn btn-danger w-100">IDENTIFY VENDOR</button>
                     <div id="toolSpin" class="htmx-indicator text-center mt-3"><div class="spinner-border text-danger"></div></div>
                     <div id="toolRes" class="mt-3"></div>
                 </form>`;
