@@ -37,7 +37,7 @@ services:
           cpus: '0.10'
           memory: 128M
     volumes:
-      - ./data:/app/data
+      - whois_data:/app/data
     networks:
       - app-tier
 
@@ -65,3 +65,4 @@ networks:
 
 volumes:
   redis_data:
+  whois_data:

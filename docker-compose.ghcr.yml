@@ -17,11 +17,8 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    deploy:
-      resources:
-        limits:
-          cpus: '0.50'
-          memory: 512M
+    volumes:
+      - whois_data:/app/data
     networks:
       - app-tier
 
@@ -38,10 +35,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-    deploy:
-      resources:
-        limits:
-          memory: 256M
 
 networks:
   app-tier:
@@ -49,3 +42,4 @@ networks:
 
 volumes:
   redis_data:
+  whois_data:
