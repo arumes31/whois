@@ -451,11 +451,11 @@ function updateUI(msg) {
 `;
                 for (const [fqdn, records] of Object.entries(data)) {
                     html += `<div class="mb-2 pb-1 border-bottom border-secondary opacity-25">
-                                <div class="text-danger fw-bold">${fqdn}</div>
+                                <div class="text-danger fw-bold clickable-record" onclick="copyToClipboard(this)">${fqdn}</div>
                                 <div class="ps-2">
 `;
                     for (const [type, vals] of Object.entries(records)) {
-                        html += `<div class="text-muted" style="font-size: 0.65rem;"><span class="text-info">${type}:</span> ${vals.join(', ')}</div>`;
+                        html += `<div class="text-muted" style="font-size: 0.65rem;"><span class="text-info">${type}:</span> <span class="subdomain-item clickable-record" onclick="copyToClipboard(this)">${vals.join(', ')}</span></div>`;
                     }
                     html += `</div></div>`;
                 }
@@ -470,7 +470,7 @@ function updateUI(msg) {
                         <div class="p-2">
 `;
                 for (const [port, banner] of Object.entries(data)) {
-                    html += `<div class="d-flex justify-content-between align-items-center mb-1 small">
+                    html += `<div class="d-flex justify-content-between align-items-center mb-1 small clickable-record" onclick="copyToClipboard(this)">
                                 <span class="badge bg-danger-dim text-danger" style="width: 60px;">${port}</span>
                                 <span class="text-info font-monospace flex-grow-1 ms-2" style="font-size: 0.65rem;">${banner || 'Open (No Banner)'}</span>
                              </div>`;
@@ -482,17 +482,17 @@ function updateUI(msg) {
             break;
         case 'ping':
             html = `<details open><summary>PING ICMP <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Real-time latency check"></i></summary>
-                    <pre class="p-2 mt-1 rounded bg-dark text-success" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
+                    <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
         case 'route':
             html = `<details><summary>TRACEROUTE <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Network hop analysis"></i></summary>
-                    <pre class="p-2 mt-1 rounded bg-dark text-info" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
+                    <pre class="p-2 mt-1 rounded bg-dark text-info clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
         case 'trace':
             html = `<details><summary>DNS TRACE <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Recursive resolution from root"></i></summary>
-                    <pre class="p-2 mt-1 rounded" style="font-size: 0.7rem;"><code>${data.join('\n')}</code></pre>
+                    <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
         case 'dns':
@@ -502,11 +502,11 @@ function updateUI(msg) {
                 html = `<details open><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
                 for (const [type, val] of Object.entries(data)) {
                     if (Array.isArray(val)) {
-                        html += `[${type}]\n${val.join('\n')}\n\n`;
+                        html += `[${type}]\n<span class="clickable-record" onclick="copyToClipboard(this)">${val.join('\n')}</span>\n\n`;
                     } else if (type === "Subdomains") {
                         html += `[${type}]\nFound ${Object.keys(val).length} prefixes\n\n`;
                     } else {
-                        html += `[${type}]\n${JSON.stringify(val, null, 2)}\n\n`;
+                        html += `[${type}]\n<span class="clickable-record" onclick="copyToClipboard(this)">${JSON.stringify(val, null, 2)}</span>\n\n`;
                     }
                 }
                 html += `</code></pre></details>`;
@@ -521,8 +521,8 @@ function updateUI(msg) {
                 html = `<details><summary>SSL/TLS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="TLS Handshake and Certificate Validity"></i></summary>
                         <div class="p-2 small">
                             <span class="badge bg-success mb-2">${data.protocol}</span><br>
-                            <strong>Issuer:</strong> ${data.issuer}<br>
-                            <strong>Expiry:</strong> ${data.expiry.split('T')[0]} (${data.days_left}d)
+                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${data.issuer}</span><br>
+                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Expiry:</strong> ${data.expiry.split('T')[0]} (${data.days_left}d)</span>
                         </div></details>`;
             }
             break;
@@ -533,7 +533,7 @@ function updateUI(msg) {
                 let securityHtml = "";
                 for (const [h, val] of Object.entries(data.security)) {
                     const isSet = val !== "Not Set";
-                    securityHtml += `<div class="d-flex justify-content-between mb-1">
+                    securityHtml += `<div class="d-flex justify-content-between mb-1 clickable-record" onclick="copyToClipboard(this)">
                         <span class="text-muted" style="font-size: 0.65rem;">${h}</span>
                         <span class="badge ${isSet ? 'bg-success-dim text-success' : 'bg-danger-dim text-danger'}" style="font-size: 0.6rem;">${isSet ? 'SECURE' : 'MISSING'}</span>
                     </div>`;
@@ -541,17 +541,17 @@ function updateUI(msg) {
 
                 html = `<details><summary>HTTP INSPECTOR <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="Security headers and response metadata"></i></summary>
                         <div class="p-2 small">
-                            <div class="d-flex justify-content-between mb-2 align-items-center">
+                            <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
                                 <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${data.status}</span>
                                 <span class="badge bg-dark border border-secondary text-info">${data.response_time_ms}ms</span>
                             </div>
                             <div class="mb-2"><strong>Protocol:</strong> ${data.protocol}</div>
-                            <div class="mb-2"><strong>Server:</strong> ${data.headers.Server || 'Unknown'}</div>
+                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Server:</strong> ${data.headers.Server || 'Unknown'}</div>
                             <div class="security-headers-minimal mb-2">
                                 ${securityHtml}
                             </div>
                             <details class="mt-2"><summary><small>FULL HEADERS</small></summary>
-                            <pre class="p-2 mt-1 rounded" style="font-size: 0.7rem;"><code>${JSON.stringify(data.headers, null, 2)}</code></pre>
+                            <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${JSON.stringify(data.headers, null, 2)}</code></pre>
                             </details>
                         </div></details>`;
             }
@@ -560,15 +560,15 @@ function updateUI(msg) {
             if (data && typeof data === 'object') {
                 html = `<details open><summary>WHOIS INTEL</summary>
                         <div class="p-2 small">
-                            <strong>Registrar:</strong> ${data.registrar || 'Unknown'}<br>
-                            <strong>Expires:</strong> ${data.expiry || 'Unknown'}<br>
-                            <strong>Created:</strong> ${data.created || 'Unknown'}
+                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Registrar:</strong> ${data.registrar || 'Unknown'}</div>
+                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Expires:</strong> ${data.expiry || 'Unknown'}</div>
+                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Created:</strong> ${data.created || 'Unknown'}</div>
                         </div>
                         <details><summary><small>RAW DATA</small></summary>
-                        <pre class="p-2 mt-1 rounded"><code>${data.raw}</code></pre>
+                        <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)"><code>${data.raw}</code></pre>
                         </details></details>`;
             } else if (data) {
-                html = `<details><summary>WHOIS RAW</summary><pre class="p-2 mt-1 rounded"><code>${data}</code></pre></details>`;
+                html = `<details><summary>WHOIS RAW</summary><pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)"><code>${data}</code></pre></details>`;
             } else {
                 html = `<details><summary>WHOIS</summary><div class="p-2 text-muted small">No WHOIS data</div></details>`;
             }
@@ -579,7 +579,7 @@ function updateUI(msg) {
             } else if (data && Object.keys(data).length > 0) {
                 html = `<details><summary>CT SUBDOMAINS</summary><ul class="list-unstyled p-2 small m-0" style="max-height: 150px; overflow-y: auto;">`;
                 for (const [sub, _] of Object.entries(data)) {
-                    html += `<li><i class="fas fa-caret-right me-2 text-danger"></i>${sub}</li>`;
+                    html += `<li class="clickable-record" onclick="copyToClipboard(this)"><i class="fas fa-caret-right me-2 text-danger"></i>${sub}</li>`;
                 }
                 html += `</ul></details>`;
             } else {
@@ -600,7 +600,9 @@ function updateUI(msg) {
             btn.onclick = (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                const text = s.parentElement.querySelector('div, pre, ul').innerText;
+                const container = s.parentElement.querySelector('div, pre, ul');
+                // Filter out the copy-click help if present
+                const text = container.innerText;
                 navigator.clipboard.writeText(text.trim());
                 const original = btn.className;
                 btn.className = "fas fa-check text-success ms-2";
@@ -617,6 +619,18 @@ function updateUI(msg) {
     });
 
     Prism.highlightAllUnder(section);
+}
+
+function copyToClipboard(el) {
+    let text = el.innerText;
+    // For elements with multiple parts, we might want to be smart, but innerText usually works
+    navigator.clipboard.writeText(text.trim());
+    
+    const originalBg = el.style.background;
+    el.style.background = "rgba(45, 90, 39, 0.3)";
+    setTimeout(() => {
+        el.style.background = originalBg;
+    }, 200);
 }
 
 function exportToCSV() {

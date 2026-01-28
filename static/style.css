@@ -161,6 +161,23 @@ body {
     font-weight: 800;
 }
 
+.subdomain-item {
+    color: #ffffff !important;
+}
+
+.clickable-record {
+    cursor: copy;
+    transition: background 0.2s;
+    border-radius: 4px;
+    padding: 2px 4px;
+    display: inline-block;
+    width: 100%;
+}
+
+.clickable-record:hover {
+    background: rgba(212, 175, 55, 0.15);
+}
+
 /* Diagnostic Content */
 details {
     background: rgba(0, 0, 0, 0.2);
