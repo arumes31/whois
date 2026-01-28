@@ -1,103 +1,76 @@
-# WHOIS
+# WHOIS | Network Diagnostics & Discovery
 
 [![Build and Publish Docker Image](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml)
 [![Daily Security Scan](https://github.com/arumes31/whois/actions/workflows/security-scan.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/security-scan.yml)
 
-A comprehensive network diagnostic and monitoring tool for performing WHOIS lookups, DNS analysis, and security scanning.
+A high-performance, professional-grade network diagnostic platform designed for deep reconnaissance and system monitoring. Featuring a modern Copper/Brass Steampunk aesthetic with a glassmorphism layout, it provides real-time, multi-vector analysis for IT professionals and security researchers.
 
-## Features
+## Core Capabilities
 
-- **Bulk Query:** Perform WHOIS, DNS (A, AAAA, MX, NS, TXT, SPF, DMARC), and Certificate Transparency (CT) lookups for multiple domains/IPs at once.
-- **High-Speed Live Streaming:** DNS records and subdomain discoveries are streamed to the UI incrementally as they resolve, providing instantaneous feedback.
-- **Customizable Port Scanner:** Specify exact port lists for security scanning with real-time banner grabbing (Login required).
-- **Live Activity Logs:** Detailed diagnostic chain status via WebSockets for all tasks.
-- **Monitoring & History:** Track DNS changes over time with unified diffs and scheduled periodic checks.
-- **System Statistics:** Real-time insights into the number of monitored items and total diagnostic history records.
-- **100% Self-Contained:** All CSS and JS assets (Bootstrap, FontAwesome, PrismJS, HTMX, Tippy, Chart.js) are bundled locally for offline/private network support.
-- **Zero External Calls (Optional):** Supports local MAC OUI and MaxMind GeoIP2 databases to eliminate all external API dependencies.
-- **Copper/Brass Steampunk UI:** High-quality professional aesthetic with modern glassmorphism and reactive components.
+- **Multi-Vector LOOKUP:** Comprehensive analysis including WHOIS data, advanced DNS resolution (A, AAAA, MX, NS, TXT, SPF, DMARC), and GeoIP geolocation.
+- **High-Speed Subdomain Discovery:** Uses multi-source Certificate Transparency (CT) logs (Certspotter primary, crt.sh fallback) with real-time incremental streaming to the UI.
+- **Security Port Scanner:** Specialized tool for open port detection and service banner grabbing. Requires authentication for operational security.
+- **Live WebSocket Streaming:** All diagnostic results and discovery events are pushed to the GUI individually as they complete, ensuring zero-latency feedback.
+- **Automated Monitoring:** Periodic DNS health checks with change detection and unified diff history.
+- **Industrial Logging:** Powered by Uber-Zap structured logging for full auditability of every service request and database operation.
+- **100% Self-Contained:** All assets (CSS, JS, Fonts) are hosted locally. Zero external CDNs required, making it ideal for isolated or air-gapped networks.
 
-## Local Data Sources
+## Technical Architecture
 
-To eliminate external API calls for MAC and GeoIP lookups, place the following files in the `data/` directory:
-1. `data/oui.txt`: Download from [IEEE OUI](https://standards-oui.ieee.org/oui/oui.txt)
-2. `data/GeoLite2-City.mmdb`: Download from [MaxMind](https://dev.maxmind.com/geoip/geolite2-free-geolocation-data)
+### Backend (Go / Echo)
+- **Concurrent Engine:** Leverages Go's goroutines for parallel diagnostic execution with strict `context.Context` lifecycle management.
+- **WebSocket Protocol:** Custom multi-stage completion signaling (`done`/`all_done`) for precise progress tracking and resource cleanup.
+- **Service Layer:** Modular architecture with independent handlers for DNS, WHOIS, SSL, HTTP, and GeoIP.
 
-The application will automatically detect these files and switch to local lookup mode. If `MAXMIND_LICENSE_KEY` is provided, it will manage the MaxMind database updates automatically (every 72 hours).
+### Frontend (HTMX / Bootstrap 5)
+- **Reactive Components:** Uses HTMX for seamless partial page updates and WebSockets for live data feeds.
+- **Theming:** Custom "Copper/Brass Steampunk" palette using modern CSS variables and glassmorphism effects.
+- **Interactivity:** Universal "Click-to-Copy" on all diagnostic records with immediate visual feedback.
 
-## Development & Testing
+### Storage & Persistence (Redis)
+- **Scalable Stats:** Optimized statistics gathering using `SCAN` iterators instead of `KEYS` to maintain performance as history grows.
+- **Data Safety:** Utilizes Docker persistent volumes (`whois_data`) for MMDB and OUI databases to survive container restarts.
 
-### Running Unit Tests
-```bash
-go test -v ./...
-```
+## Installation & Setup
 
-### Running Stress Tests
-```bash
-go test -v -tags=stress ./internal/service
-```
-
-## Redis Integration
-
-Redis is the core of the application's state management:
-- **Caching:** Stores lookup results to minimize external API calls.
-- **Rate Limiting:** Protects endpoints from abuse.
-- **DNS History:** Maintains versioned history of DNS records.
-- **Job Scheduling:** Manages the background monitoring queue.
-
-## Configuration
-
-Set these environment variables to customize the installation:
-- `SECRET_KEY`: Session security (Required for production).
-- `CONFIG_USER` / `CONFIG_PASS`: Credentials for the `/config` tools.
-- `REDIS_HOST`: Hostname of your Redis instance (Default: `redis`).
-- `TRUSTED_IPS`: Comma-separated list of IPs or CIDRs allowed to access `/metrics`.
-- `TRUST_PROXY`: Set to `true` to use `X-Forwarded-For` for client IP (Default: `true`).
-- `USE_CLOUDFLARE`: Set to `true` to use `CF-Connecting-IP` header.
-- `MAXMIND_LICENSE_KEY`: (Recommended) Your MaxMind license key for automatic GeoIP updates.
-- `MAXMIND_ACCOUNT_ID`: (Required for automatic updates) Your MaxMind account ID.
-- `ENABLE_GEO`, `ENABLE_SSL`, `ENABLE_WHOIS`, `ENABLE_DNS`, `ENABLE_CT`, `ENABLE_HTTP`: Toggle individual diagnostic features (Default: `true`).
-
-## Deployment
-
-### Method 1: Docker Compose (Recommended)
-You can use the local build or the pre-built image from GitHub Container Registry (GHCR).
-
-#### Using Local Build
+### Docker Compose (Recommended)
 ```bash
 docker compose up -d
 ```
+Access the dashboard at `http://localhost:14400`.
 
-#### Docker Compose (GHCR)
-Download the compose file:
+### Environment Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `SECRET_KEY` | Key for session encryption (Required) | - |
+| `CONFIG_USER` | Admin username | admin |
+| `CONFIG_PASS` | Admin password | - |
+| `REDIS_HOST` | Redis server hostname | redis |
+| `TRUSTED_IPS` | IP whitelist for `/metrics` | - |
+| `MAXMIND_LICENSE_KEY` | Optional key for automated GeoIP updates | - |
+
+## Local Data Strategy
+To eliminate external API dependencies for GeoIP and MAC lookups, place these files in the `data/` volume:
+1. `oui.txt`: IEEE OUI database.
+2. `GeoLite2-City.mmdb`: MaxMind City database.
+
+The system will automatically transition to local-first mode upon detection.
+
+## Development & Maintenance
+
+### Testing
+The project maintains a high-parallelism test suite:
 ```bash
-curl -O https://raw.githubusercontent.com/arumes31/whois/main/docker-compose.ghcr.yml
+# Run all tests with coverage
+go test -v -cover ./...
 ```
 
-Run the application:
+### Formatting & Linting
+Standard Go toolchain rules apply:
 ```bash
-docker compose -f docker-compose.ghcr.yml up -d
+# Run linter
+golangci-lint run
 ```
-Access the application at `http://localhost:14400`.
 
-### Method 2: Manual Docker Build
-1. **Create a network:**
-   ```bash
-   docker network create whois-net
-   ```
-2. **Start Redis:**
-   ```bash
-   docker run -d --name whois-redis --network whois-net redis
-   ```
-3. **Build and run the app:**
-   ```bash
-   docker build -t whois-app .
-   docker run -d --name whois-web --network whois-net -p 5000:5000 -e REDIS_HOST=whois-redis whois-app
-   ```
-Access the application at `http://localhost:5000`.
-
-## Tech Stack
-- **Backend:** Go / Echo
-- **Frontend:** HTMX / Bootstrap 5 / PrismJS
-- **Storage:** Redis
-- **Data Sources:** github.com/likexian/whois, github.com/miekg/dns, crt.sh, MacVendors API
+## Security Disclosure
+This tool is intended for authorized network diagnostics and research. Users are responsible for complying with local regulations and terms of service for target networks.

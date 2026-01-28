@@ -7,7 +7,7 @@
             <div class="glass-panel border-nordic">
                 <div class="d-flex align-items-center mb-4">
                     <div class="flex-grow-1">
-                        <h4 class="mb-0 fw-bold"><i class="fas fa-satellite me-2 text-info"></i> INTEL GATHERING</h4>
+                        <h4 class="mb-0 fw-bold"><i class="fas fa-satellite me-2 text-info"></i> LOOKUP</h4>
                         <p class="text-muted small mb-0">Multi-vector diagnostic analysis for network recon</p>
                     </div>
                     <div class="d-flex gap-2">
@@ -581,7 +581,7 @@ function updateUI(msg) {
             break;
         case 'whois':
             if (data && typeof data === 'object') {
-                html = `<details open><summary>WHOIS INTEL</summary>
+                html = `<details open><summary>WHOIS DATA</summary>
                         <div class="p-2 small">
                             <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Registrar:</strong> ${data.registrar || 'Unknown'}</div>
                             <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Expires:</strong> ${data.expiry || 'Unknown'}</div>
