@@ -113,6 +113,17 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 
 // DiscoverSubdomains performs a brute-force search for common subdomains
 func (s *DNSService) DiscoverSubdomains(ctx context.Context, domain string, customSubs []string) map[string]interface{} {
+	results := make(map[string]interface{})
+	var mu sync.Mutex
+	_ = s.DiscoverSubdomainsStream(ctx, domain, customSubs, func(fqdn string, res map[string][]string) {
+		mu.Lock()
+		results[fqdn] = res
+		mu.Unlock()
+	})
+	return results
+}
+
+func (s *DNSService) DiscoverSubdomainsStream(ctx context.Context, domain string, customSubs []string, callback func(string, map[string][]string)) error {
 	subs := []string{
 		"www", "mail", "ftp", "webmail", "admin", "cpanel", "login", "secure",
 		"smtp", "pop", "imap", "autodiscover", "autoconfig", "mta-sts",
@@ -131,10 +142,7 @@ func (s *DNSService) DiscoverSubdomains(ctx context.Context, domain string, cust
 		subs = customSubs
 	}
 
-	results := make(map[string]interface{})
-	var mu sync.Mutex
 	var wg sync.WaitGroup
-
 	// Limit concurrency for subdomain discovery
 	sem := make(chan struct{}, 20)
 
@@ -167,14 +175,12 @@ func (s *DNSService) DiscoverSubdomains(ctx context.Context, domain string, cust
 			}
 
 			if len(res) > 0 {
-				mu.Lock()
-				results[fqdn] = res
-				mu.Unlock()
+				callback(fqdn, res)
 			}
 		}(sub)
 	}
 	wg.Wait()
-	return results
+	return nil
 }
 
 func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error) {

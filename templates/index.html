@@ -394,6 +394,20 @@ function updateUI(msg) {
         return;
     }
 
+    if (msg.type === 'all_done') {
+        const card = document.querySelector(`[data-target="${msg.target}"]`);
+        if (card) {
+            const bar = card.querySelector('.progress-bar');
+            bar.style.width = `100%`;
+            const statusBadge = card.querySelector('.status-badge');
+            statusBadge.innerText = "completed";
+            statusBadge.classList.replace('bg-nordic-blue-dim', 'bg-success-dim');
+            statusBadge.classList.replace('text-nordic-blue', 'text-success');
+            card.querySelector('.streaming-indicator').style.display = 'none';
+        }
+        return;
+    }
+
     const card = document.querySelector(`[data-target="${msg.target}"]`);
     if (!card) return;
 

@@ -136,7 +136,21 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		go func() {
 			defer wg.Done()
 			sendLog("Discovering subdomains for " + target)
-			send("subdomains", h.DNS.DiscoverSubdomains(ctx, target, nil))
+			
+			results := make(map[string]interface{})
+			var smu sync.Mutex
+			
+			_ = h.DNS.DiscoverSubdomainsStream(ctx, target, nil, func(fqdn string, res map[string][]string) {
+				smu.Lock()
+				results[fqdn] = res
+				smu.Unlock()
+				
+				// Send incremental result
+				smu.Lock()
+				send("subdomains", results)
+				smu.Unlock()
+			})
+			
 			sendLog("Subdomain discovery completed for " + target)
 			sendDone("subdomains")
 		}()
@@ -289,10 +303,16 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 
 			if len(portList) > 0 {
 				results := make(map[int]string)
+				var pmu sync.Mutex
 				service.ScanPortsStream(target, portList, func(port int, banner string, err error) {
 					if err == nil {
+						pmu.Lock()
 						results[port] = banner
+						pmu.Unlock()
+						
+						pmu.Lock()
 						send("portscan", results)
+						pmu.Unlock()
 					}
 				})
 			}
@@ -304,5 +324,15 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 	go func() {
 		wg.Wait()
 		sendLog("All tasks completed for " + target)
+		
+		// Final 'done' message for the whole card
+		msg := WSMessage{
+			Type:    "all_done",
+			Target:  target,
+		}
+		b, _ := json.Marshal(msg)
+		h.wsMu.Lock()
+		_ = ws.WriteMessage(websocket.TextMessage, b)
+		h.wsMu.Unlock()
 	}()
 }
