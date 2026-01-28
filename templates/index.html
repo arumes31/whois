@@ -743,9 +743,13 @@ function reScanTarget(btn) {
 function copyTarget(btn) {
     const target = btn.closest('.result-card').getAttribute('data-target');
     navigator.clipboard.writeText(target);
-    const originalIcon = btn.className;
-    btn.className = "fas fa-check text-success";
-    setTimeout(() => btn.className = originalIcon, 2000);
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = `<path d="M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"/>`;
+    btn.style.fill = "#2d5a27";
+    setTimeout(() => {
+        btn.innerHTML = originalHTML;
+        btn.style.fill = "currentColor";
+    }, 2000);
 }
 
 // Cookie Management

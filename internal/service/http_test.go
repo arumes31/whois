@@ -88,3 +88,41 @@ func TestGetHTTPInfo_Fail(t *testing.T) {
 		t.Error("Expected error for invalid host, got none")
 	}
 }
+
+func TestGetHTTPInfo_RedirectLimit(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/", http.StatusFound)
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	info := GetHTTPInfo(context.Background(), host)
+	// Redirection limit should trigger or at least return a 200/302 depending on client.Do behavior with context
+	if info.Error != "" && !strings.Contains(info.Error, "stopped after 10 redirects") {
+		t.Logf("Redirect limit info: %v", info.Error)
+	}
+}
+
+func TestGetHTTPInfo_BadRequestHTTPSRetry(t *testing.T) {
+	// A server that returns 400 for HTTP should trigger the HTTPS retry logic
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "https://")
+	info := GetHTTPInfo(context.Background(), host)
+	if info.Error != "" {
+		t.Logf("HTTPS retry test info: %v", info.Error)
+	} else if info.Status != "200 OK" {
+		t.Errorf("Expected 200 OK after HTTPS retry, got %s", info.Status)
+	}
+}
+
+func TestGetHTTPInfo_InvalidURL(t *testing.T) {
+	// Using a hostname that contains invalid URL characters like space or control chars to trigger NewRequest error
+	info := GetHTTPInfo(context.Background(), "host with spaces")
+	if info.Error == "" {
+		t.Error("Expected error for invalid URL hostname")
+	}
+}

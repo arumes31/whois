@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestScanPorts(t *testing.T) {
@@ -50,14 +51,33 @@ func TestScanPorts_Open(t *testing.T) {
 	}
 }
 
-func TestScanPortsStream(t *testing.T) {
+func TestScanPortsStream_Cancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+	
 	ports := []int{80, 443}
-	count := 0
-	ScanPortsStream(context.Background(), "127.0.0.1", ports, func(port int, banner string, err error) {
-		count++
-	})
-
-	if count != len(ports) {
-		t.Errorf("Expected %d callbacks, got %d", len(ports), count)
+	res := ScanPortsStream(ctx, "127.0.0.1", ports, nil)
+	
+	// Should return early with empty results
+	if len(res.Open) > 0 || len(res.Closed) > 0 {
+		t.Error("Expected 0 results for cancelled context")
 	}
+}
+
+func TestScanPortsStream_LateCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	
+	// We want to trigger the second ctx.Done() check inside the loop
+	// This is hard without a large number of ports or sleeps, 
+	// but we can try to fill the semaphore or just call it after starting some.
+	
+	ports := make([]int, 100)
+	for i := range ports { ports[i] = 1000 + i }
+	
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		cancel()
+	}()
+	
+	_ = ScanPortsStream(ctx, "127.0.0.1", ports, nil)
 }

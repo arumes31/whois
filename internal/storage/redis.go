@@ -14,8 +14,23 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+type RedisClient interface {
+	LRange(ctx context.Context, key string, start, stop int64) *redis.StringSliceCmd
+	RPush(ctx context.Context, key string, values ...interface{}) *redis.IntCmd
+	LRem(ctx context.Context, key string, count int64, value interface{}) *redis.IntCmd
+	LIndex(ctx context.Context, key string, index int64) *redis.StringCmd
+	LPush(ctx context.Context, key string, values ...interface{}) *redis.IntCmd
+	LTrim(ctx context.Context, key string, start, stop int64) *redis.StatusCmd
+	Get(ctx context.Context, key string) *redis.StringCmd
+	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
+	Pipeline() redis.Pipeliner
+	Ping(ctx context.Context) *redis.StatusCmd
+	Del(ctx context.Context, keys ...string) *redis.IntCmd
+}
+
 type Storage struct {
-	Client *redis.Client
+	Client RedisClient
 }
 
 func NewStorage(host, port string) *Storage {

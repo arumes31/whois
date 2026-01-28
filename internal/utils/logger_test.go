@@ -30,3 +30,10 @@ func TestField(t *testing.T) {
 		t.Errorf("Expected value, got String=%s Interface=%v", f.String, f.Interface)
 	}
 }
+
+func TestTestInitLogger(t *testing.T) {
+	TestInitLogger()
+	if Log == nil {
+		t.Error("Log was not initialized in test mode")
+	}
+}

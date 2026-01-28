@@ -71,7 +71,7 @@ func TestIsValidTarget(t *testing.T) {
 
 func TestIsTrustedIP(t *testing.T) {
 	t.Parallel()
-	trusted := "127.0.0.1, 192.168.1.0/24"
+	trusted := "127.0.0.1, , 192.168.1.0/24, invalid/cidr"
 	tests := []struct {
 		input    string
 		expected bool
