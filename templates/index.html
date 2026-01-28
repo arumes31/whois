@@ -7,12 +7,12 @@
             <div class="glass-panel border-nordic">
                 <div class="d-flex align-items-center mb-4">
                     <div class="flex-grow-1">
-                        <h4 class="mb-0 fw-bold"><i class="fas fa-cogs me-2 text-info"></i> MECHANICAL DIAGNOSTICS</h4>
-                        <p class="text-muted small mb-0">Steam-powered analytical engine for network reconnaissance</p>
+                        <h4 class="mb-0 fw-bold"><i class="fas fa-satellite me-2 text-info"></i> INTEL GATHERING</h4>
+                        <p class="text-muted small mb-0">Multi-vector diagnostic analysis for network recon</p>
                     </div>
                     <div class="d-flex gap-2">
                         <button onclick="clearResults()" class="btn btn-sm btn-outline-secondary">
-                            <i class="fas fa-undo me-1"></i> FLUSH
+                            <i class="fas fa-sync-alt me-1"></i> RESET
                         </button>
                     </div>
                 </div>
@@ -20,22 +20,22 @@
                 <div class="row g-3">
                     <div class="col-md-9">
                         <div class="input-group">
-                            <span class="input-group-text bg-dark border-secondary text-muted"><i class="fas fa-anchor"></i></span>
+                            <span class="input-group-text bg-dark border-secondary text-muted"><i class="fas fa-at"></i></span>
                             <textarea 
                               id="targetInput"
                               class="form-control matrix-input" 
                               rows="1"
                               placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
                               required></textarea>
-                            <button class="btn btn-outline-secondary matrix-input px-3" onclick="document.getElementById('fileInput').click()" title="Coal Feed (Batch)">
-                                <i class="fas fa-upload"></i>
+                            <button class="btn btn-outline-secondary matrix-input px-3" onclick="document.getElementById('fileInput').click()" title="Batch Upload">
+                                <i class="fas fa-cloud-upload-alt"></i>
                             </button>
                             <input type="file" id="fileInput" style="display:none" onchange="handleFileUpload(this)">
                         </div>
                     </div>
                     <div class="col-md-3">
                         <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100">
-                            <i class="fas fa-fire me-2"></i> FIRE FURNACE
+                            <i class="fas fa-bolt me-2"></i> INITIATE SCAN
                         </button>
                     </div>
                 </div>
@@ -44,11 +44,11 @@
                     <div class="d-flex flex-wrap gap-2">
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
-                            <label for="cfg-whois"><i class="fas fa-book me-1 opacity-50"></i>REGISTRY</label>
+                            <label for="cfg-whois"><i class="fas fa-id-card me-1 opacity-50"></i>WHOIS</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-dns" {{ if .config.EnableDNS }}checked{{ end }}>
-                            <label for="cfg-dns"><i class="fas fa-compass me-1 opacity-50"></i>DNS</label>
+                            <label for="cfg-dns"><i class="fas fa-server me-1 opacity-50"></i>DNS</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-subdomains">
@@ -56,23 +56,23 @@
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}>
-                            <label for="cfg-ssl"><i class="fas fa-lock me-1 opacity-50"></i>CIPHER</label>
+                            <label for="cfg-ssl"><i class="fas fa-lock me-1 opacity-50"></i>SSL/TLS</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}>
-                            <label for="cfg-http"><i class="fas fa-atlas me-1 opacity-50"></i>HTTP</label>
+                            <label for="cfg-http"><i class="fas fa-browser me-1 opacity-50"></i>HTTP</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
-                            <label for="cfg-geo"><i class="fas fa-globe me-1 opacity-50"></i>CHART</label>
+                            <label for="cfg-geo"><i class="fas fa-globe-americas me-1 opacity-50"></i>GEO/ASN</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
-                            <label for="cfg-ct"><i class="fas fa-history me-1 opacity-50"></i>LOGS</label>
+                            <label for="cfg-ct"><i class="fas fa-history me-1 opacity-50"></i>CT LOGS</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-ping">
-                            <label for="cfg-ping"><i class="fas fa-tachometer-alt me-1 opacity-50"></i>PRESSURE</label>
+                            <label for="cfg-ping"><i class="fas fa-signal me-1 opacity-50"></i>PING</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-trace">
@@ -80,14 +80,14 @@
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-route">
-                            <label for="cfg-route"><i class="fas fa-map me-1 opacity-50"></i>ROUTE</label>
+                            <label for="cfg-route"><i class="fas fa-map-signs me-1 opacity-50"></i>ROUTE</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-portscan">
-                            <label for="cfg-portscan"><i class="fas fa-key me-1 opacity-50"></i>GATES</label>
+                            <label for="cfg-portscan"><i class="fas fa-door-open me-1 opacity-50"></i>PORTS (80,443,22...)</label>
                         </div>
                         <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
-                            <input type="text" id="cfg-ports" class="form-control matrix-input py-1" style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389" placeholder="Specific gates...">
+                            <input type="text" id="cfg-ports" class="form-control matrix-input py-1" style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389" placeholder="Specific ports...">
                         </div>
                     </div>
                 </div>
@@ -103,18 +103,18 @@
     <!-- Quick Tools & Side Info -->
     <div class="col-xl-4">
         <div class="glass-panel border-nordic mb-4">
-            <h5 class="fw-bold mb-3"><i class="fas fa-tools me-2 text-warning"></i> ENGINE TOOLS</h5>
+            <h5 class="fw-bold mb-3"><i class="fas fa-toolbox me-2 text-warning"></i> QUICK TOOLS</h5>
             <div class="list-group list-group-flush bg-transparent">
                 <a href="#" onclick="openTool('dns')" class="list-group-item bg-transparent text-muted border-secondary py-3 px-0 d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-search me-3 text-info"></i> DNS INTERROGATOR</span>
+                    <span><i class="fas fa-search-plus me-3 text-info"></i> SINGLE DNS LOOKUP</span>
                     <i class="fas fa-chevron-right small opacity-50"></i>
                 </a>
                 <a href="#" onclick="openTool('mac')" class="list-group-item bg-transparent text-muted border-secondary py-3 px-0 d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-barcode me-3 text-warning"></i> HARDWARE LOOKUP</span>
+                    <span><i class="fas fa-barcode me-3 text-warning"></i> MAC VENDOR LOOKUP</span>
                     <i class="fas fa-chevron-right small opacity-50"></i>
                 </a>
                 <a href="/metrics" target="_blank" class="list-group-item bg-transparent text-muted border-0 py-3 px-0 d-flex justify-content-between align-items-center">
-                    <span><i class="fas fa-chart-line me-3 text-danger"></i> ENGINE METRICS</span>
+                    <span><i class="fas fa-project-diagram me-3 text-danger"></i> SYSTEM METRICS</span>
                     <i class="fas fa-external-link-alt small opacity-50"></i>
                 </a>
             </div>
@@ -122,10 +122,10 @@
 
         <div class="glass-panel border-nordic mb-4 h-100" style="min-height: 400px; display: flex; flex-direction: column;">
             <h6 class="text-muted small border-bottom border-secondary pb-2 mb-3">
-                <i class="fas fa-cog fa-spin me-2 text-danger"></i> MECHANISM ACTIVITY
+                <i class="fas fa-satellite-dish me-2 text-danger"></i> LIVE ACTIVITY
             </h6>
             <div id="liveLog" class="flex-grow-1 font-monospace" style="font-size: 0.7rem; overflow-y: auto; max-height: 600px;">
-                <div class="text-muted italic">Awaiting pressure data...</div>
+                <div class="text-muted italic">Waiting for scan data...</div>
             </div>
         </div>
     </div>
@@ -135,8 +135,8 @@
     <div class="result-card glass-panel" data-target="" draggable="true">
         <div class="card-handle">
             <div class="d-flex align-items-center gap-2">
-                <i class="fas fa-wrench text-muted"></i>
-                <small class="text-muted fw-bold">VALVE-DATA</small>
+                <i class="fas fa-grip-vertical text-muted"></i>
+                <small class="text-muted fw-bold">RESULT CARD</small>
             </div>
             <button class="btn btn-link btn-sm text-muted p-0" onclick="this.closest('.result-card').remove()">
                 <i class="fas fa-times"></i>
@@ -145,13 +145,13 @@
         <div class="d-flex justify-content-between align-items-start mb-3 p-3">
             <h5 class="target-name mb-0 font-monospace text-danger"></h5>
             <div class="d-flex gap-2 align-items-center">
-                <span class="badge bg-nordic-blue-dim text-nordic-blue small status-badge">standby</span>
-                <i class="fas fa-sync-alt text-muted" style="cursor:pointer; font-size: 0.8rem;" onclick="reScanTarget(this)" title="Recalibrate"></i>
+                <span class="badge bg-nordic-blue-dim text-nordic-blue small status-badge">pending</span>
+                <i class="fas fa-sync-alt text-muted" style="cursor:pointer; font-size: 0.8rem;" onclick="reScanTarget(this)" title="Re-scan Target"></i>
                 <i class="fas fa-copy copy-btn" onclick="copyTarget(this)" title="Copy target"></i>
                 <div class="streaming-indicator"></div>
             </div>
         </div>
-        <div class="progress mx-3 mb-3" style="height: 4px; background: rgba(0,0,0,0.5);">
+        <div class="progress mx-3 mb-3" style="height: 2px; background: var(--glass-border);">
             <div class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
         </div>
         <div class="diagnostic-content p-3 pt-0">

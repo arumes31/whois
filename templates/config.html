@@ -1,14 +1,14 @@
 {{ template "header" . }}
 
 <div class="container mt-4">
-  <h2 class="mb-4 fw-bold"><i class="fas fa-microchip me-2"></i> MECHANISM ARCHIVE</h2>
-  <p class="text-muted small italic">Automated logs are compiled <strong>every 24 solar hours</strong>.</p>
+  <h2 class="mb-4 fw-bold"><i class="fas fa-desktop me-2"></i> MONITORING CONFIGURATION</h2>
+  <p class="text-muted small italic">Automated logs are compiled <strong>every 24 hours</strong>.</p>
 
   <div class="row g-4">
     <div class="col-md-5">
       <div class="glass-panel p-4">
         <div class="mb-4">
-          <h5 class="mb-0 fw-bold text-success"><i class="fas fa-plus me-2"></i> NEW COMPONENT</h5>
+          <h5 class="mb-0 fw-bold text-success"><i class="fas fa-plus me-2"></i> ADD NEW ITEM</h5>
           <hr class="border-secondary opacity-25">
         </div>
         <div>
@@ -20,9 +20,9 @@
                 name="item" 
                 placeholder="example.com or 8.8.8.8" 
                 required>
-              <small class="text-muted font-monospace">Vessel identifier</small>
+              <small class="text-muted font-monospace">Domain or IP address</small>
             </div>
-            <button type="submit" name="action" value="add" class="btn btn-danger w-100">COMMENCE MONITORING</button>
+            <button type="submit" name="action" value="add" class="btn btn-danger w-100">ADD TO MONITORING</button>
           </form>
         </div>
       </div>
@@ -31,7 +31,7 @@
     <div class="col-md-7">
       <div class="glass-panel p-4">
         <div class="mb-4">
-          <h5 class="mb-0 fw-bold text-info"><i class="fas fa-list me-2"></i> ACTIVE SENSORS ({{ len .monitored }})</h5>
+          <h5 class="mb-0 fw-bold text-info"><i class="fas fa-list me-2"></i> CURRENTLY MONITORED ({{ len .monitored }})</h5>
           <hr class="border-secondary opacity-25">
         </div>
         <div>
@@ -42,13 +42,13 @@
                   <code class="text-info">{{ . }}</code>
                   <form method="post" class="d-inline">
                     <input type="hidden" name="item" value="{{ . }}">
-                    <button type="submit" name="action" value="remove" class="btn btn-sm btn-outline-danger px-3">EJECT</button>
+                    <button type="submit" name="action" value="remove" class="btn btn-sm btn-outline-danger px-3">REMOVE</button>
                   </form>
                 </li>
               {{ end }}
             </ul>
           {{ else }}
-            <p class="text-muted mb-0 italic">No sensors currently deployed.</p>
+            <p class="text-muted mb-0 italic">No items are being monitored.</p>
           {{ end }}
         </div>
       </div>
