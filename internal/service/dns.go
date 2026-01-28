@@ -68,7 +68,7 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 				r, err := s.query(ctx, target, t, false)
 				if err == nil && len(r) > 0 {
 					callback(name, r)
-					
+
 					// Special case for SPF extraction from TXT
 					if t == dns.TypeTXT {
 						var spfs []string
@@ -209,7 +209,7 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 		results = append(results, fmt.Sprintf("Querying %s for %s", nextServer, target))
 		c := new(dns.Client)
 		c.Timeout = 2 * time.Second
-		
+
 		// dns.Client.Exchange doesn't take context directly, but we can use ExchangeContext if available
 		// or just wrap it. miekg/dns supports ExchangeContext.
 		in, _, err := c.ExchangeContext(ctx, m, nextServer)

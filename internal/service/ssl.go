@@ -33,7 +33,7 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 	if err != nil {
 		return &SSLInfo{Error: err.Error()}
 	}
-	
+
 	tlsConn := tls.Client(conn, conf)
 	err = tlsConn.HandshakeContext(ctx)
 	if err != nil {

@@ -21,7 +21,7 @@ func TestWhois(t *testing.T) {
 			if result == nil {
 				t.Error("Whois returned nil")
 			}
-			
+
 			switch v := result.(type) {
 			case string:
 				if tt.target == "google.com" || tt.target == "8.8.8.8" {
