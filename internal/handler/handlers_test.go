@@ -54,7 +54,7 @@ func TestHandlers(t *testing.T) {
 		}
 
 		body := rec.Body.String()
-		if !strings.Contains(body, "INTEL GATHERING") {
+		if !strings.Contains(body, "MECHANICAL DIAGNOSTICS") {
 			t.Error("Body does not contain expected title")
 		}
 		if !strings.Contains(body, "targetInput") {

@@ -3,25 +3,26 @@
 <div class="container mt-5">
   <div class="row justify-content-center">
     <div class="col-md-4">
-      <div class="card shadow-sm">
-        <div class="card-header bg-primary text-white text-center">
-          <h5>Config Access</h5>
+      <div class="glass-panel p-4 shadow-lg">
+        <div class="text-center mb-4">
+          <h5 class="fw-bold"><i class="fas fa-user-gear me-2"></i> ENGINEER AUTHENTICATION</h5>
+          <hr class="border-secondary opacity-25">
         </div>
         <div class="card-body">
           <form method="post">
             <input type="hidden" name="next" value="{{ .next }}">
             {{ if .error }}
-                <div class="alert alert-danger">{{ .error }}</div>
+                <div class="alert alert-danger py-2 small">{{ .error }}</div>
             {{ end }}
             <div class="mb-3">
-              <label class="form-label">Username</label>
-              <input type="text" name="username" class="form-control" required autofocus>
+              <label class="form-label small fw-bold text-muted">IDENTIFIER</label>
+              <input type="text" name="username" class="form-control matrix-input" required autofocus>
             </div>
             <div class="mb-3">
-              <label class="form-label">Password</label>
-              <input type="password" name="password" class="form-control" required>
+              <label class="form-label small fw-bold text-muted">PASSCODE</label>
+              <input type="password" name="password" class="form-control matrix-input" required>
             </div>
-            <button type="submit" class="btn btn-primary w-100">Login</button>
+            <button type="submit" class="btn btn-danger w-100 mt-3 fw-bold">ENGAGE ENGINE</button>
           </form>
         </div>
       </div>
