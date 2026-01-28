@@ -140,11 +140,15 @@ type SystemStats struct {
 func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 	monitored, _ := s.GetMonitoredItems(ctx)
 
-	// Count total history entries (simplified logic)
-	keys, _ := s.Client.Keys(ctx, "dns_history:*").Result()
+	// Count total history entries using SCAN for performance
+	count := 0
+	iter := s.Client.Scan(ctx, 0, "dns_history:*", 0).Iterator()
+	for iter.Next(ctx) {
+		count++
+	}
 
 	return SystemStats{
 		MonitoredCount: len(monitored),
-		HistoryCount:   len(keys),
+		HistoryCount:   count,
 	}, nil
 }

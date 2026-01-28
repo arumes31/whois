@@ -12,6 +12,7 @@ A comprehensive network diagnostic and monitoring tool for performing WHOIS look
 - **Customizable Port Scanner:** Specify exact port lists for security scanning with real-time banner grabbing (Login required).
 - **Live Activity Logs:** Detailed diagnostic chain status via WebSockets for all tasks.
 - **Monitoring & History:** Track DNS changes over time with unified diffs and scheduled periodic checks.
+- **System Statistics:** Real-time insights into the number of monitored items and total diagnostic history records.
 - **100% Self-Contained:** All CSS and JS assets (Bootstrap, FontAwesome, PrismJS, HTMX, Tippy, Chart.js) are bundled locally for offline/private network support.
 - **Zero External Calls (Optional):** Supports local MAC OUI and MaxMind GeoIP2 databases to eliminate all external API dependencies.
 - **Copper/Brass Steampunk UI:** High-quality professional aesthetic with modern glassmorphism and reactive components.

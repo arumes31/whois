@@ -120,6 +120,22 @@
             </div>
         </div>
 
+        <div class="glass-panel border-nordic mb-4 p-3">
+            <h6 class="text-muted small border-bottom border-secondary pb-2 mb-3">
+                <i class="fas fa-chart-bar me-2 text-info"></i> SYSTEM STATISTICS
+            </h6>
+            <div class="row text-center">
+                <div class="col-6 border-end border-secondary border-opacity-25">
+                    <div class="h4 mb-0 text-nordic-blue fw-bold">{{ .stats.MonitoredCount }}</div>
+                    <div class="text-muted" style="font-size: 0.6rem; letter-spacing: 1px;">MONITORED</div>
+                </div>
+                <div class="col-6">
+                    <div class="h4 mb-0 text-nordic-blue fw-bold">{{ .stats.HistoryCount }}</div>
+                    <div class="text-muted" style="font-size: 0.6rem; letter-spacing: 1px;">HISTORY</div>
+                </div>
+            </div>
+        </div>
+
         <div class="glass-panel border-nordic mb-4 h-100" style="min-height: 400px; display: flex; flex-direction: column;">
             <h6 class="text-muted small border-bottom border-secondary pb-2 mb-3">
                 <i class="fas fa-satellite-dish me-2 text-danger"></i> LIVE ACTIVITY
