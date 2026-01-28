@@ -29,12 +29,12 @@ func TestGetSSLInfo_Local(t *testing.T) {
 
 	// ts.URL is https://127.0.0.1:PORT
 	u, _ := url.Parse(ts.URL)
-	
+
 	info := GetSSLInfo(u.Host)
 	if info.Error != "" {
 		t.Fatalf("GetSSLInfo local failed: %s", info.Error)
 	}
-	
+
 	if info.Protocol == "Unknown" {
 		t.Error("Expected identified protocol, got Unknown")
 	}
