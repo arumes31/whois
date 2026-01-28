@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -85,4 +86,22 @@ func TestGetSSLInfo_NoCerts(t *testing.T) {
 	if info.Error != "" {
 		t.Logf("NoCerts test info: %v", info.Error)
 	}
+}
+
+func TestGetSSLInfo_Versions(t *testing.T) {
+	// Test TLS 1.2 specifically
+	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	ts.TLS = &tls.Config{MinVersion: tls.VersionTLS12, MaxVersion: tls.VersionTLS12}
+	ts.StartTLS()
+	defer ts.Close()
+	u, _ := url.Parse(ts.URL)
+	_ = GetSSLInfo(context.Background(), u.Host)
+	
+	// Test TLS 1.3 specifically
+	ts2 := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	ts2.TLS = &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13}
+	ts2.StartTLS()
+	defer ts2.Close()
+	u2, _ := url.Parse(ts2.URL)
+	_ = GetSSLInfo(context.Background(), u2.Host)
 }

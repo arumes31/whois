@@ -118,11 +118,46 @@ func TestHandleWS(t *testing.T) {
 
 	_ = ws.WriteJSON(input2)
 
-	// Just consume some messages to ensure coverage
-	for i := 0; i < 100; i++ {
-		_, _, err := ws.ReadMessage()
+	// Consume and check for diverse results
+	for i := 0; i < 200; i++ {
+		_, p, err := ws.ReadMessage()
 		if err != nil {
 			break
 		}
+		var m WSMessage
+		_ = json.Unmarshal(p, &m)
+		if m.Type == "all_done" {
+			break
+		}
 	}
+
+	// Test invalid JSON input to HandleWS loop
+	_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid json"))
+	
+	// Test empty target input
+	input3 := struct {
+		Targets []string `json:"targets"`
+	}{
+		Targets: []string{""},
+	}
+	_ = ws.WriteJSON(input3)
+
+	// Test error paths in streamQuery
+	inputError := struct {
+		Targets []string `json:"targets"`
+		Config  struct {
+			DNS bool `json:"dns"`
+			CT  bool `json:"ct"`
+		} `json:"config"`
+	}{
+		Targets: []string{"invalid..domain"},
+		Config: struct {
+			DNS bool `json:"dns"`
+			CT  bool `json:"ct"`
+		}{DNS: true, CT: true},
+	}
+	_ = ws.WriteJSON(inputError)
+
+	// Test read error branch
+	_ = ws.Close()
 }

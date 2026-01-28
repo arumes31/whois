@@ -21,3 +21,13 @@ func TestPing(t *testing.T) {
 		t.Log("Ping output did not contain expected patterns (might be environment specific)")
 	}
 }
+
+func TestPing_Cancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	Ping(ctx, "8.8.8.8", 4, func(line string) {})
+}
+
+func TestPing_InvalidTarget(t *testing.T) {
+	Ping(context.Background(), "invalid!target", 1, func(line string) {})
+}

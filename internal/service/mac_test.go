@@ -142,6 +142,40 @@ func TestMACService(t *testing.T) {
 		}
 	})
 
+	t.Run("LookupMacVendor_API_Fail", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		oldURL := MacVendorsURL
+		MacVendorsURL = server.URL + "/%s"
+		oldOUI := OUIPath
+		OUIPath = "non_existent_file_v3.txt"
+		defer func() { 
+			MacVendorsURL = oldURL
+			OUIPath = oldOUI
+		}()
+
+		_, err := LookupMacVendor(context.Background(), "CC:11:22:33:44:55")
+		if err == nil {
+			t.Error("Expected error for 500 status from API")
+		}
+	})
+
+	t.Run("LookupMacVendor_Invalid_Context", func(t *testing.T) {
+		oldOUI := OUIPath
+		OUIPath = "non_existent_file_v4.txt"
+		defer func() { OUIPath = oldOUI }()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err := LookupMacVendor(ctx, "DD:11:22:33:44:55")
+		if err == nil {
+			t.Error("Expected error for cancelled context")
+		}
+	})
+
 	t.Run("LocalOUILookup_Success", func(t *testing.T) {
 		oldPath := OUIPath
 		OUIPath = "test_success_oui_unique.txt"
@@ -166,4 +200,8 @@ func TestMACService(t *testing.T) {
 			t.Errorf("Expected empty vendor for unknown prefix, got %s", vendor)
 		}
 	})
+}
+
+func TestLocalOUILookup(t *testing.T) {
+	// Wrapper for legacy if any, though subtests cover it.
 }

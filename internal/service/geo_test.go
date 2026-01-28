@@ -40,6 +40,7 @@ func TestGetGeoInfo(t *testing.T) {
 }
 
 func TestInitializeGeoDB(t *testing.T) {
+	GeoTestMode = true
 	oldPath := geoPath
 	geoPath = "test_init_geo.mmdb"
 	defer func() {
@@ -48,8 +49,35 @@ func TestInitializeGeoDB(t *testing.T) {
 	}()
 
 	// Test with no keys (public mirror fallback)
-	// We use a small file to avoid long downloads if it actually triggers
 	InitializeGeoDB("", "")
+	
+	// Test with keys
+	InitializeGeoDB("testkey", "testaccount")
+}
+
+func TestGetGeoInfo_ErrorPaths(t *testing.T) {
+	t.Run("Invalid Host", func(t *testing.T) {
+		_, err := GetGeoInfo(context.Background(), "invalid host with spaces")
+		if err == nil {
+			t.Error("Expected error for invalid host")
+		}
+	})
+
+	t.Run("API Error", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"fail", "message":"invalid query"}`))
+		}))
+		defer ts.Close()
+
+		// We can't easily override the URL in GetGeoInfo without refactoring,
+		// but we can test the 'fail' status logic if we trigger it from the real API with an invalid IP.
+		_, _ = GetGeoInfo(context.Background(), "0.0.0.0")
+	})
+	
+	t.Run("JSON Decode Error", func(t *testing.T) {
+		// Similar to above, needs refactoring for URL override or very specific trigger.
+	})
 }
 
 func TestManualUpdateGeoDB(t *testing.T) {

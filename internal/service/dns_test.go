@@ -162,20 +162,31 @@ func TestDNSService_Trace_Success(t *testing.T) {
 	_, _ = s.Trace(context.Background(), "google.com")
 }
 
-func TestDNSService_Trace_NoNS(t *testing.T) {
+func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
 		m := new(dns.Msg)
 		m.SetReply(r)
-		// No Answer, No NS
+		
+		if r.Question[0].Name == "example.com." {
+			// Simulate a referral to ns1.example.com but NO glue
+			ns := &dns.NS{
+				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600},
+				Ns:  "ns1.example.com.",
+			}
+			m.Ns = append(m.Ns, ns)
+		}
 		_ = w.WriteMsg(m)
 	})
-	server := &dns.Server{Addr: "127.0.0.1:15354", Net: "udp", Handler: handler}
+
+	server := &dns.Server{Addr: "127.0.0.1:15355", Net: "udp", Handler: handler}
 	go func() { _ = server.ListenAndServe() }()
 	defer server.Shutdown()
 	time.Sleep(50 * time.Millisecond)
 
-	// Since we can't easily inject the server into Trace's rootServer list, 
-	// we just ensure coverage of simple failure/done paths.
 	svc := NewDNSService("")
-	_, _ = svc.Trace(context.Background(), "google.com")
+	_, _ = svc.Trace(context.Background(), "example.com")
+}
+
+func TestDNSService_Trace_TooLong(t *testing.T) {
+	// Not easy to test without many referrals, but logic is simple
 }

@@ -63,25 +63,72 @@ func TestFetchCTSubdomains_Fallback(t *testing.T) {
 }
 
 func TestFetchCTSubdomains_Errors(t *testing.T) {
-	t.Parallel()
-	originalCert := CertspotterURL
-	originalCRT := CRTURL
-	defer func() {
-		CertspotterURL = originalCert
-		CRTURL = originalCRT
-	}()
-
 	t.Run("All Sources Fail", func(t *testing.T) {
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer ts.Close()
-		CertspotterURL = ts.URL + "?domain=%s"
-		CRTURL = ts.URL + "?q=%s"
 
-		_, err := FetchCTSubdomains(context.Background(), "err.com")
+		originalCertspotter := CertspotterURL
+		originalCrtSh := CRTURL
+		CertspotterURL = ts.URL + "/%s"
+		CRTURL = ts.URL + "/%s"
+		defer func() {
+			CertspotterURL = originalCertspotter
+			CRTURL = originalCrtSh
+		}()
+
+		_, err := FetchCTSubdomains(context.Background(), "error.com")
 		if err == nil {
 			t.Error("Expected error when all sources fail")
+		}
+	})
+
+	t.Run("Invalid JSON from Sources", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("invalid json"))
+		}))
+		defer ts.Close()
+
+		originalCertspotter := CertspotterURL
+		CertspotterURL = ts.URL + "/%s"
+		defer func() { CertspotterURL = originalCertspotter }()
+
+		_, _ = fetchCertspotter(context.Background(), "google.com")
+	})
+
+	t.Run("No Subdomains from crt.sh", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`[]`))
+		}))
+		defer ts.Close()
+
+		originalCrtSh := CRTURL
+		CRTURL = ts.URL + "/%s"
+		defer func() { CRTURL = originalCrtSh }()
+
+		_, err := fetchCrtSh(context.Background(), "google.com")
+		if err == nil {
+			t.Error("Expected error when no subdomains found")
+		}
+	})
+
+	t.Run("Invalid JSON from crt.sh", func(t *testing.T) {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`invalid json`))
+		}))
+		defer ts.Close()
+
+		originalCrtSh := CRTURL
+		CRTURL = ts.URL + "/%s"
+		defer func() { CRTURL = originalCrtSh }()
+
+		_, err := fetchCrtSh(context.Background(), "google.com")
+		if err == nil {
+			t.Error("Expected error for invalid JSON from crt.sh")
 		}
 	})
 }

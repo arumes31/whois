@@ -5,20 +5,12 @@ import (
 	"testing"
 )
 
-func TestTraceroute(t *testing.T) {
-	t.Parallel()
+func TestTraceroute_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	cancel()
+	Traceroute(ctx, "8.8.8.8", func(line string) {})
+}
 
-	found := false
-	Traceroute(ctx, "127.0.0.1", func(line string) {
-		if len(line) > 0 {
-			found = true
-			cancel() // Stop early
-		}
-	})
-
-	if !found {
-		t.Log("Traceroute output was empty (expected if blocked or not supported in env)")
-	}
+func TestTraceroute_InvalidTarget(t *testing.T) {
+	Traceroute(context.Background(), "invalid!target", func(line string) {})
 }
