@@ -62,7 +62,7 @@ func TestStorage_Cache(t *testing.T) {
 
 	key := "test-key"
 	val := map[string]string{"foo": "bar"}
-	
+
 	err := s.SetCache(ctx, key, val, 1*time.Minute)
 	if err != nil {
 		t.Fatalf("SetCache failed: %v", err)
@@ -145,7 +145,7 @@ func TestStorage_DNSHistory(t *testing.T) {
 
 	// Test 'No changes' diff
 	_ = s.AddDNSHistory(ctx, target, res2)
-	// We need to manually add another entry with same result to trigger 'No changes' branch 
+	// We need to manually add another entry with same result to trigger 'No changes' branch
 	// because AddDNSHistory normally skips duplicates.
 	entry := model.HistoryEntry{Timestamp: "now", Result: "{\"A\":\"2.2.2.2\"}"}
 	b, _ := json.Marshal(entry)
@@ -199,11 +199,11 @@ func TestStorage_History_NoChanges(t *testing.T) {
 	s := setupMiniredis(t)
 	ctx := context.Background()
 	target := "test.com"
-	
+
 	res := map[string]string{"A": "1.2.3.4"}
 	_ = s.AddDNSHistory(ctx, target, res)
 	_ = s.AddDNSHistory(ctx, target, res) // Duplicate
-	
+
 	// Add entry with same result but manual list manipulation to test logic branch
 	entry := model.HistoryEntry{
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
@@ -211,11 +211,11 @@ func TestStorage_History_NoChanges(t *testing.T) {
 	}
 	b, _ := json.Marshal(entry)
 	_ = s.Client.LPush(ctx, "dns_history:"+target, string(b))
-	
+
 	// AddDNSHistory should skip if same
 	_ = s.AddDNSHistory(ctx, target, res)
-	
-h, _ := s.GetDNSHistory(ctx, target)
+
+	h, _ := s.GetDNSHistory(ctx, target)
 	if len(h) != 2 { // One from manual LPush, one from first AddDNSHistory
 		t.Errorf("Expected 2 history entries, got %d", len(h))
 	}

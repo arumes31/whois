@@ -96,7 +96,7 @@ func TestGetSSLInfo_Versions(t *testing.T) {
 	defer ts.Close()
 	u, _ := url.Parse(ts.URL)
 	_ = GetSSLInfo(context.Background(), u.Host)
-	
+
 	// Test TLS 1.3 specifically
 	ts2 := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	ts2.TLS = &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13}

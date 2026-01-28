@@ -56,15 +56,15 @@ func TestMonitorService_IP(t *testing.T) {
 func TestMonitorService_ErrorPaths(t *testing.T) {
 	s := setupMiniredisStorage(t)
 	ctx := context.Background()
-	
+
 	m := NewMonitorService(s, "")
-	
+
 	t.Run("Invalid Target", func(t *testing.T) {
 		m.RunCheck(ctx, "invalid..domain")
 	})
-	
+
 	t.Run("Storage Error", func(t *testing.T) {
-		// Mock storage error by using a closed client if possible, 
+		// Mock storage error by using a closed client if possible,
 		// but storage.AddDNSHistory uses Pipeline.
 		// For now we just ensure it doesn't crash.
 		m.RunCheck(ctx, "google.com")

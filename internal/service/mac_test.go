@@ -48,7 +48,7 @@ func TestLookupMacVendor(t *testing.T) {
 func TestMACService(t *testing.T) {
 	TestMode = true
 	// We run these serially because they all touch OUIPath
-	
+
 	t.Run("InitializeMACService", func(t *testing.T) {
 		oldPath := OUIPath
 		OUIPath = "test_init_oui_unique.txt"
@@ -114,8 +114,8 @@ func TestMACService(t *testing.T) {
 		oldOUI := OUIPath
 		OUIPath = "force_api_bb_unique.txt"
 		_ = os.Remove(OUIPath)
-		
-		defer func() { 
+
+		defer func() {
 			MacVendorsURL = oldURL
 			OUIPath = oldOUI
 		}()
@@ -152,7 +152,7 @@ func TestMACService(t *testing.T) {
 		MacVendorsURL = server.URL + "/%s"
 		oldOUI := OUIPath
 		OUIPath = "non_existent_file_v3.txt"
-		defer func() { 
+		defer func() {
 			MacVendorsURL = oldURL
 			OUIPath = oldOUI
 		}()
@@ -186,7 +186,7 @@ func TestMACService(t *testing.T) {
 
 		content := "001122     (base 16)    Local Test Vendor\n"
 		_ = os.WriteFile(OUIPath, []byte(content), 0644)
-		
+
 		vendor, err := localOUILookup("00:11:22:33:44:55")
 		if err != nil {
 			t.Fatalf("localOUILookup failed: %v", err)
@@ -194,7 +194,7 @@ func TestMACService(t *testing.T) {
 		if vendor != "Local Test Vendor" {
 			t.Errorf("Expected Local Test Vendor, got %s", vendor)
 		}
-		
+
 		vendor, _ = localOUILookup("FFFFFF")
 		if vendor != "" {
 			t.Errorf("Expected empty vendor for unknown prefix, got %s", vendor)

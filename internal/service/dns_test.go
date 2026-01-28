@@ -71,7 +71,7 @@ func TestDNSService_DiscoverSubdomains(t *testing.T) {
 func TestDNSService_LookupStream(t *testing.T) {
 	t.Parallel()
 	s := NewDNSService("8.8.8.8:53")
-	
+
 	count := 0
 	err := s.LookupStream(context.Background(), "google.com", false, func(rtype string, data interface{}) {
 		count++
@@ -90,7 +90,7 @@ func TestDNSService_LookupStream(t *testing.T) {
 func TestDNSService_DiscoverSubdomainsStream(t *testing.T) {
 	t.Parallel()
 	s := NewDNSService("8.8.8.8:53")
-	
+
 	custom := []string{"www"}
 	err := s.DiscoverSubdomainsStream(context.Background(), "google.com", custom, func(fqdn string, res map[string][]string) {
 		if !strings.HasPrefix(fqdn, "www.") {
@@ -105,15 +105,15 @@ func TestDNSService_DiscoverSubdomainsStream(t *testing.T) {
 func TestDNSService_Query_Errors(t *testing.T) {
 	t.Parallel()
 	s := NewDNSService("1.2.3.4:53") // Non-existent resolver
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	
+
 	_, err := s.query(ctx, "google.com", dns.TypeA, false)
 	if err == nil {
 		t.Error("Expected error for non-existent resolver")
 	}
-	
+
 	_, err = s.query(ctx, "invalid-ip", dns.TypePTR, true)
 	if err == nil {
 		t.Error("Expected error for invalid IP in reverse query")
@@ -125,7 +125,7 @@ func TestDNSService_Trace_Success(t *testing.T) {
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
 		m := new(dns.Msg)
 		m.SetReply(r)
-		
+
 		if r.Question[0].Name == "example.com." {
 			// Simulate a referral to ns1.example.com
 			ns := &dns.NS{
@@ -133,7 +133,7 @@ func TestDNSService_Trace_Success(t *testing.T) {
 				Ns:  "ns1.example.com.",
 			}
 			m.Ns = append(m.Ns, ns)
-			
+
 			// Add Glue record
 			extra := &dns.A{
 				Hdr: dns.RR_Header{Name: "ns1.example.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 3600},
@@ -141,11 +141,11 @@ func TestDNSService_Trace_Success(t *testing.T) {
 			}
 			m.Extra = append(m.Extra, extra)
 		}
-		
+
 		// If we are "ns1.example.com", give an answer
 		// In our simplified Trace, we just query root servers and then follow referrals.
 		// Since we can't easily mock the WHOLE internet root, we just test the referral following logic.
-		
+
 		_ = w.WriteMsg(m)
 	})
 
@@ -154,7 +154,7 @@ func TestDNSService_Trace_Success(t *testing.T) {
 		_ = server.ListenAndServe()
 	}()
 	defer server.Shutdown()
-	
+
 	// Wait for server
 	time.Sleep(100 * time.Millisecond)
 
@@ -166,7 +166,7 @@ func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
 		m := new(dns.Msg)
 		m.SetReply(r)
-		
+
 		if r.Question[0].Name == "example.com." {
 			// Simulate a referral to ns1.example.com but NO glue
 			ns := &dns.NS{

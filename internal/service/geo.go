@@ -24,6 +24,7 @@ var (
 	geoPath       = "data/GeoLite2-City.mmdb"
 	geoAccountID  string
 	geoLicenseKey string
+	GeoTestMode   = false
 )
 
 type GeoInfo struct {
@@ -74,6 +75,10 @@ func InitializeGeoDB(licenseKey, accountID string) {
 	}
 
 	ReloadGeoDB()
+
+	if GeoTestMode {
+		return
+	}
 
 	// Start background watcher for 72h updates
 	go func() {

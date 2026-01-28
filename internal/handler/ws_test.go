@@ -133,7 +133,7 @@ func TestHandleWS(t *testing.T) {
 
 	// Test invalid JSON input to HandleWS loop
 	_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid json"))
-	
+
 	// Test empty target input
 	input3 := struct {
 		Targets []string `json:"targets"`

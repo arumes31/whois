@@ -50,7 +50,7 @@ func TestInitializeGeoDB(t *testing.T) {
 
 	// Test with no keys (public mirror fallback)
 	InitializeGeoDB("", "")
-	
+
 	// Test with keys
 	InitializeGeoDB("testkey", "testaccount")
 }
@@ -74,7 +74,7 @@ func TestGetGeoInfo_ErrorPaths(t *testing.T) {
 		// but we can test the 'fail' status logic if we trigger it from the real API with an invalid IP.
 		_, _ = GetGeoInfo(context.Background(), "0.0.0.0")
 	})
-	
+
 	t.Run("JSON Decode Error", func(t *testing.T) {
 		// Similar to above, needs refactoring for URL override or very specific trigger.
 	})

@@ -236,7 +236,7 @@ func TestHandlers(t *testing.T) {
 		// Create a separate handler with broken storage
 		badStore := storage.NewStorage("localhost", "1") // Wrong port
 		badH := NewHandler(badStore, cfg)
-		
+
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -319,8 +319,8 @@ func TestHandlers(t *testing.T) {
 		res := model.QueryResult{Whois: "cached"}
 		cacheKey := "query:cache.com:false:true:false:false:false:false"
 		_ = store.SetCache(ctx, cacheKey, res, time.Hour)
-		
-h.queryItem(ctx, target, false, true, false, false, false, false)
+
+		h.queryItem(ctx, target, false, true, false, false, false, false)
 	})
 
 	t.Run("exportCSV Full", func(t *testing.T) {
@@ -422,7 +422,7 @@ h.queryItem(ctx, target, false, true, false, false, false, false)
 		originalURL := service.CRTURL
 		service.CRTURL = "http://invalid-url/%s"
 		defer func() { service.CRTURL = originalURL }()
-		
+
 		h.queryItem(context.Background(), "error-ct.com", false, false, true, false, false, false)
 	})
 
@@ -435,7 +435,7 @@ h.queryItem(ctx, target, false, true, false, false, false, false)
 		writer := multipart.NewWriter(body)
 		part, _ := writer.CreateFormFile("file", "bad.csv")
 		// Force CSV reader error by having unquoted quote
-		_, _ = part.Write([]byte("a,\"b,c")) 
+		_, _ = part.Write([]byte("a,\"b,c"))
 		_ = writer.Close()
 		req := httptest.NewRequest(http.MethodPost, "/bulk_upload", body)
 		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
