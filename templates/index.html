@@ -499,17 +499,24 @@ function updateUI(msg) {
             if (data && data.error) {
                 html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
-                html = `<details open><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
+                html = `<details open><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary>
+                        <div class="p-2 small">`;
                 for (const [type, val] of Object.entries(data)) {
+                    html += `<div class="mb-2 pb-1 border-bottom border-secondary opacity-25">
+                                <div class="text-info fw-bold small">${type}</div>
+                                <div class="ps-2">`;
                     if (Array.isArray(val)) {
-                        html += `[${type}]\n<span class="clickable-record" onclick="copyToClipboard(this)">${val.join('\n')}</span>\n\n`;
+                        val.forEach(v => {
+                            html += `<div class="text-main clickable-record" onclick="copyToClipboard(this)">${v}</div>`;
+                        });
                     } else if (type === "Subdomains") {
-                        html += `[${type}]\nFound ${Object.keys(val).length} prefixes\n\n`;
+                        html += `<div class="text-muted italic">Found ${Object.keys(val).length} prefixes</div>`;
                     } else {
-                        html += `[${type}]\n<span class="clickable-record" onclick="copyToClipboard(this)">${JSON.stringify(val, null, 2)}</span>\n\n`;
+                        html += `<div class="text-main clickable-record" onclick="copyToClipboard(this)">${JSON.stringify(val)}</div>`;
                     }
+                    html += `</div></div>`;
                 }
-                html += `</code></pre></details>`;
+                html += `</div></details>`;
             } else {
                 html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-muted small">No records found</div></details>`;
             }

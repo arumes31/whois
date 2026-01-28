@@ -13,12 +13,16 @@ import (
 	"whois/internal/storage"
 	"whois/internal/utils"
 
+	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
+	// Load .env file if it exists
+	_ = godotenv.Load()
+
 	utils.InitLogger()
 	defer func() {
 		_ = utils.Log.Sync()

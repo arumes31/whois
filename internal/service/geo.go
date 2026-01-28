@@ -49,6 +49,7 @@ func InitializeGeoDB(licenseKey, accountID string) {
 
 	updateURL := ""
 	if licenseKey != "" {
+		// Using the direct download URL for GeoLite2-City
 		updateURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", licenseKey)
 	}
 
