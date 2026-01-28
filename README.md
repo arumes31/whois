@@ -8,14 +8,13 @@ A comprehensive network diagnostic and monitoring tool for performing WHOIS look
 ## Features
 
 - **Bulk Query:** Perform WHOIS, DNS (A, AAAA, MX, NS, TXT, SPF, DMARC), and Certificate Transparency (CT) lookups for multiple domains/IPs at once.
-- **Single DNS Lookup:** Fast, targeted DNS queries for specific record types via HTMX.
-- **MAC Lookup:** Identify hardware vendors from MAC addresses using the MacVendors API (with local caching).
-- **Port Scanner:** Security tool to scan common ports on targets with real-time banner grabbing (Login required).
-- **Live Activity Logs:** Real-time feedback via WebSockets for all diagnostic tasks.
-- **Monitoring & History:** Track DNS changes over time with unified diffs and 24h scheduled checks.
+- **High-Speed Live Streaming:** DNS records and subdomain discoveries are streamed to the UI incrementally as they resolve, providing instantaneous feedback.
+- **Customizable Port Scanner:** Specify exact port lists for security scanning with real-time banner grabbing (Login required).
+- **Live Activity Logs:** Detailed diagnostic chain status via WebSockets for all tasks.
+- **Monitoring & History:** Track DNS changes over time with unified diffs and scheduled periodic checks.
 - **100% Self-Contained:** All CSS and JS assets (Bootstrap, FontAwesome, PrismJS, HTMX, Tippy, Chart.js) are bundled locally for offline/private network support.
 - **Zero External Calls (Optional):** Supports local MAC OUI and MaxMind GeoIP2 databases to eliminate all external API dependencies.
-- **Nordic Cyber Theme:** Professional, high-contrast aesthetic optimized for readability.
+- **Copper/Brass Steampunk UI:** High-quality professional aesthetic with modern glassmorphism and reactive components.
 
 ## Local Data Sources
 
