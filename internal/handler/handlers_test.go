@@ -102,8 +102,8 @@ func TestHandlers(t *testing.T) {
 		}
 
 		body := rec.Body.String()
-		if !strings.Contains(body, "alert-success") {
-			t.Error("HTMX response missing success alert class")
+		if !strings.Contains(body, "glass-panel") {
+			t.Error("HTMX response missing glass-panel class")
 		}
 		if !strings.Contains(body, "google.com") {
 			t.Error("HTMX response missing resolved domain")

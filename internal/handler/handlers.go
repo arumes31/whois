@@ -369,7 +369,13 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-warning'>No %s records found for %s</div>", rtype, domain))
 	}
 
-	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>%s records for %s:</strong><pre class='mb-0 mt-2'><code>%s</code></pre></div>", rtype, domain, strings.Join(results, "\n")))
+	html := fmt.Sprintf("<div class='glass-panel p-3 border-nordic'><strong class='text-nordic-blue d-block mb-2'>%s RECORDS FOR %s</strong>", rtype, domain)
+	for _, res := range results {
+		html += fmt.Sprintf("<div class='clickable-record p-1 small border-bottom border-secondary border-opacity-25' onclick='copyToClipboard(this)'>%s</div>", res)
+	}
+	html += "</div>"
+
+	return c.HTML(http.StatusOK, html)
 }
 
 func (h *Handler) MacLookup(c echo.Context) error {

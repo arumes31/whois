@@ -54,6 +54,9 @@ func InitializeGeoDB(licenseKey, accountID string) {
 	if licenseKey != "" {
 		// Using the direct download URL for GeoLite2-City
 		updateURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", licenseKey)
+	} else {
+		// Fallback to a common public mirror if no key is provided (behavior like rauth)
+		updateURL = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
 	}
 
 	_, err := os.Stat(geoPath)
