@@ -14,7 +14,7 @@ import (
 func TestTemplateRegistry_Render(t *testing.T) {
 	tmpl := template.Must(template.New("test").Parse("{{.}}"))
 	reg := &TemplateRegistry{Templates: tmpl}
-	
+
 	buf := new(bytes.Buffer)
 	err := reg.Render(buf, "test", "hello", nil)
 	if err != nil {
