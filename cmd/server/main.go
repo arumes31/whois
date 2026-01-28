@@ -133,6 +133,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	}
 
 	// Routes
+	e.GET("/health", h.Health)
 	e.GET("/", h.Index)
 	e.POST("/", h.Index)
 	e.POST("/dns_lookup", h.DNSLookup)

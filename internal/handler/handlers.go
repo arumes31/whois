@@ -465,3 +465,20 @@ func (h *Handler) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 		return c.NoContent(http.StatusForbidden)
 	}
 }
+
+func (h *Handler) Health(c echo.Context) error {
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
+	defer cancel()
+
+	if err := h.Storage.Client.Ping(ctx).Err(); err != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"status": "error",
+			"redis":  "unavailable",
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{
+		"status": "ok",
+		"redis":  "connected",
+	})
+}
