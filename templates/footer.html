@@ -8,7 +8,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content glass-panel border-nordic shadow-lg">
             <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title fw-bold" id="toolTitle"><i class="fas fa-tools me-2 text-danger"></i>Tool</h5>
+                <h5 class="modal-title fw-bold" id="toolTitle"><svg style="width:16px;height:16px;margin-right:8px;fill:#ff4d4d" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg>Tool</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body pt-3" id="toolBody">
@@ -37,7 +37,7 @@
                         <option value="A">A</option><option value="AAAA">AAAA</option><option value="MX">MX</option>
                         <option value="TXT">TXT</option><option value="NS">NS</option><option value="PTR">PTR</option>
                     </select>
-                    <button class="btn btn-danger w-100">EXECUTE LOOKUP</button>
+                    <button class="btn btn-danger w-100"><svg style="width:14px;height:14px;margin-right:8px;fill:currentColor" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg>EXECUTE LOOKUP</button>
                     <div id="toolSpin" class="htmx-indicator text-center mt-3"><div class="spinner-border text-danger"></div></div>
                     <div id="toolRes" class="mt-3"></div>
                 </form>`;
@@ -46,7 +46,7 @@
             body.innerHTML = `
                 <form hx-post="/mac_lookup" hx-target="#toolRes" hx-indicator="#toolSpin">
                     <input type="text" class="form-control matrix-input mb-3" name="mac" placeholder="00:11:22:33:44:55" required>
-                    <button class="btn btn-danger w-100">IDENTIFY VENDOR</button>
+                    <button class="btn btn-danger w-100"><svg style="width:14px;height:14px;margin-right:8px;fill:currentColor" viewBox="0 0 512 512"><path d="M0 80V432c0 26.5 21.5 48 48 48H464c26.5 0 48-21.5 48-48V80c0-26.5-21.5-48-48-48H48C21.5 32 0 53.5 0 80zM64 96H96v320H64V96zm64 0h32v320H128V96zM224 96h64V416H224V96zm96 0h32v320H320V96zm64 0h32v320H384V96zm64 0h32v320H448V96z"/></svg>IDENTIFY VENDOR</button>
                     <div id="toolSpin" class="htmx-indicator text-center mt-3"><div class="spinner-border text-danger"></div></div>
                     <div id="toolRes" class="mt-3"></div>
                 </form>`;
