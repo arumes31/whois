@@ -109,7 +109,8 @@ func DownloadGeoDB(url string) error {
 		return err
 	}
 
-	if geoAccountID != "" && geoLicenseKey != "" {
+	// If license_key is not in the URL, try using Basic Auth
+	if !strings.Contains(url, "license_key=") && geoAccountID != "" && geoLicenseKey != "" {
 		req.SetBasicAuth(geoAccountID, geoLicenseKey)
 	}
 
