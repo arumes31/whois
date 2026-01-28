@@ -2,6 +2,7 @@ package service
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,7 +13,7 @@ import (
 
 var MacVendorsURL = "https://api.macvendors.com/%s"
 
-func LookupMacVendor(mac string) (string, error) {
+func LookupMacVendor(ctx context.Context, mac string) (string, error) {
 	// Try local lookup first
 	if vendor, err := localOUILookup(mac); err == nil && vendor != "" {
 		return vendor, nil
@@ -20,7 +21,12 @@ func LookupMacVendor(mac string) (string, error) {
 
 	url := fmt.Sprintf(MacVendorsURL, mac)
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}

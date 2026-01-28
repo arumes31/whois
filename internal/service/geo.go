@@ -3,6 +3,7 @@ package service
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"whois/internal/utils"
 
 	"github.com/oschwald/geoip2-golang"
 )
@@ -54,13 +56,13 @@ func InitializeGeoDB(licenseKey, accountID string) {
 	shouldUpdate := false
 
 	if os.IsNotExist(err) {
-		fmt.Println("GeoIP database missing, downloading...")
+		utils.Log.Info("GeoIP database missing, downloading...")
 		shouldUpdate = true
 	}
 
 	if shouldUpdate && updateURL != "" {
 		if err := DownloadGeoDB(updateURL); err != nil {
-			fmt.Printf("Failed to download GeoIP DB: %v\n", err)
+			utils.Log.Error("failed to download GeoIP DB", utils.Field("error", err.Error()))
 		}
 	}
 
@@ -75,7 +77,7 @@ func InitializeGeoDB(licenseKey, accountID string) {
 			}
 			if stat, err := os.Stat(geoPath); err == nil {
 				if time.Since(stat.ModTime()) > 72*time.Hour {
-					fmt.Println("GeoIP database older than 72h, performing periodic update...")
+					utils.Log.Info("GeoIP database older than 72h, performing periodic update...")
 					_ = DownloadGeoDB(updateURL)
 					ReloadGeoDB()
 				}
@@ -95,7 +97,7 @@ func ReloadGeoDB() {
 	reader, err := geoip2.Open(geoPath)
 	if err == nil {
 		geoReader = reader
-		fmt.Println("GeoIP database loaded successfully.")
+		utils.Log.Info("GeoIP database loaded successfully.")
 	}
 }
 
@@ -171,7 +173,7 @@ func extractTarGz(r io.Reader) error {
 	return fmt.Errorf("mmdb file not found in archive")
 }
 
-func GetGeoInfo(target string) (*GeoInfo, error) {
+func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 	geoMu.RLock()
 	reader := geoReader
 	geoMu.RUnlock()
@@ -197,7 +199,12 @@ func GetGeoInfo(target string) (*GeoInfo, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query", target)
 
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

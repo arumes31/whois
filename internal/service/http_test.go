@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,7 @@ func TestGetHTTPInfo(t *testing.T) {
 	// ts.URL will be like http://127.0.0.1:12345
 	host := strings.TrimPrefix(ts.URL, "http://")
 
-	info := GetHTTPInfo(host)
+	info := GetHTTPInfo(context.Background(), host)
 	if info.Error != "" {
 		t.Fatalf("GetHTTPInfo failed: %s", info.Error)
 	}
@@ -42,7 +43,7 @@ func TestGetHTTPInfo_HTTPS(t *testing.T) {
 	host := strings.TrimPrefix(ts.URL, "https://")
 
 	// This should fail HTTP and then try HTTPS
-	info := GetHTTPInfo(host)
+	info := GetHTTPInfo(context.Background(), host)
 	if info.Error != "" {
 		// On some machines, TLS verification might fail for self-signed httptest cert
 		t.Logf("HTTPS test info (might fail due to certs): %v", info.Error)
@@ -63,7 +64,7 @@ func TestGetHTTPInfo_SecurityHeaders(t *testing.T) {
 	defer ts.Close()
 
 	host := strings.TrimPrefix(ts.URL, "http://")
-	info := GetHTTPInfo(host)
+	info := GetHTTPInfo(context.Background(), host)
 
 	if info.Security["Strict-Transport-Security"] != "max-age=31536000" {
 		t.Errorf("HSTS header mismatch: %s", info.Security["Strict-Transport-Security"])
@@ -77,7 +78,7 @@ func TestGetHTTPInfo_SecurityHeaders(t *testing.T) {
 }
 
 func TestGetHTTPInfo_Fail(t *testing.T) {
-	info := GetHTTPInfo("invalid-host-name-that-does-not-exist.test")
+	info := GetHTTPInfo(context.Background(), "invalid-host-name-that-does-not-exist.test")
 	if info.Error == "" {
 		t.Error("Expected error for invalid host, got none")
 	}

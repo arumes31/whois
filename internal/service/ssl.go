@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/tls"
 	"net"
 	"strings"
@@ -17,7 +18,7 @@ type SSLInfo struct {
 	Error       string    `json:"error,omitempty"`
 }
 
-func GetSSLInfo(host string) *SSLInfo {
+func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 	conf := &tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -28,15 +29,22 @@ func GetSSLInfo(host string) *SSLInfo {
 	}
 
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", addr, conf)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return &SSLInfo{Error: err.Error()}
 	}
-	defer func() {
+	
+	tlsConn := tls.Client(conn, conf)
+	err = tlsConn.HandshakeContext(ctx)
+	if err != nil {
 		_ = conn.Close()
+		return &SSLInfo{Error: err.Error()}
+	}
+	defer func() {
+		_ = tlsConn.Close()
 	}()
 
-	state := conn.ConnectionState()
+	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
 		return &SSLInfo{Error: "no certificates found"}
 	}

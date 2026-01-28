@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,11 +11,16 @@ import (
 
 var CTURL = "https://crt.sh/?q=%s&output=json"
 
-func FetchCTSubdomains(domain string) (map[string]interface{}, error) {
+func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface{}, error) {
 	url := fmt.Sprintf(CTURL, domain)
 	client := &http.Client{Timeout: 60 * time.Second}
 
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("CT request failed: %v", err)
 	}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +21,7 @@ func TestFetchCTSubdomains(t *testing.T) {
 	CTURL = server.URL + "/?q=%s&output=json"
 	defer func() { CTURL = originalURL }()
 
-	subs, err := FetchCTSubdomains("example.com")
+	subs, err := FetchCTSubdomains(context.Background(), "example.com")
 	if err != nil {
 		t.Fatalf("FetchCTSubdomains failed: %v", err)
 	}
@@ -47,7 +48,7 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 		}))
 		defer ts.Close()
 		CTURL = ts.URL + "/?q=%s"
-		_, err := FetchCTSubdomains("err.com")
+		_, err := FetchCTSubdomains(context.Background(), "err.com")
 		if err == nil || !strings.Contains(err.Error(), "HTTP 500") {
 			t.Errorf("Expected HTTP 500 error, got %v", err)
 		}
@@ -60,7 +61,7 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 		}))
 		defer ts.Close()
 		CTURL = ts.URL + "/?q=%s"
-		_, err := FetchCTSubdomains("empty.com")
+		_, err := FetchCTSubdomains(context.Background(), "empty.com")
 		if err == nil || !strings.Contains(err.Error(), "No subdomains found") {
 			t.Errorf("Expected 'No subdomains found' error, got %v", err)
 		}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/tls"
 	"net/http"
 	"time"
@@ -16,7 +17,7 @@ type HTTPInfo struct {
 	Error        string            `json:"error,omitempty"`
 }
 
-func GetHTTPInfo(host string) *HTTPInfo {
+func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 	start := time.Now()
 	client := &http.Client{
 		Timeout: 5 * time.Second,
@@ -32,14 +33,23 @@ func GetHTTPInfo(host string) *HTTPInfo {
 	}
 
 	url := "http://" + host
-	resp, err := client.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return &HTTPInfo{Error: err.Error()}
+	}
+
+	resp, err := client.Do(req)
 	if err != nil || (resp != nil && resp.StatusCode == http.StatusBadRequest) {
 		// Try HTTPS if HTTP fails or returns 400 (which happens when talking HTTP to HTTPS port)
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
 		url = "https://" + host
-		resp, err = client.Get(url)
+		req, err = http.NewRequestWithContext(ctx, "GET", url, nil)
+		if err != nil {
+			return &HTTPInfo{Error: err.Error()}
+		}
+		resp, err = client.Do(req)
 		if err != nil {
 			return &HTTPInfo{Error: err.Error()}
 		}

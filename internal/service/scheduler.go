@@ -3,11 +3,11 @@ package service
 import (
 	"context"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"whois/internal/storage"
+	"whois/internal/utils"
 
 	"github.com/robfig/cron/v3"
 )
@@ -39,7 +39,7 @@ func (s *Scheduler) Start() {
 	_, _ = s.Cron.AddFunc("0 2 * * *", func() { // Every day at 2 AM
 		items, err := s.Storage.GetMonitoredItems(context.Background())
 		if err != nil {
-			log.Printf("Scheduler error getting items: %v", err)
+			utils.Log.Error("scheduler error getting items", utils.Field("error", err.Error()))
 			return
 		}
 		for _, item := range items {
@@ -48,14 +48,14 @@ func (s *Scheduler) Start() {
 	})
 
 	s.Cron.Start()
-	log.Println("Scheduler started")
+	utils.Log.Info("scheduler started")
 }
 
 func DownloadBackground() {
-	log.Println("Downloading background image...")
+	utils.Log.Info("downloading background image...")
 	resp, err := http.Get("https://picsum.photos/1920/1080?grayscale")
 	if err != nil {
-		log.Printf("Failed to download background: %v", err)
+		utils.Log.Error("failed to download background", utils.Field("error", err.Error()))
 		return
 	}
 	defer func() {
@@ -65,7 +65,7 @@ func DownloadBackground() {
 	outPath := filepath.Join("static", "background.jpg")
 	out, err := os.Create(outPath)
 	if err != nil {
-		log.Printf("Failed to create background file: %v", err)
+		utils.Log.Error("failed to create background file", utils.Field("error", err.Error()))
 		return
 	}
 	defer func() {
@@ -74,8 +74,8 @@ func DownloadBackground() {
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
-		log.Printf("Failed to save background: %v", err)
+		utils.Log.Error("failed to save background", utils.Field("error", err.Error()))
 	} else {
-		log.Println("Background image updated")
+		utils.Log.Info("background image updated")
 	}
 }

@@ -2,11 +2,11 @@ package service
 
 import (
 	"context"
-	"log"
 	"net"
 	"sync"
 	"whois/internal/model"
 	"whois/internal/storage"
+	"whois/internal/utils"
 )
 
 type MonitorService struct {
@@ -22,7 +22,7 @@ func NewMonitorService(s *storage.Storage, resolver string) *MonitorService {
 }
 
 func (m *MonitorService) RunCheck(ctx context.Context, item string) {
-	log.Printf("[MONITOR] Running scheduled check for %s", item)
+	utils.Log.Info("running scheduled check", utils.Field("item", item))
 
 	isIP := net.ParseIP(item) != nil
 	res := model.QueryResult{}
@@ -43,7 +43,7 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		d, err := m.DNS.Lookup(item, isIP)
+		d, err := m.DNS.Lookup(ctx, item, isIP)
 		if err == nil {
 			mu.Lock()
 			res.DNS = d
@@ -57,7 +57,7 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			c, err := FetchCTSubdomains(item)
+			c, err := FetchCTSubdomains(ctx, item)
 			if err == nil {
 				mu.Lock()
 				res.CT = c
@@ -67,5 +67,5 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 	}
 
 	wg.Wait()
-	log.Printf("[MONITOR] Finished check for %s", item)
+	utils.Log.Info("finished check", utils.Field("item", item))
 }
