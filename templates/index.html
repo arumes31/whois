@@ -385,17 +385,20 @@ function updateUI(msg) {
         return;
     }
 
+    if (msg.type === 'done') {
+        const scan = activeScans.get(msg.target);
+        if (scan) {
+            scan.completed++;
+            updateProgressBar(msg.target);
+        }
+        return;
+    }
+
     const card = document.querySelector(`[data-target="${msg.target}"]`);
     if (!card) return;
 
     const section = card.querySelector(`[data-service="${msg.service}"]`);
     if (!section) return;
-
-    const scan = activeScans.get(msg.target);
-    if (scan) {
-        scan.completed++;
-        updateProgressBar(msg.target);
-    }
 
     let html = "";
     const data = msg.data;
@@ -482,9 +485,15 @@ function updateUI(msg) {
             if (data && data.error) {
                 html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
-                html = `<details><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
-                for (const [type, records] of Object.entries(data)) {
-                    html += `[${type}]\n${records.join('\n')}\n\n`;
+                html = `<details open><summary>DNS RECORDS <i class="fas fa-info-circle ms-1 help-icon" data-tippy-content="A, MX, TXT and other zone records"></i></summary><pre class="p-2 mt-1 rounded"><code>`;
+                for (const [type, val] of Object.entries(data)) {
+                    if (Array.isArray(val)) {
+                        html += `[${type}]\n${val.join('\n')}\n\n`;
+                    } else if (type === "Subdomains") {
+                        html += `[${type}]\nFound ${Object.keys(val).length} prefixes\n\n`;
+                    } else {
+                        html += `[${type}]\n${JSON.stringify(val, null, 2)}\n\n`;
+                    }
                 }
                 html += `</code></pre></details>`;
             } else {

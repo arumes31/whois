@@ -118,6 +118,19 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 
 	sendLog("Initializing diagnostic chain for " + target)
 
+	// Helper to send completion status
+	sendDone := func(serviceName string) {
+		msg := WSMessage{
+			Type:    "done",
+			Target:  target,
+			Service: serviceName,
+		}
+		b, _ := json.Marshal(msg)
+		h.wsMu.Lock()
+		_ = ws.WriteMessage(websocket.TextMessage, b)
+		h.wsMu.Unlock()
+	}
+
 	if cfg.Subdomains && !isIP {
 		wg.Add(1)
 		go func() {
@@ -125,6 +138,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			sendLog("Discovering subdomains for " + target)
 			send("subdomains", h.DNS.DiscoverSubdomains(ctx, target, nil))
 			sendLog("Subdomain discovery completed for " + target)
+			sendDone("subdomains")
 		}()
 	}
 
@@ -139,6 +153,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 				send("route", lines)
 			})
 			sendLog("Traceroute completed for " + target)
+			sendDone("route")
 		}()
 	}
 
@@ -150,6 +165,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			res, _ := h.DNS.Trace(ctx, target)
 			send("trace", res)
 			sendLog("DNS trace completed for " + target)
+			sendDone("trace")
 		}()
 	}
 
@@ -161,9 +177,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			var lines []string
 			service.Ping(ctx, target, 4, func(line string) {
 				lines = append(lines, line)
-				send("ping", lines) // Send updated lines
+				send("ping", lines)
 			})
 			sendLog("Ping sequence finished for " + target)
+			sendDone("ping")
 		}()
 	}
 
@@ -174,6 +191,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			sendLog("Querying WHOIS records for " + target)
 			send("whois", service.Whois(target))
 			sendLog("WHOIS data retrieved for " + target)
+			sendDone("whois")
 		}()
 	}
 
@@ -190,23 +208,19 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 				dmu.Lock()
 				dnsData[rtype] = data
 				dmu.Unlock()
-				
-				// Send incremental result
-				dmu.Lock()
 				send("dns", dnsData)
-				dmu.Unlock()
 			})
 
 			if err != nil {
 				send("dns", map[string]string{"error": err.Error()})
 				sendLog("DNS Error: " + err.Error())
 			} else {
-				// Record history once finished
 				dmu.Lock()
 				_ = h.Storage.AddDNSHistory(ctx, target, dnsData)
 				dmu.Unlock()
 			}
 			sendLog("DNS resolution finished for " + target)
+			sendDone("dns")
 		}()
 	}
 
@@ -223,6 +237,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 				sendLog("CT Error: " + err.Error())
 			}
 			sendLog("CT log search finished for " + target)
+			sendDone("ct")
 		}()
 	}
 
@@ -233,6 +248,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			sendLog("Analyzing SSL/TLS configuration for " + target)
 			send("ssl", service.GetSSLInfo(ctx, target))
 			sendLog("SSL/TLS analysis complete for " + target)
+			sendDone("ssl")
 		}()
 	}
 
@@ -243,6 +259,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			sendLog("Inspecting HTTP response from " + target)
 			send("http", service.GetHTTPInfo(ctx, target))
 			sendLog("HTTP inspection finished for " + target)
+			sendDone("http")
 		}()
 	}
 
@@ -254,6 +271,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			g, _ := service.GetGeoInfo(ctx, target)
 			send("geo", g)
 			sendLog("Geolocation data updated for " + target)
+			sendDone("geo")
 		}()
 	}
 
@@ -279,6 +297,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 				})
 			}
 			sendLog("Port scan completed for " + target)
+			sendDone("portscan")
 		}()
 	}
 
