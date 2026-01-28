@@ -53,6 +53,29 @@ func TestGetHTTPInfo_HTTPS(t *testing.T) {
 	}
 }
 
+func TestGetHTTPInfo_SecurityHeaders(t *testing.T) {
+	t.Parallel()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'")
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	info := GetHTTPInfo(host)
+
+	if info.Security["Strict-Transport-Security"] != "max-age=31536000" {
+		t.Errorf("HSTS header mismatch: %s", info.Security["Strict-Transport-Security"])
+	}
+	if info.Security["Content-Security-Policy"] != "default-src 'self'" {
+		t.Errorf("CSP header mismatch: %s", info.Security["Content-Security-Policy"])
+	}
+	if info.Security["Referrer-Policy"] != "Not Set" {
+		t.Errorf("Expected Not Set for Referrer-Policy, got %s", info.Security["Referrer-Policy"])
+	}
+}
+
 func TestGetHTTPInfo_Fail(t *testing.T) {
 	info := GetHTTPInfo("invalid-host-name-that-does-not-exist.test")
 	if info.Error == "" {
