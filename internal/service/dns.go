@@ -60,17 +60,13 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 				r, err := s.query(target, t, false)
 				mu.Lock()
 				if err == nil && len(r) > 0 {
-					results[typeNames[t]] = r
+					results[name] = r
 				}
 				mu.Unlock()
 			}(t, typeNames[t])
 		}
-	}
 
-	wg.Wait()
-
-	// DMARC Lookup
-	if !isIP {
+		// DMARC Lookup
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -81,14 +77,23 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 				mu.Unlock()
 			}
 		}()
+
+		// Well-known subdomains (run concurrently with other lookups)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res := s.DiscoverSubdomains(target, nil)
+			mu.Lock()
+			results["Subdomains"] = res
+			mu.Unlock()
+		}()
 	}
 
-	// Well-known subdomains
-	if !isIP {
-		results["Subdomains"] = s.DiscoverSubdomains(target, nil)
-	}
+	wg.Wait()
 
 	// Post-process TXT for SPF
+	mu.Lock()
+	defer mu.Unlock()
 	if txts, ok := results["TXT"]; ok {
 		if txtList, ok := txts.([]string); ok {
 			var spfs []string

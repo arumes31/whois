@@ -24,10 +24,14 @@ func Whois(target string) interface{} {
 		return WhoisInfo{Raw: raw}
 	}
 
-	return WhoisInfo{
-		Raw:       raw,
-		Registrar: result.Registrar.Name,
-		Expiry:    result.Domain.ExpirationDate,
-		Created:   result.Domain.CreatedDate,
+	info := WhoisInfo{Raw: raw}
+	if result.Registrar != nil {
+		info.Registrar = result.Registrar.Name
 	}
+	if result.Domain != nil {
+		info.Expiry = result.Domain.ExpirationDate
+		info.Created = result.Domain.CreatedDate
+	}
+
+	return info
 }

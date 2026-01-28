@@ -26,6 +26,7 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 
 	isIP := net.ParseIP(item) != nil
 	res := model.QueryResult{}
+	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	// WHOIS
@@ -33,7 +34,9 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 	go func() {
 		defer wg.Done()
 		w := Whois(item)
-		res.Whois = &w
+		mu.Lock()
+		res.Whois = w
+		mu.Unlock()
 	}()
 
 	// DNS
@@ -42,7 +45,9 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 		defer wg.Done()
 		d, err := m.DNS.Lookup(item, isIP)
 		if err == nil {
+			mu.Lock()
 			res.DNS = d
+			mu.Unlock()
 			_ = m.Storage.AddDNSHistory(ctx, item, d)
 		}
 	}()
@@ -54,7 +59,9 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 			defer wg.Done()
 			c, err := FetchCTSubdomains(item)
 			if err == nil {
+				mu.Lock()
 				res.CT = c
+				mu.Unlock()
 			}
 		}()
 	}
