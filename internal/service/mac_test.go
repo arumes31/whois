@@ -43,7 +43,7 @@ func TestLocalOUILookup(t *testing.T) {
 	_ = os.MkdirAll("data", 0755)
 	content := "001122     (base 16)    Local Test Vendor\n"
 	_ = os.WriteFile("data/oui.txt", []byte(content), 0644)
-	defer os.Remove("data/oui.txt")
+	defer func() { _ = os.Remove("data/oui.txt") }()
 
 	vendor, err := localOUILookup("00:11:22:33:44:55")
 	if err != nil {
