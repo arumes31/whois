@@ -85,7 +85,7 @@ func (h *Handler) Index(c echo.Context) error {
 			wg.Add(1)
 			go func(target string) {
 				defer wg.Done()
-				res := h.queryItem(target, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
+				res := h.queryItem(c.Request().Context(), target, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
 				mu.Lock()
 				results[target] = res
 				mu.Unlock()
@@ -213,8 +213,7 @@ func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult
 	return nil
 }
 
-func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled bool) model.QueryResult {
-	ctx := context.Background()
+func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled bool) model.QueryResult {
 	cacheKey := fmt.Sprintf("query:%s:%v:%v:%v:%v:%v:%v", item, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
 
 	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
@@ -241,7 +240,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			d, err := h.DNS.Lookup(item, isIP)
+			d, err := h.DNS.Lookup(ctx, item, isIP)
 			if err == nil {
 				res.DNS = d
 				_ = h.Storage.AddDNSHistory(ctx, item, d)
@@ -263,7 +262,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 					}
 				}
 
-				c, err := service.FetchCTSubdomains(item)
+				c, err := service.FetchCTSubdomains(ctx, item)
 				if err != nil {
 					res.CT = map[string]string{"error": err.Error()}
 				} else {
@@ -280,7 +279,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res.SSL = service.GetSSLInfo(item)
+			res.SSL = service.GetSSLInfo(ctx, item)
 		}()
 	}
 
@@ -288,7 +287,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res.HTTP = service.GetHTTPInfo(item)
+			res.HTTP = service.GetHTTPInfo(ctx, item)
 		}()
 	}
 
@@ -296,7 +295,7 @@ func (h *Handler) queryItem(item string, dnsEnabled, whoisEnabled, ctEnabled, ss
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			g, err := service.GetGeoInfo(item)
+			g, err := service.GetGeoInfo(ctx, item)
 			if err == nil {
 				res.Geo = g
 			} else {
@@ -354,7 +353,7 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 	}
 
 	isIP := net.ParseIP(domain) != nil
-	d, err := h.DNS.Lookup(domain, isIP)
+	d, err := h.DNS.Lookup(c.Request().Context(), domain, isIP)
 	if err != nil {
 		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", err))
 	}
@@ -385,7 +384,7 @@ func (h *Handler) MacLookup(c echo.Context) error {
 		}
 	}
 
-	vendor, err := service.LookupMacVendor(mac)
+	vendor, err := service.LookupMacVendor(ctx, mac)
 	if err != nil {
 		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", err))
 	}

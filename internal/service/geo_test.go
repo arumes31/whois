@@ -4,11 +4,17 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestGetGeoInfo(t *testing.T) {
 	t.Parallel()
@@ -21,7 +27,7 @@ func TestGetGeoInfo(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.target, func(t *testing.T) {
-			res, err := GetGeoInfo(tt.target)
+			res, err := GetGeoInfo(context.Background(), tt.target)
 			if err != nil {
 				t.Logf("GetGeoInfo failed (expected if offline): %v", err)
 				return

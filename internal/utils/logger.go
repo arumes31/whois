@@ -21,3 +21,7 @@ func InitLogger() {
 func Field(key string, value interface{}) zap.Field {
 	return zap.Any(key, value)
 }
+
+func TestInitLogger() {
+	Log = zap.NewNop()
+}

@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestInitLogger(t *testing.T) {
+func TestInitLogger_Live(t *testing.T) {
 	t.Parallel()
 	// Should not panic
 	InitLogger()

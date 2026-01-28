@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,7 +11,7 @@ import (
 func TestGetSSLInfo(t *testing.T) {
 	t.Parallel()
 	t.Run("Online Test Fallback", func(t *testing.T) {
-		info := GetSSLInfo("google.com")
+		info := GetSSLInfo(context.Background(), "google.com")
 		if info.Error != "" {
 			t.Logf("GetSSLInfo google.com failed: %s", info.Error)
 		} else {
@@ -30,7 +31,7 @@ func TestGetSSLInfo_Local(t *testing.T) {
 	// ts.URL is https://127.0.0.1:PORT
 	u, _ := url.Parse(ts.URL)
 
-	info := GetSSLInfo(u.Host)
+	info := GetSSLInfo(context.Background(), u.Host)
 	if info.Error != "" {
 		t.Fatalf("GetSSLInfo local failed: %s", info.Error)
 	}
@@ -41,7 +42,7 @@ func TestGetSSLInfo_Local(t *testing.T) {
 }
 
 func TestGetSSLInfo_Fail(t *testing.T) {
-	info := GetSSLInfo("invalid-host-that-should-fail")
+	info := GetSSLInfo(context.Background(), "invalid-host-that-should-fail")
 	if info.Error == "" {
 		t.Error("Expected error for invalid host")
 	}

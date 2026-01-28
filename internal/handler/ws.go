@@ -67,13 +67,13 @@ func (h *Handler) HandleWS(c echo.Context) error {
 				continue
 			}
 
-			go h.streamQuery(ws, target, input.Config)
+			go h.streamQuery(c.Request().Context(), ws, target, input.Config)
 		}
 	}
 	return nil
 }
 
-func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
+func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target string, cfg struct {
 	Whois      bool   `json:"whois"`
 	DNS        bool   `json:"dns"`
 	CT         bool   `json:"ct"`
@@ -87,7 +87,6 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 	Ports      string `json:"ports"`
 }) {
 	var wg sync.WaitGroup
-	ctx := context.Background()
 	isIP := net.ParseIP(target) != nil
 
 	// Helper to send message
@@ -124,7 +123,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		go func() {
 			defer wg.Done()
 			sendLog("Discovering subdomains for " + target)
-			send("subdomains", h.DNS.DiscoverSubdomains(target, nil))
+			send("subdomains", h.DNS.DiscoverSubdomains(ctx, target, nil))
 			sendLog("Subdomain discovery completed for " + target)
 		}()
 	}
@@ -148,7 +147,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		go func() {
 			defer wg.Done()
 			sendLog("Starting recursive DNS trace for " + target)
-			res, _ := h.DNS.Trace(target)
+			res, _ := h.DNS.Trace(ctx, target)
 			send("trace", res)
 			sendLog("DNS trace completed for " + target)
 		}()
@@ -183,13 +182,29 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		go func() {
 			defer wg.Done()
 			sendLog("Resolving DNS records for " + target)
-			d, err := h.DNS.Lookup(target, isIP)
-			if err == nil {
-				send("dns", d)
-				_ = h.Storage.AddDNSHistory(ctx, target, d)
-			} else {
+			
+			dnsData := make(map[string]interface{})
+			var dmu sync.Mutex
+			
+			err := h.DNS.LookupStream(ctx, target, isIP, func(rtype string, data interface{}) {
+				dmu.Lock()
+				dnsData[rtype] = data
+				dmu.Unlock()
+				
+				// Send incremental result
+				dmu.Lock()
+				send("dns", dnsData)
+				dmu.Unlock()
+			})
+
+			if err != nil {
 				send("dns", map[string]string{"error": err.Error()})
 				sendLog("DNS Error: " + err.Error())
+			} else {
+				// Record history once finished
+				dmu.Lock()
+				_ = h.Storage.AddDNSHistory(ctx, target, dnsData)
+				dmu.Unlock()
 			}
 			sendLog("DNS resolution finished for " + target)
 		}()
@@ -200,7 +215,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		go func() {
 			defer wg.Done()
 			sendLog("Searching Certificate Transparency logs for " + target)
-			c, err := service.FetchCTSubdomains(target)
+			c, err := service.FetchCTSubdomains(ctx, target)
 			if err == nil {
 				send("ct", c)
 			} else {
@@ -216,7 +231,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		go func() {
 			defer wg.Done()
 			sendLog("Analyzing SSL/TLS configuration for " + target)
-			send("ssl", service.GetSSLInfo(target))
+			send("ssl", service.GetSSLInfo(ctx, target))
 			sendLog("SSL/TLS analysis complete for " + target)
 		}()
 	}
@@ -226,7 +241,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		go func() {
 			defer wg.Done()
 			sendLog("Inspecting HTTP response from " + target)
-			send("http", service.GetHTTPInfo(target))
+			send("http", service.GetHTTPInfo(ctx, target))
 			sendLog("HTTP inspection finished for " + target)
 		}()
 	}
@@ -236,7 +251,7 @@ func (h *Handler) streamQuery(ws *websocket.Conn, target string, cfg struct {
 		go func() {
 			defer wg.Done()
 			sendLog("Locating IP and ASN data for " + target)
-			g, _ := service.GetGeoInfo(target)
+			g, _ := service.GetGeoInfo(ctx, target)
 			send("geo", g)
 			sendLog("Geolocation data updated for " + target)
 		}()

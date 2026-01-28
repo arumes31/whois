@@ -21,7 +21,24 @@ func TestWhois(t *testing.T) {
 			if result == nil {
 				t.Error("Whois returned nil")
 			}
-			// We don't fail on "error" strings for invalid targets because that's expected behavior
+			
+			switch v := result.(type) {
+			case string:
+				if tt.target == "google.com" || tt.target == "8.8.8.8" {
+					t.Logf("Got error string for %s (unexpected but allowed in some envs): %s", tt.target, v)
+				}
+			case WhoisInfo:
+				if v.Raw == "" {
+					t.Error("Raw WHOIS data is empty")
+				}
+				if tt.target == "google.com" {
+					if v.Registrar == "" {
+						t.Log("Registrar is empty for google.com (parsed failed?)")
+					}
+				}
+			default:
+				t.Errorf("Unexpected result type %T", result)
+			}
 		})
 	}
 }

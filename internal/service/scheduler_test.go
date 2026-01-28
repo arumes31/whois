@@ -4,7 +4,12 @@ import (
 	"os"
 	"testing"
 	"whois/internal/storage"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestNewScheduler(t *testing.T) {
 	t.Parallel()

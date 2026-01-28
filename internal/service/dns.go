@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -22,9 +23,18 @@ func NewDNSService(resolver string) *DNSService {
 	}
 }
 
-func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, error) {
+func (s *DNSService) Lookup(ctx context.Context, target string, isIP bool) (map[string]interface{}, error) {
 	results := make(map[string]interface{})
 	var mu sync.Mutex
+	err := s.LookupStream(ctx, target, isIP, func(rtype string, data interface{}) {
+		mu.Lock()
+		results[rtype] = data
+		mu.Unlock()
+	})
+	return results, err
+}
+
+func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
 	var wg sync.WaitGroup
 
 	if isIP {
@@ -32,14 +42,12 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r, err := s.query(target, dns.TypePTR, true)
-			mu.Lock()
+			r, err := s.query(ctx, target, dns.TypePTR, true)
 			if err == nil && len(r) > 0 {
-				results["PTR"] = r
+				callback("PTR", r)
 			} else {
-				results["PTR"] = []string{}
+				callback("PTR", []string{})
 			}
-			mu.Unlock()
 		}()
 	} else {
 		types := []uint16{
@@ -57,12 +65,24 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 			wg.Add(1)
 			go func(t uint16, name string) {
 				defer wg.Done()
-				r, err := s.query(target, t, false)
-				mu.Lock()
+				r, err := s.query(ctx, target, t, false)
 				if err == nil && len(r) > 0 {
-					results[name] = r
+					callback(name, r)
+					
+					// Special case for SPF extraction from TXT
+					if t == dns.TypeTXT {
+						var spfs []string
+						for _, txt := range r {
+							clean := strings.Trim(txt, "'\"")
+							if strings.HasPrefix(strings.ToLower(clean), "v=spf1") {
+								spfs = append(spfs, clean)
+							}
+						}
+						if len(spfs) > 0 {
+							callback("SPF", spfs)
+						}
+					}
 				}
-				mu.Unlock()
 			}(t, typeNames[t])
 		}
 
@@ -70,11 +90,9 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			r, err := s.query("_dmarc."+target, dns.TypeTXT, false)
+			r, err := s.query(ctx, "_dmarc."+target, dns.TypeTXT, false)
 			if err == nil && len(r) > 0 {
-				mu.Lock()
-				results["DMARC"] = r
-				mu.Unlock()
+				callback("DMARC", r)
 			}
 		}()
 
@@ -82,39 +100,19 @@ func (s *DNSService) Lookup(target string, isIP bool) (map[string]interface{}, e
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			res := s.DiscoverSubdomains(target, nil)
-			mu.Lock()
-			results["Subdomains"] = res
-			mu.Unlock()
+			res := s.DiscoverSubdomains(ctx, target, nil)
+			if len(res) > 0 {
+				callback("Subdomains", res)
+			}
 		}()
 	}
 
 	wg.Wait()
-
-	// Post-process TXT for SPF
-	mu.Lock()
-	defer mu.Unlock()
-	if txts, ok := results["TXT"]; ok {
-		if txtList, ok := txts.([]string); ok {
-			var spfs []string
-			for _, txt := range txtList {
-				clean := strings.Trim(txt, "'\"")
-				if strings.HasPrefix(strings.ToLower(clean), "v=spf1") {
-					spfs = append(spfs, clean)
-				}
-			}
-			if len(spfs) > 0 {
-				results["SPF"] = spfs
-				// Validation logic could go here, for now skipping complex validation
-			}
-		}
-	}
-
-	return results, nil
+	return nil
 }
 
 // DiscoverSubdomains performs a brute-force search for common subdomains
-func (s *DNSService) DiscoverSubdomains(domain string, customSubs []string) map[string]interface{} {
+func (s *DNSService) DiscoverSubdomains(ctx context.Context, domain string, customSubs []string) map[string]interface{} {
 	subs := []string{
 		"www", "mail", "ftp", "webmail", "admin", "cpanel", "login", "secure",
 		"smtp", "pop", "imap", "autodiscover", "autoconfig", "mta-sts",
@@ -144,14 +142,18 @@ func (s *DNSService) DiscoverSubdomains(domain string, customSubs []string) map[
 		wg.Add(1)
 		go func(sub string) {
 			defer wg.Done()
-			sem <- struct{}{}
-			defer func() { <-sem }()
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			}
 
 			fqdn := sub + "." + domain
 			res := make(map[string][]string)
 
 			for _, t := range []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME} {
-				r, err := s.query(fqdn, t, false)
+				r, err := s.query(ctx, fqdn, t, false)
 				if err == nil && len(r) > 0 {
 					typeName := "A"
 					if t == dns.TypeAAAA {
@@ -175,7 +177,7 @@ func (s *DNSService) DiscoverSubdomains(domain string, customSubs []string) map[
 	return results
 }
 
-func (s *DNSService) Trace(target string) ([]string, error) {
+func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error) {
 	var results []string
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(target), dns.TypeA)
@@ -192,10 +194,19 @@ func (s *DNSService) Trace(target string) ([]string, error) {
 	nextServer := rootServers[0]
 
 	for {
+		select {
+		case <-ctx.Done():
+			return results, ctx.Err()
+		default:
+		}
+
 		results = append(results, fmt.Sprintf("Querying %s for %s", nextServer, target))
 		c := new(dns.Client)
 		c.Timeout = 2 * time.Second
-		in, _, err := c.Exchange(m, nextServer)
+		
+		// dns.Client.Exchange doesn't take context directly, but we can use ExchangeContext if available
+		// or just wrap it. miekg/dns supports ExchangeContext.
+		in, _, err := c.ExchangeContext(ctx, m, nextServer)
 		if err != nil {
 			return results, fmt.Errorf("exchange error at %s: %v", nextServer, err)
 		}
@@ -253,7 +264,7 @@ func (s *DNSService) Trace(target string) ([]string, error) {
 	return results, nil
 }
 
-func (s *DNSService) query(target string, qtype uint16, isReverse bool) ([]string, error) {
+func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isReverse bool) ([]string, error) {
 	m := new(dns.Msg)
 	queryName := target
 	if isReverse && !strings.HasSuffix(target, ".arpa.") {
@@ -269,7 +280,7 @@ func (s *DNSService) query(target string, qtype uint16, isReverse bool) ([]strin
 	m.SetQuestion(queryName, qtype)
 	c := new(dns.Client)
 	c.Timeout = 5 * time.Second
-	in, _, err := c.Exchange(m, s.Resolver)
+	in, _, err := c.ExchangeContext(ctx, m, s.Resolver)
 	if err != nil {
 		return nil, err
 	}

@@ -762,6 +762,10 @@ document.querySelectorAll('.feature-toggle input, #cfg-ports').forEach(el => {
     el.addEventListener('change', saveSettings);
 });
 
+document.getElementById('cfg-portscan').addEventListener('change', (e) => {
+    document.getElementById('portsInputWrapper').style.display = e.target.checked ? 'block' : 'none';
+});
+
 // Initialize connection and settings
 loadSettings();
 connectWS();

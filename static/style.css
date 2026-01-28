@@ -1,22 +1,22 @@
 :root {
-    --bg-base: #0a0f1e;
-    --glass-bg: rgba(15, 23, 42, 0.6);
-    --glass-border: rgba(255, 255, 255, 0.08);
-    --glass-glow: rgba(56, 189, 248, 0.15);
-    --nordic-blue: #38bdf8;
-    --nordic-purple: #818cf8;
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
-    --danger: #f43f5e;
-    --success: #10b981;
+    --bg-base: #1a120b; /* Deep Mahogany */
+    --glass-bg: rgba(44, 24, 16, 0.8); /* Dark Bronze */
+    --glass-border: #8b5e3c; /* Copper */
+    --glass-glow: rgba(184, 115, 51, 0.15);
+    --nordic-blue: #d4af37; /* Brass/Gold */
+    --nordic-purple: #cd7f32; /* Copper/Bronze */
+    --text-main: #e3d5ca; /* Aged Paper */
+    --text-muted: #a9927d;
+    --danger: #800000; /* Oxblood Red */
+    --success: #2d5a27; /* Forest Green */
 }
 
 body {
     background-color: var(--bg-base);
     background-image: 
-        radial-gradient(at 0% 0%, rgba(56, 189, 248, 0.1) 0px, transparent 50%),
-        radial-gradient(at 100% 0%, rgba(129, 140, 248, 0.1) 0px, transparent 50%),
-        radial-gradient(at 50% 100%, rgba(15, 23, 42, 1) 0px, transparent 80%);
+        radial-gradient(at 0% 0%, rgba(139, 94, 60, 0.15) 0px, transparent 50%),
+        radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.1) 0px, transparent 50%),
+        radial-gradient(at 50% 100%, rgba(26, 18, 11, 1) 0px, transparent 80%);
     background-attachment: fixed;
     color: var(--text-main);
     font-family: 'Inter', -apple-system, sans-serif;
@@ -38,19 +38,19 @@ body {
     -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--glass-border);
     border-radius: 16px;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
 }
 
 .border-nordic {
-    border-color: var(--glass-glow) !important;
-    box-shadow: 0 0 20px rgba(56, 189, 248, 0.05), inset 0 0 10px rgba(255,255,255,0.02);
+    border-color: #b87333 !important; /* Polished Copper */
+    box-shadow: 0 0 20px rgba(184, 115, 51, 0.1), inset 0 0 10px rgba(255,255,255,0.02);
 }
 
 /* Navbar */
 .navbar {
-    background: rgba(10, 15, 30, 0.5) !important;
+    background: rgba(26, 18, 11, 0.8) !important;
     backdrop-filter: blur(20px);
-    border-bottom: 1px solid var(--glass-border) !important;
+    border-bottom: 2px solid var(--glass-border) !important;
 }
 
 .nav-link {
@@ -64,7 +64,7 @@ body {
 }
 
 .nav-link:hover, .nav-link.active {
-    background: var(--glass-glow);
+    background: rgba(212, 175, 55, 0.1);
     color: var(--nordic-blue) !important;
     transform: translateY(-1px);
 }
@@ -84,13 +84,13 @@ body {
 
 .search-section .glass-panel:focus-within {
     transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 20px rgba(56, 189, 248, 0.1);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 20px rgba(184, 115, 51, 0.1);
 }
 
 .matrix-input {
-    background: rgba(0, 0, 0, 0.2) !important;
+    background: rgba(0, 0, 0, 0.4) !important;
     border: 1px solid var(--glass-border) !important;
-    color: #fff !important;
+    color: var(--nordic-blue) !important;
     border-radius: 12px !important;
     padding: 0.8rem 1.2rem !important;
     font-family: 'JetBrains Mono', monospace !important;
@@ -98,12 +98,12 @@ body {
 
 .matrix-input:focus {
     border-color: var(--nordic-blue) !important;
-    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.1) !important;
+    box-shadow: 0 0 0 4px rgba(212, 175, 55, 0.1) !important;
 }
 
 /* Feature Toggles */
 .feature-toggle {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(0, 0, 0, 0.2);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     padding: 6px 14px;
@@ -111,11 +111,11 @@ body {
 }
 
 .feature-toggle:hover {
-    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--nordic-blue);
 }
 
 .feature-toggle:has(input:checked) {
-    background: var(--glass-glow);
+    background: rgba(212, 175, 55, 0.1);
     border-color: var(--nordic-blue);
 }
 
@@ -135,6 +135,8 @@ body {
     user-select: none;
     transition: transform 0.2s, box-shadow 0.2s;
     height: fit-content;
+    background: #2c1810;
+    border: 1px solid var(--glass-border);
 }
 
 .result-card.dragging {
@@ -148,32 +150,21 @@ body {
     padding: 0.5rem;
     margin: -0.5rem -0.5rem 0.5rem -0.5rem;
     border-bottom: 1px solid var(--glass-border);
-    background: rgba(255, 255, 255, 0.02);
+    background: rgba(0, 0, 0, 0.2);
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
-.card-handle:active {
-    cursor: grabbing;
-}
-
-@keyframes cardAppear {
-    from { transform: translateY(20px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-
 .target-name {
-    background: linear-gradient(90deg, var(--nordic-blue), var(--nordic-purple));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--nordic-blue);
     font-weight: 800;
 }
 
 /* Diagnostic Content */
 details {
-    background: rgba(0, 0, 0, 0.15);
-    border: 1px solid var(--glass-border);
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(139, 94, 60, 0.3);
     margin-bottom: 10px;
     border-radius: 10px;
 }
@@ -182,26 +173,27 @@ summary {
     padding: 12px 16px;
     font-size: 0.7rem;
     font-weight: 700;
-    color: var(--text-muted);
+    color: var(--nordic-purple);
     letter-spacing: 1px;
+    text-transform: uppercase;
 }
 
 summary:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(212, 175, 55, 0.05);
 }
 
 /* Buttons */
 .btn-danger {
-    background: linear-gradient(135deg, #f43f5e, #e11d48);
-    border: none;
+    background: linear-gradient(135deg, #800000, #4d0000);
+    border: 1px solid #a52a2a;
     border-radius: 12px;
     font-weight: 700;
-    box-shadow: 0 4px 12px rgba(244, 63, 94, 0.2);
+    color: var(--text-main);
 }
 
 .btn-danger:hover {
     transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(244, 63, 94, 0.3);
+    box-shadow: 0 6px 16px rgba(128, 0, 0, 0.3);
 }
 
 .btn-outline-secondary {
@@ -211,7 +203,7 @@ summary:hover {
 }
 
 .btn-outline-secondary:hover {
-    background: var(--glass-glow);
+    background: rgba(212, 175, 55, 0.1);
     color: var(--nordic-blue);
     border-color: var(--nordic-blue);
 }
@@ -230,11 +222,12 @@ summary:hover {
     border-radius: 8px;
     font-weight: 600;
     padding: 0.5em 0.8em;
+    border: 1px solid rgba(255,255,255,0.05);
 }
 
-.bg-nordic-blue-dim { background: var(--glass-glow); color: var(--nordic-blue); }
-.bg-success-dim { background: rgba(16, 185, 129, 0.1); color: var(--success); }
-.bg-danger-dim { background: rgba(244, 63, 94, 0.1); color: var(--danger); }
+.bg-nordic-blue-dim { background: rgba(212, 175, 55, 0.1); color: var(--nordic-blue); }
+.bg-success-dim { background: rgba(45, 90, 39, 0.2); color: #4caf50; }
+.bg-danger-dim { background: rgba(128, 0, 0, 0.2); color: #f44336; }
 
 /* Progress Bar */
 .progress {

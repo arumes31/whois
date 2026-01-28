@@ -1,8 +1,14 @@
 package service
 
 import (
+	"context"
 	"testing"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestDNSService_Lookup(t *testing.T) {
 	t.Parallel()
@@ -22,7 +28,7 @@ func TestDNSService_Lookup(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := s.Lookup(tt.target, tt.isIP)
+			res, err := s.Lookup(context.Background(), tt.target, tt.isIP)
 			if err != nil {
 				t.Fatalf("Lookup failed for %s: %v", tt.target, err)
 			}
@@ -39,7 +45,7 @@ func TestDNSService_Lookup(t *testing.T) {
 	}
 
 	// Test Invalid Domain
-	_, err := s.Lookup("invalid..domain", false)
+	_, err := s.Lookup(context.Background(), "invalid..domain", false)
 	if err != nil {
 		t.Logf("Got expected error for invalid domain: %v", err)
 	}
@@ -48,7 +54,7 @@ func TestDNSService_Lookup(t *testing.T) {
 func TestDNSService_DiscoverSubdomains(t *testing.T) {
 	t.Parallel()
 	s := NewDNSService("")
-	res := s.DiscoverSubdomains("google.com", nil)
+	res := s.DiscoverSubdomains(context.Background(), "google.com", nil)
 
 	if len(res) == 0 {
 		t.Log("No well-known subdomains found for google.com (this might happen depending on DNS)")
@@ -60,7 +66,7 @@ func TestDNSService_DiscoverSubdomains(t *testing.T) {
 func TestDNSService_Trace(t *testing.T) {
 	t.Parallel()
 	s := NewDNSService("")
-	res, err := s.Trace("google.com")
+	res, err := s.Trace(context.Background(), "google.com")
 	if err != nil {
 		t.Logf("Trace failed: %v (expected in some environments)", err)
 	}
