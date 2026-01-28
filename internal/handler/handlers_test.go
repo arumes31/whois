@@ -341,7 +341,7 @@ func TestHandlers(t *testing.T) {
 		}
 	})
 
-	t.Run("MacLookup Error", func(t *testing.T) {
+	t.Run("MacLookup Error Logic", func(t *testing.T) {
 		t.Parallel()
 		f := url.Values{}
 		f.Add("mac", "invalid-mac")
@@ -351,8 +351,9 @@ func TestHandlers(t *testing.T) {
 		c := e.NewContext(req, rec)
 
 		_ = h.MacLookup(c)
-		if !strings.Contains(rec.Body.String(), "Error:") {
-			t.Logf("Response does not contain 'Error:', got: %s", rec.Body.String())
+		// "Vendor not found" is the expected response for unknown/invalid MACs in the current service logic
+		if !strings.Contains(rec.Body.String(), "Vendor not found") {
+			t.Errorf("Expected 'Vendor not found' in response, got: %s", rec.Body.String())
 		}
 	})
 
