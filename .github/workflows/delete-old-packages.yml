@@ -1,0 +1,20 @@
+name: Delete Old Packages
+
+on:
+  workflow_dispatch:
+
+jobs:
+  delete-versions:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete old package versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'whois'
+          package-type: 'container'
+          min-versions-to-keep: 0
+          # Protect specific tags and also long SHA tags often used for internal tracking
+          ignore-versions: '^(latest|main|v1|v2|test)$'
+          delete-only-untagged-versions: 'false'
