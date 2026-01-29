@@ -158,21 +158,7 @@ func (s *DNSService) DiscoverSubdomainsStream(ctx context.Context, domain string
 			}
 
 			fqdn := sub + "." + domain
-			res := make(map[string][]string)
-
-			for _, t := range []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME} {
-				r, err := s.query(ctx, fqdn, t, false)
-				if err == nil && len(r) > 0 {
-					typeName := "A"
-					if t == dns.TypeAAAA {
-						typeName = "AAAA"
-					}
-					if t == dns.TypeCNAME {
-						typeName = "CNAME"
-					}
-					res[typeName] = r
-				}
-			}
+			res := s.Resolve(ctx, fqdn)
 
 			if len(res) > 0 {
 				callback(fqdn, res)
@@ -181,6 +167,25 @@ func (s *DNSService) DiscoverSubdomainsStream(ctx context.Context, domain string
 	}
 	wg.Wait()
 	return nil
+}
+
+// Resolve resolves A, AAAA, and CNAME records for a given FQDN
+func (s *DNSService) Resolve(ctx context.Context, fqdn string) map[string][]string {
+	res := make(map[string][]string)
+	for _, t := range []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME} {
+		r, err := s.query(ctx, fqdn, t, false)
+		if err == nil && len(r) > 0 {
+			typeName := "A"
+			if t == dns.TypeAAAA {
+				typeName = "AAAA"
+			}
+			if t == dns.TypeCNAME {
+				typeName = "CNAME"
+			}
+			res[typeName] = r
+		}
+	}
+	return res
 }
 
 func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error) {

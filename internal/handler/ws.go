@@ -118,6 +118,44 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 
 	sendLog("Initializing diagnostic chain for " + target)
 
+	// Shared subdomain state
+	subResults := make(map[string]interface{})
+	var subMu sync.Mutex
+	processedSubs := make(map[string]bool)
+	var subProcessedMu sync.Mutex
+	subSem := make(chan struct{}, 20)
+
+	processSub := func(fqdn string, records map[string][]string) {
+		subProcessedMu.Lock()
+		if processedSubs[fqdn] {
+			subProcessedMu.Unlock()
+			return
+		}
+		processedSubs[fqdn] = true
+		subProcessedMu.Unlock()
+
+		if records == nil {
+			select {
+			case <-ctx.Done():
+				return
+			case subSem <- struct{}{}:
+				defer func() { <-subSem }()
+			}
+			records = h.DNS.Resolve(ctx, fqdn)
+		}
+
+		if len(records) > 0 {
+			subMu.Lock()
+			subResults[fqdn] = records
+			msgData := make(map[string]interface{})
+			for k, v := range subResults {
+				msgData[k] = v
+			}
+			subMu.Unlock()
+			send("subdomains", msgData)
+		}
+	}
+
 	// Helper to send completion status
 	sendDone := func(serviceName string) {
 		msg := WSMessage{
@@ -137,19 +175,8 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			defer wg.Done()
 			sendLog("Discovering subdomains for " + target)
 
-			results := make(map[string]interface{})
-			var smu sync.Mutex
-
 			_ = h.DNS.DiscoverSubdomainsStream(ctx, target, nil, func(fqdn string, res map[string][]string) {
-				smu.Lock()
-				results[fqdn] = res
-				// Create a copy for sending to avoid race condition during Marshal
-				msgData := make(map[string]interface{})
-				for k, v := range results {
-					msgData[k] = v
-				}
-				smu.Unlock()
-				send("subdomains", msgData)
+				processSub(fqdn, res)
 			})
 
 			sendLog("Subdomain discovery completed for " + target)
@@ -252,6 +279,14 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			c, err := service.FetchCTSubdomains(ctx, target)
 			if err == nil {
 				send("ct", c)
+				// Also add to subdomain discovery
+				for sub := range c {
+					wg.Add(1)
+					go func(s string) {
+						defer wg.Done()
+						processSub(s, nil)
+					}(sub)
+				}
 			} else {
 				send("ct", map[string]string{"error": err.Error()})
 				sendLog("CT Error: " + err.Error())
