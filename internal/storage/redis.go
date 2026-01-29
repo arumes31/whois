@@ -63,15 +63,18 @@ func (s *Storage) GetDNSHistory(ctx context.Context, item string) ([]model.Histo
 	historyKey := "dns_history:" + item
 	val, err := s.Client.LRange(ctx, historyKey, 0, -1).Result()
 	if err != nil {
+		utils.Log.Error("failed to fetch history from redis", utils.Field("key", historyKey), utils.Field("error", err))
 		return nil, err
 	}
 	utils.Log.Debug("redis lrange", utils.Field("key", historyKey), utils.Field("count", len(val)))
 	var entries []model.HistoryEntry
 	for _, v := range val {
 		var entry model.HistoryEntry
-		if err := json.Unmarshal([]byte(v), &entry); err == nil {
-			entries = append(entries, entry)
+		if err := json.Unmarshal([]byte(v), &entry); err != nil {
+			utils.Log.Warn("failed to unmarshal history entry", utils.Field("key", historyKey), utils.Field("error", err))
+			continue
 		}
+		entries = append(entries, entry)
 	}
 	return entries, nil
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"mime/multipart"
@@ -191,13 +192,51 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("History", func(t *testing.T) {
-		_ = store.AddDNSHistory(context.Background(), "test.com", "data")
+		ctx := context.Background()
+		target := "test-history.com"
+		_ = store.AddDNSHistory(ctx, target, map[string]string{"A": "1.2.3.4"})
+		time.Sleep(10 * time.Millisecond)
+		_ = store.AddDNSHistory(ctx, target, map[string]string{"A": "1.2.3.5"})
+
+		req := httptest.NewRequest(http.MethodGet, "/history/"+target, nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.SetParamNames("item")
+		c.SetParamValues(target)
+
+		if err := h.GetHistory(c); err != nil {
+			t.Fatalf("GetHistory handler failed: %v", err)
+		}
+
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200, got %d", rec.Code)
+		}
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		entries := resp["entries"].([]interface{})
+		if len(entries) != 2 {
+			t.Errorf("Expected 2 history entries, got %d", len(entries))
+		}
+
+		diffs := resp["diffs"].([]interface{})
+		if len(diffs) != 1 {
+			t.Errorf("Expected 1 diff, got %d", len(diffs))
+		}
+	})
+
+	t.Run("History Error", func(t *testing.T) {
+		badStore := storage.NewStorage("localhost", "1")
+		badH := NewHandler(badStore, cfg)
 		req := httptest.NewRequest(http.MethodGet, "/history/test.com", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 		c.SetParamNames("item")
 		c.SetParamValues("test.com")
-		_ = h.GetHistory(c)
+		_ = badH.GetHistory(c)
 	})
 
 	t.Run("Metrics", func(t *testing.T) {
