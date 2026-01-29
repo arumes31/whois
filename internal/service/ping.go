@@ -16,14 +16,11 @@ func Ping(ctx context.Context, target string, count int, callback func(string)) 
 		cmd = exec.CommandContext(ctx, "ping", "-c", fmt.Sprintf("%d", count), target)
 	}
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		callback(fmt.Sprintf("Error: %v", err))
-		return
-	}
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
-		callback(fmt.Sprintf("Error: %v", err))
+		callback(fmt.Sprintf("Failed to start ping: %v", err))
 		return
 	}
 
@@ -31,5 +28,11 @@ func Ping(ctx context.Context, target string, count int, callback func(string)) 
 	for scanner.Scan() {
 		callback(scanner.Text())
 	}
+
+	errScanner := bufio.NewScanner(stderr)
+	for errScanner.Scan() {
+		callback("Error: " + errScanner.Text())
+	}
+
 	_ = cmd.Wait()
 }

@@ -6,30 +6,44 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"strings"
 )
 
 func Traceroute(ctx context.Context, target string, callback func(string)) {
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "tracert", "-d", target)
+		cmd = exec.CommandContext(ctx, "tracert", "-d", "-h", "20", target)
 	} else {
-		cmd = exec.CommandContext(ctx, "traceroute", "-n", target)
+		// Use -m 20 to limit hops and -q 1 for speed (one probe per hop)
+		cmd = exec.CommandContext(ctx, "traceroute", "-n", "-m", "20", "-q", "1", target)
 	}
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		callback(fmt.Sprintf("Error: %v", err))
-		return
-	}
+	stdout, _ := cmd.StdoutPipe()
+	stderr, _ := cmd.StderrPipe()
 
 	if err := cmd.Start(); err != nil {
-		callback(fmt.Sprintf("Error: %v", err))
+		callback(fmt.Sprintf("Failed to start traceroute: %v", err))
 		return
 	}
 
+	outputFound := false
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		callback(scanner.Text())
+		line := scanner.Text()
+		if strings.TrimSpace(line) != "" {
+			outputFound = true
+			callback(line)
+		}
 	}
+
+	errScanner := bufio.NewScanner(stderr)
+	for errScanner.Scan() {
+		callback("Error: " + errScanner.Text())
+	}
+
 	_ = cmd.Wait()
+
+	if !outputFound {
+		callback("Traceroute produced no output. It might be blocked or the utility might be missing.")
+	}
 }

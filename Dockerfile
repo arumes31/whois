@@ -13,7 +13,7 @@ WORKDIR /app
 # Create non-root user
 RUN addgroup -S whoisgroup && adduser -S whoisuser -G whoisgroup
 
-RUN apk add --no-cache tzdata ca-certificates
+RUN apk add --no-cache tzdata ca-certificates traceroute iputils
 COPY --from=builder /app/whois-app .
 COPY templates ./templates
 COPY static ./static
