@@ -149,6 +149,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	e.POST("/login", h.Login)
 	e.GET("/scanner", h.Scanner)
 	e.POST("/scan", h.Scan)
+	e.GET("/history/:item", h.GetHistory)
 
 	// Protected
 	g := e.Group("")
@@ -157,7 +158,6 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	g.POST("/config", h.Config)
 	g.POST("/config/update-geo", h.UpdateGeoDB)
 	g.GET("/logout", h.Logout)
-	g.GET("/history/:item", h.GetHistory)
 
 	return e
 }
