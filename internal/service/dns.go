@@ -405,20 +405,21 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 	var in *dns.Msg
 	var err error
 
-	if strings.HasPrefix(resolver, "https://") {
+	if strings.HasPrefix(resolver, "http://") || strings.HasPrefix(resolver, "https://") {
 		// DoH Query
 		in, err = s.dohQuery(ctx, resolver, m)
 	} else {
 		// Standard DNS
-		if !strings.Contains(resolver, ":") {
-			resolver += ":53"
+		srv := resolver
+		if !strings.Contains(srv, ":") {
+			srv += ":53"
 		}
 		c := new(dns.Client)
 		c.Timeout = 5 * time.Second
-		in, _, err = c.ExchangeContext(ctx, m, resolver)
+		in, _, err = c.ExchangeContext(ctx, m, srv)
 		if err == nil && in != nil && in.Truncated {
 			c.Net = "tcp"
-			in, _, err = c.ExchangeContext(ctx, m, resolver)
+			in, _, err = c.ExchangeContext(ctx, m, srv)
 		}
 	}
 
