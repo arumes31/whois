@@ -161,9 +161,10 @@ body {
 .results-grid-container {
     width: 100%;
     overflow-x: auto;
-    padding-bottom: 10px;
+    padding-top: 10px; /* Space for top scrollbar */
     scrollbar-width: thin;
     scrollbar-color: var(--nordic-blue) transparent;
+    transform: rotateX(180deg); /* Flip container to put scrollbar on top */
 }
 
 .results-grid-container::-webkit-scrollbar {
@@ -184,9 +185,10 @@ body {
     display: flex;
     flex-wrap: nowrap;
     gap: 1.5rem;
-    padding-bottom: 1rem;
+    padding-top: 1rem;
     min-height: 500px;
     width: max-content;
+    transform: rotateX(180deg); /* Flip content back so it's readable */
 }
 
 .result-card {
