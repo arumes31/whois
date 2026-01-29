@@ -1,25 +1,70 @@
 services:
   web:
     build: .
-    image: whois-app:latest
+    image: whois-go:latest
     ports:
       - "14400:5000"
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - CONFIG_USER=${CONFIG_USER:-admin}
       - CONFIG_PASS=${CONFIG_PASS:-admin}
-      - SECRET_KEY=${SECRET_KEY:-dev-key-change-me}
+      - SECRET_KEY=${SECRET_KEY:-change-me-locally-for-security}
+      - TRUSTED_IPS=${TRUSTED_IPS:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10}
+      - TRUST_PROXY=${TRUST_PROXY:-true}
+      - USE_CLOUDFLARE=${USE_CLOUDFLARE:-false}
+      - ENABLE_GEO=${ENABLE_GEO:-true}
+      - ENABLE_SSL=${ENABLE_SSL:-true}
+      - ENABLE_WHOIS=${ENABLE_WHOIS:-true}
+      - ENABLE_DNS=${ENABLE_DNS:-true}
+      - ENABLE_CT=${ENABLE_CT:-true}
+      - ENABLE_HTTP=${ENABLE_HTTP:-true}
+      - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
+      - MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
+      - DNS_SERVERS=${DNS_SERVERS:-https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query}
+      - BOOTSTRAP_DNS=${BOOTSTRAP_DNS:-1.1.1.1,9.9.9.9}
+      - PORT=5000
     restart: unless-stopped
-    
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+        reservations:
+          cpus: '0.10'
+          memory: 128M
+    volumes:
+      - whois_data:/app/data
+    networks:
+      - app-tier
+
   redis:
     image: redis:alpine
     restart: unless-stopped
-    command: redis-server --save 60 1
+    command: redis-server --save 60 1 --loglevel warning
     volumes:
       - redis_data:/data
+    networks:
+      - app-tier
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+
+networks:
+  app-tier:
+    driver: bridge
 
 volumes:
   redis_data:
+  whois_data:

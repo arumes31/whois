@@ -1,26 +1,48 @@
-{# templates/scan_result.html #}
-{% if result.error %}
-  <div class="alert alert-danger">
-    <strong>Error:</strong> {{ result.error }}
+{{ if .result.Error }}
+  <div class="glass-panel p-3 border-danger mb-3">
+    <strong class="text-danger">ERRORS DETECTED:</strong>
+    <ul class="text-white small mb-0 mt-2">
+    {{ range .result.Error }}
+      <li>{{ . }}</li>
+    {{ end }}
+    </ul>
   </div>
-{% else %}
-  <div class="alert alert-info mb-2">
-    <strong>Target:</strong> {{ target }} – scanned in {{ "%.3f"|format(result.elapsed) }} s
-  </div>
-
-  {% if result.open %}
-    <div class="alert alert-success">
-      <strong class="text-dark">Open ({{ result.open|length }})</strong>:
-      <code class="d-block mt-1 text-dark">{{ result.open|join(', ') }}</code>
+{{ else }}
+  <div class="glass-panel p-3 mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong class="text-nordic-blue">TARGET: {{ .target }}</strong>
+        <span class="badge bg-nordic-blue-dim text-nordic-blue">ELAPSED: {{ printf "%.3f" .result.Elapsed }}s</span>
     </div>
-  {% else %}
-    <div class="alert alert-secondary">No open ports detected.</div>
-  {% endif %}
 
-  {% if result.closed %}
-    <details class="mt-2">
-      <summary class="text-white">Closed ports ({{ result.closed|length }}) – click to view</summary>
-      <code class="d-block mt-1 text-white">{{ result.closed|join(', ') }}</code>
-    </details>
-  {% endif %}
-{% endif %}
+    {{ if .result.Open }}
+      <div class="mt-3">
+        <strong class="text-success small d-block mb-2">OPEN PORTS ({{ len .result.Open }})</strong>
+        <div class="list-group list-group-flush">
+          {{ range $port, $banner := .result.Open }}
+            <div class="list-group-item bg-transparent text-main border-secondary p-2 clickable-record" onclick="copyToClipboard(this)">
+              <div class="d-flex align-items-center gap-3">
+                  <span class="badge bg-success-dim text-success" style="width: 60px;">{{ $port }}</span>
+                  {{ if $banner }}
+                    <pre class="mb-0 text-info font-monospace" style="font-size: 0.7rem; white-space: pre-wrap;"><code>{{ $banner }}</code></pre>
+                  {{ else }}
+                    <span class="text-white small italic">Open (No banner)</span>
+                  {{ end }}
+              </div>
+            </div>
+          {{ end }}
+        </div>
+      </div>
+    {{ else }}
+      <div class="alert bg-nordic-blue-dim text-nordic-blue border-0 small mt-3">No open ports detected.</div>
+    {{ end }}
+
+    {{ if .result.Closed }}
+      <details class="mt-3">
+        <summary class="small">CLOSED PORTS ({{ len .result.Closed }})</summary>
+        <div class="p-2 text-white font-monospace clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;">
+          {{ range $i, $p := .result.Closed }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}
+        </div>
+      </details>
+    {{ end }}
+  </div>
+{{ end }}
