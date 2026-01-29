@@ -27,6 +27,8 @@ type Config struct {
 	DNSResolver       string
 	DNSServers        string
 	BootstrapDNS      string
+	SEOEnabled        bool
+	SEODomain         string
 }
 
 func LoadConfig() (*Config, error) {
@@ -50,6 +52,8 @@ func LoadConfig() (*Config, error) {
 		DNSResolver:       getEnv("DNS_RESOLVER", "8.8.8.8:53"),
 		DNSServers:        getEnv("DNS_SERVERS", "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query"),
 		BootstrapDNS:      getEnv("BOOTSTRAP_DNS", "1.1.1.1,9.9.9.9"),
+		SEOEnabled:        getEnvBool("SEO_ENABLED", false),
+		SEODomain:         getEnv("SEO_DOMAIN", ""),
 	}
 
 	if cfg.SecretKey == "" {
