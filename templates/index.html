@@ -23,16 +23,13 @@
                 
                 <div class="row g-3">
                     <div class="col-md-9">
-                        <div class="input-group">
-                            <span class="input-group-text bg-dark border-secondary text-muted" title="Target Input Area"><svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 448 512"><path d="M224 256A128 128 0 1 0 224 0a128 128 0 1 0 0 256zm-45.7 48C79.8 304 0 383.8 0 482.3C0 498.7 13.3 512 29.7 512H418.3c16.4 0 29.7-13.3 29.7-29.7C448 383.8 368.2 304 269.7 304H178.3z"/></svg></span>
-                            <textarea 
-                              id="targetInput"
-                              class="form-control matrix-input" 
-                              rows="1"
-                              placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
-                              title="Enter domain names or IP addresses separated by commas"
-                              required></textarea>
-                        </div>
+                        <textarea 
+                          id="targetInput"
+                          class="form-control matrix-input" 
+                          rows="1"
+                          placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
+                          title="Enter domain names or IP addresses separated by commas"
+                          required></textarea>
                     </div>
                     <div class="col-md-3">
                         <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100" title="Start multi-vector diagnostic scan for all listed targets">
@@ -178,8 +175,8 @@
         </div>
         <div class="diagnostic-content p-3 pt-0">
             <div class="service-section" data-service="geo"></div>
-            <div class="service-section" data-service="dns"></div>
             <div class="service-section" data-service="whois"></div>
+            <div class="service-section" data-service="dns"></div>
             <div class="service-section" data-service="subdomains"></div>
             <div class="service-section" data-service="portscan"></div>
             <div class="service-section" data-service="ping"></div>
@@ -455,13 +452,13 @@ function updateUI(msg) {
                                 <div class="ps-2">
 `;
                     for (const [type, vals] of Object.entries(records)) {
-                        html += `<div class="text-muted" style="font-size: 0.65rem;"><span class="text-info">${type}:</span> <span class="subdomain-item clickable-record" onclick="copyToClipboard(this)">${vals.join(', ')}</span></div>`;
+                        html += `<div class="text-white" style="font-size: 0.65rem;"><span class="text-info">${type}:</span> <span class="subdomain-item clickable-record" onclick="copyToClipboard(this)">${vals.join(', ')}</span></div>`;
                     }
                     html += `</div></div>`;
                 }
                 html += `</div></details>`;
             } else {
-                html = `<details><summary>SUBDOMAIN DISCOVERY</summary><div class="p-2 text-muted small">No common subdomains found</div></details>`;
+                html = `<details><summary>SUBDOMAIN DISCOVERY</summary><div class="p-2 text-white small">No common subdomains found</div></details>`;
             }
             break;
         case 'portscan':
@@ -507,18 +504,18 @@ function updateUI(msg) {
                                 <div class="ps-2">`;
                     if (Array.isArray(val)) {
                         val.forEach(v => {
-                            html += `<div class="text-main clickable-record" onclick="copyToClipboard(this)">${v}</div>`;
+                            html += `<div class="text-white clickable-record" onclick="copyToClipboard(this)">${v}</div>`;
                         });
                     } else if (type === "Subdomains") {
-                        html += `<div class="text-muted italic">Found ${Object.keys(val).length} prefixes</div>`;
+                        html += `<div class="text-white italic">Found ${Object.keys(val).length} prefixes</div>`;
                     } else {
-                        html += `<div class="text-main clickable-record" onclick="copyToClipboard(this)">${JSON.stringify(val)}</div>`;
+                        html += `<div class="text-white clickable-record" onclick="copyToClipboard(this)">${JSON.stringify(val)}</div>`;
                     }
                     html += `</div></div>`;
                 }
                 html += `</div></details>`;
             } else {
-                html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-muted small">No records found</div></details>`;
+                html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-white small">No records found</div></details>`;
             }
             break;
         case 'ssl':
