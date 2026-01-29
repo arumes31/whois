@@ -62,14 +62,42 @@ docker compose up -d
 Access the dashboard at `http://localhost:14400`.
 
 ### Environment Configuration
+
+#### 🛡️ Core & Security
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SECRET_KEY` | Key for session encryption (Required) | - |
-| `DNS_SERVERS` | List of DoH resolvers | Cloudflare, Google, Quad9 |
-| `BOOTSTRAP_DNS` | DNS used to resolve DoH providers | 1.1.1.1, 9.9.9.9 |
-| `CONFIG_USER` | Admin username | admin |
-| `CONFIG_PASS` | Admin passcode | - |
-| `MAXMIND_LICENSE_KEY` | MaxMind License Key for GeoIP | - |
+| `SECRET_KEY` | **Required**. Key for session encryption and CSRF protection | - |
+| `CONFIG_USER` | Administrator username for restricted tools | `admin` |
+| `CONFIG_PASS` | Administrator passcode for restricted tools | `admin` |
+| `TRUSTED_IPS` | CSV of IPs allowed to access `/metrics` | `127.0.0.1,::1,...` |
+| `TRUST_PROXY` | Trust `X-Forwarded-For` headers | `true` |
+| `USE_CLOUDFLARE` | Use `CF-Connecting-IP` for client identification | `false` |
+
+#### 📡 DNS & Networking
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DNS_SERVERS` | CSV of DoH resolvers used for multi-vector lookups | `Cloudflare, Google, Quad9` |
+| `BOOTSTRAP_DNS` | DNS used to resolve the hostnames of DoH providers | `1.1.1.1, 9.9.9.9` |
+| `DNS_RESOLVER` | Standard UDP resolver used for discovery modules | `8.8.8.8:53` |
+| `PORT` | Local port the web server listens on | `5000` |
+| `REDIS_HOST` | Hostname of the Redis server | `localhost` |
+| `REDIS_PORT` | Port of the Redis server | `6379` |
+
+#### 🔍 Diagnostic Features
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `ENABLE_GEO` | Enable GeoIP and ASN lookup features | `true` |
+| `ENABLE_DNS` | Enable authoritative DNS record retrieval | `true` |
+| `ENABLE_WHOIS` | Enable WHOIS and RDAP data retrieval | `true` |
+| `ENABLE_SSL` | Enable SSL/TLS certificate analysis | `true` |
+| `ENABLE_HTTP` | Enable HTTP security header inspection | `true` |
+| `ENABLE_CT` | Enable Certificate Transparency log discovery | `true` |
+
+#### 🌍 External API Keys
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MAXMIND_ACCOUNT_ID` | MaxMind Account ID for GeoIP database updates | - |
+| `MAXMIND_LICENSE_KEY` | MaxMind License Key for GeoIP database updates | - |
 
 ## 🔄 Development Lifecycle
 
