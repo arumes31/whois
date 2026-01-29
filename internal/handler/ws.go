@@ -345,10 +345,12 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			if len(portList) > 0 {
 				results := make(map[int]string)
 				var pmu sync.Mutex
+				foundOpen := false
 				service.ScanPortsStream(ctx, target, portList, func(port int, banner string, err error) {
 					if err == nil {
 						pmu.Lock()
 						results[port] = banner
+						foundOpen = true
 						// Create a copy for sending to avoid race condition during Marshal
 						msgData := make(map[int]string)
 						for k, v := range results {
@@ -358,6 +360,9 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 						send("portscan", msgData)
 					}
 				})
+				if !foundOpen {
+					send("portscan", results)
+				}
 			}
 			sendLog("Port scan completed for " + target)
 			sendDone("portscan")

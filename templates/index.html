@@ -84,7 +84,7 @@
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-portscan">
-                            <label for="cfg-portscan"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.5" viewBox="0 0 576 512"><path d="M320 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V32zM448 160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V160zM64 288c0 17.7 14.3 32 32 32s32-14.3 32-32V160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288zM192 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V416c0 17.7 14.3 32 32 32s32-14.3 32-32V32z"/></svg>PORTS (80,443,22...)</label>
+                            <label for="cfg-portscan"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.5" viewBox="0 0 576 512"><path d="M320 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V32zM448 160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V160zM64 288c0 17.7 14.3 32 32 32s32-14.3 32-32V160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288zM192 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V416c0 17.7 14.3 32 32 32s32-14.3 32-32V32z"/></svg>PORTSCAN <svg style="width:12px;height:12px;fill:currentColor;opacity:0.5" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Port scanning is only supported for direct IP addresses (skipped for domains)."><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></label>
                         </div>
                         <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
                             <input type="text" id="cfg-ports" class="form-control matrix-input py-1" style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389" placeholder="Specific ports...">
@@ -804,6 +804,7 @@ connectWS();
 
 // Initial global tooltips
 tippy('[title]', { theme: 'matrix' });
+tippy('.help-icon', { theme: 'matrix', placement: 'right' });
 </script>
 
 {{ template "footer" . }}
