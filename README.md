@@ -1,10 +1,12 @@
 # WHOIS | Network Diagnostics & Discovery
 
+[![Go-CI](https://github.com/arumes31/whois/actions/workflows/go-ci.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/go-ci.yml)
 [![Build and Publish Docker Image](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml)
 [![Daily Security Scan](https://github.com/arumes31/whois/actions/workflows/security-scan.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/security-scan.yml)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/arumes31/whois)](https://golang.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Docker Image Size](https://img.shields.io/docker/image-size/arumes31/whois-go?label=docker%20image)](https://ghcr.io/arumes31/whois)
+[![Issues](https://img.shields.io/github/issues/arumes31/whois)](https://github.com/arumes31/whois/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/arumes31/whois)](https://github.com/arumes31/whois/commits/test)
 
 A high-performance, professional-grade network diagnostic platform designed for deep reconnaissance and system monitoring. Featuring a modern Copper/Brass Steampunk aesthetic with a glassmorphism layout, it provides real-time, multi-vector analysis for IT professionals and security researchers.
 
@@ -19,6 +21,22 @@ A high-performance, professional-grade network diagnostic platform designed for 
 - **100% Self-Contained:** All assets (CSS, JS, Fonts) are hosted locally. Zero external CDNs required, making it ideal for isolated or air-gapped networks.
 
 ## Technical Architecture
+
+```mermaid
+graph TD
+    User((User)) -->|HTMX / WebSocket| FE[Frontend: Bootstrap 5 / JS]
+    subgraph "Go Diagnostic Engine"
+        FE -->|Requests| Handler[Echo API Handlers]
+        Handler -->|Concurrent Execution| Svc[Service Layer]
+        Svc -->|DoH / UDP| DNS[DNS Service]
+        Svc -->|RDAP / P43| WHOIS[WHOIS Service]
+        Svc -->|HTTPS| CT[CT Log Service]
+        Svc -->|TCP| Scan[Scanner Service]
+        Svc -->|GeoIP| Geo[GeoIP Service]
+    end
+    Svc -->|Store History| Cache[Redis Storage]
+    Scheduler[Cron Scheduler] -->|Periodic Tasks| Svc
+```
 
 ### Backend (Go / Echo)
 - **Concurrent Engine:** Leverages Go's goroutines for parallel diagnostic execution with strict `context.Context` lifecycle management.
@@ -41,6 +59,17 @@ A high-performance, professional-grade network diagnostic platform designed for 
 docker compose up -d
 ```
 Access the dashboard at `http://localhost:14400`.
+
+## Project Roadmap
+
+```text
+DIAGNOSTIC ENGINE PROGRESS: [▓ border-opacity-10 ▓ ▓ ▓ ▓ ▓ ▓ ▓ ▓ ░ ░] 80%
+--------------------------------------------------------------------------------
+[X] Multi-Vector Lookup Chain       [X] High-Speed Subdomain discovery
+[X] WebSocket Data Streaming        [X] RDAP Authoritative Fallback
+[X] DNS over HTTPS (DoH) support    [ ] Advanced ASN Mapping
+[ ] Vulnerability CVE Correlation   [ ] PDF Report Generation
+```
 
 ### Environment Configuration
 | Variable | Description | Default |
