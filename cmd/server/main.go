@@ -58,7 +58,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	// Dependencies
 	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
 	h := handler.NewHandler(store, cfg)
-	sched := service.NewScheduler(store, cfg.DNSResolver)
+	sched := service.NewScheduler(store, cfg.DNSServers, cfg.BootstrapDNS)
 
 	// Startup tasks
 	go service.DownloadBackground()

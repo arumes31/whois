@@ -18,12 +18,12 @@ type Scheduler struct {
 	Monitor *MonitorService
 }
 
-func NewScheduler(s *storage.Storage, resolver string) *Scheduler {
+func NewScheduler(s *storage.Storage, resolvers string, bootstrap string) *Scheduler {
 	c := cron.New()
 	return &Scheduler{
 		Cron:    c,
 		Storage: s,
-		Monitor: NewMonitorService(s, resolver),
+		Monitor: NewMonitorService(s, resolvers, bootstrap),
 	}
 }
 

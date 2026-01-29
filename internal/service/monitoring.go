@@ -14,10 +14,10 @@ type MonitorService struct {
 	DNS     *DNSService
 }
 
-func NewMonitorService(s *storage.Storage, resolver string) *MonitorService {
+func NewMonitorService(s *storage.Storage, resolvers string, bootstrap string) *MonitorService {
 	return &MonitorService{
 		Storage: s,
-		DNS:     NewDNSService(resolver),
+		DNS:     NewDNSService(resolvers, bootstrap),
 	}
 }
 

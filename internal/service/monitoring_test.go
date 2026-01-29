@@ -28,7 +28,7 @@ func TestMonitorService(t *testing.T) {
 	s := setupMiniredisStorage(t)
 	ctx := context.Background()
 
-	m := NewMonitorService(s, "8.8.8.8:53")
+	m := NewMonitorService(s, "8.8.8.8:53", "")
 	m.RunCheck(ctx, "example.com")
 
 	// Check if history was added
@@ -42,7 +42,7 @@ func TestMonitorService_IP(t *testing.T) {
 	s := setupMiniredisStorage(t)
 	ctx := context.Background()
 
-	m := NewMonitorService(s, "")
+	m := NewMonitorService(s, "", "")
 	target := "8.8.8.8"
 	m.RunCheck(ctx, target)
 
@@ -57,7 +57,7 @@ func TestMonitorService_ErrorPaths(t *testing.T) {
 	s := setupMiniredisStorage(t)
 	ctx := context.Background()
 
-	m := NewMonitorService(s, "")
+	m := NewMonitorService(s, "", "")
 
 	t.Run("Invalid Target", func(t *testing.T) {
 		m.RunCheck(ctx, "invalid..domain")
