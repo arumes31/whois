@@ -526,7 +526,7 @@ function updateUI(msg) {
             if (data && data.error) {
                 html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
-                html = `<details open><summary>DNS RECORDS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary>DNS RECORDS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative resource records (A, MX, TXT, NS, CNAME)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">`;
                 for (const [type, val] of Object.entries(data)) {
                     html += `<div class="mb-2 pb-1 border-bottom border-secondary border-opacity-10">
@@ -552,7 +552,7 @@ function updateUI(msg) {
             if (data.error) {
                 html = `<details><summary>SSL/TLS</summary><div class="p-2 text-white small">${data.error}</div></details>`;
             } else {
-                html = `<details><summary>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details><summary>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake, Cipher Suite, and Certificate Authority details"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <span class="badge bg-success mb-2">${data.protocol}</span><br>
                             <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${data.issuer}</span><br>
@@ -573,7 +573,7 @@ function updateUI(msg) {
                     </div>`;
                 }
 
-                html = `<details><summary>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details><summary>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of HTTP Security Headers (HSTS, CSP, XFO) and server metadata"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
                                 <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${data.status}</span>
@@ -592,7 +592,7 @@ function updateUI(msg) {
             break;
         case 'whois':
             if (data && typeof data === 'object') {
-                html = `<details open><summary>WHOIS DATA</summary>
+                html = `<details open><summary>WHOIS DATA <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative domain registration, registrar, and expiration timestamps"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Registrar:</strong> ${data.registrar || 'Unknown'}</div>
                             <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Expires:</strong> ${data.expiry || 'Unknown'}</div>
@@ -611,7 +611,7 @@ function updateUI(msg) {
             if (data && data.error) {
                 html = `<details><summary>CT SUBDOMAINS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
-                html = `<details><summary>CT SUBDOMAINS</summary><ul class="list-unstyled p-2 small m-0" style="max-height: 150px; overflow-y: auto;">`;
+                html = `<details><summary>CT SUBDOMAINS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Historical subdomains discovered via public Certificate Transparency (CT) logs"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary><ul class="list-unstyled p-2 small m-0" style="max-height: 150px; overflow-y: auto;">`;
                 for (const [sub, _] of Object.entries(data)) {
                     html += `<li class="clickable-record" onclick="copyToClipboard(this)"><svg style="width:10px;height:10px;margin-right:8px;fill:#ff4d4d" viewBox="0 0 320 512"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>${sub}</li>`;
                 }
