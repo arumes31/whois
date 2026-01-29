@@ -19,10 +19,11 @@
                 class="form-control matrix-input" 
                 name="item" 
                 placeholder="example.com or 8.8.8.8" 
+                title="Enter a target to add to the daily monitoring schedule"
                 required>
               <small class="text-muted font-monospace">Domain or IP address</small>
             </div>
-            <button type="submit" name="action" value="add" class="btn btn-danger w-100">ADD TO MONITORING</button>
+            <button type="submit" name="action" value="add" class="btn btn-danger w-100" title="Add this item to the permanent monitoring list">ADD TO MONITORING</button>
           </form>
         </div>
       </div>
@@ -37,7 +38,8 @@
                 hx-post="/config/update-geo" 
                 hx-target="#geoUpdateRes" 
                 hx-indicator="#geoSpin"
-                class="btn btn-outline-warning w-100 fw-bold">
+                class="btn btn-outline-warning w-100 fw-bold"
+                title="Manually trigger a download of the latest MaxMind GeoIP database">
                 FORCE DATABASE UPDATE
             </button>
             <div id="geoSpin" class="htmx-indicator text-center mt-3">
@@ -63,7 +65,7 @@
                   <code class="text-info">{{ . }}</code>
                   <form method="post" class="d-inline">
                     <input type="hidden" name="item" value="{{ . }}">
-                    <button type="submit" name="action" value="remove" class="btn btn-sm btn-outline-danger px-3">REMOVE</button>
+                    <button type="submit" name="action" value="remove" class="btn btn-sm btn-outline-danger px-3" title="Remove this item from the monitoring schedule">REMOVE</button>
                   </form>
                 </li>
               {{ end }}

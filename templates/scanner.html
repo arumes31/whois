@@ -8,16 +8,16 @@
         <div class="row g-3">
             <div class="col-md-8">
                 <label class="small text-muted mb-2 fw-bold">TARGET IP OR DOMAIN</label>
-                <input type="text" name="target" class="form-control matrix-input" placeholder="e.g. 192.168.1.1" required>
+                <input type="text" name="target" class="form-control matrix-input" placeholder="e.g. 192.168.1.1" title="Enter an IP address or domain name to scan" required>
             </div>
             <div class="col-md-4">
                 <label class="small text-muted mb-2 fw-bold">PORT RANGE</label>
-                <input type="text" name="ports" class="form-control matrix-input" value="21,22,23,25,53,80,110,143,443,445,3306,3389,5432,8080">
+                <input type="text" name="ports" class="form-control matrix-input" value="21,22,23,25,53,80,110,143,443,445,3306,3389,5432,8080" title="Comma-separated list of ports or ranges (e.g., 80, 443, 8080-8085)">
             </div>
         </div>
         
         <div class="mt-4">
-            <button type="submit" class="btn btn-danger w-100 fw-bold py-2">
+            <button type="submit" class="btn btn-danger w-100 fw-bold py-2" title="Start TCP port discovery and banner grabbing">
                 <svg style="width:14px;height:14px;margin-right:8px;fill:currentColor" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg> INITIATE SCAN
             </button>
         </div>
