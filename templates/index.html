@@ -627,7 +627,7 @@ function updateUI(msg) {
     // Add copy button to summary if it doesn't have one
     section.querySelectorAll('summary').forEach(s => {
         if (!s.querySelector('.section-copy-btn')) {
-            const btn = document.createElement('div'); // Using div instead of i
+            const btn = document.createElement('div');
             btn.className = "section-copy-btn d-inline-block ms-2";
             btn.style = "cursor:pointer; width:12px; height:12px;";
             btn.innerHTML = `<svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 448 512"><path d="M208 0H332.1c12.7 0 24.9 5.1 33.9 14.1l67.9 67.9c9 9 14.1 21.2 14.1 33.9V336c0 26.5-21.5 48-48 48H208c-26.5 0-48-21.5-48-48V48c0-26.5 21.5-48 48-48zM48 128h80v64H64V448H256V416h64v48c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V176c0-26.5 21.5-48 48-48z"/></svg>`;
@@ -636,10 +636,21 @@ function updateUI(msg) {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                const container = s.parentElement.querySelector('div, pre, ul');
-                if (!container) return;
+                const details = s.parentElement;
+                let text = "";
+                Array.from(details.childNodes).forEach(node => {
+                    if (node.nodeName.toLowerCase() !== 'summary') {
+                        text += (node.innerText || node.textContent || "") + "\n";
+                    }
+                });
+                text = text.trim();
                 
-                const text = container.innerText.trim();
+                if (!text) {
+                    console.warn('No text found in section to copy');
+                    return;
+                }
+
+                console.log('Copying section text');
                 const banner = document.getElementById('copyBanner');
                 
                 const onSuccess = () => {
@@ -655,11 +666,11 @@ function updateUI(msg) {
 
                 if (navigator.clipboard && window.isSecureContext) {
                     navigator.clipboard.writeText(text).then(onSuccess).catch(err => {
-                        console.error('Clipboard error:', err);
-                        if (typeof fallbackCopy === 'function') fallbackCopy(text, onSuccess);
+                        console.warn('Clipboard API failed, using fallback:', err);
+                        fallbackCopy(text, onSuccess);
                     });
                 } else {
-                    if (typeof fallbackCopy === 'function') fallbackCopy(text, onSuccess);
+                    fallbackCopy(text, onSuccess);
                 }
             };
             s.appendChild(btn);
@@ -770,7 +781,6 @@ function copyTarget(btn) {
     const target = card.querySelector('.target-name').innerText;
     const contentEl = card.querySelector('.diagnostic-content');
     
-    // Explicitly clean up the text to avoid messy copies
     let cleanText = `DIAGNOSTIC REPORT FOR: ${target}\n`;
     cleanText += `Generated: ${new Date().toLocaleString()}\n`;
     cleanText += `------------------------------------------\n\n`;
@@ -780,21 +790,29 @@ function copyTarget(btn) {
         const summary = s.querySelector('summary');
         if (summary) {
             const title = summary.innerText.replace(/[^a-zA-Z &]/g, '').trim();
-            // Clone the detail to get text without summary if needed, but innerText on details usually works well
-            const bodyText = s.innerText.replace(summary.innerText, '').trim();
+            
+            // Get all text content EXCEPT the summary
+            let bodyText = "";
+            Array.from(s.childNodes).forEach(node => {
+                if (node.nodeName.toLowerCase() !== 'summary') {
+                    bodyText += (node.innerText || node.textContent || "") + "\n";
+                }
+            });
+            
+            bodyText = bodyText.trim();
             if (bodyText) {
                 cleanText += `[${title}]\n${bodyText}\n\n`;
             }
         }
     });
 
+    console.log('Copying full report for:', target);
     const banner = document.getElementById('copyBanner');
     const onSuccess = () => {
         if (banner) {
             banner.classList.add('show');
             setTimeout(() => banner.classList.remove('show'), 2000);
         }
-        // Simple visual feedback on the button (svg)
         const originalFill = btn.style.fill;
         btn.style.fill = "#4caf50";
         setTimeout(() => btn.style.fill = originalFill, 2000);
@@ -802,7 +820,7 @@ function copyTarget(btn) {
 
     if (navigator.clipboard && window.isSecureContext) {
         navigator.clipboard.writeText(cleanText.trim()).then(onSuccess).catch(err => {
-            console.error('Clipboard error:', err);
+            console.warn('Clipboard API failed, using fallback:', err);
             fallbackCopy(cleanText.trim(), onSuccess);
         });
     } else {
