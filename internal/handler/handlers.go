@@ -464,10 +464,38 @@ func (h *Handler) GetHistory(c echo.Context) error {
 
 func (h *Handler) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		if utils.IsTrustedIP(c.RealIP(), h.AppConfig.TrustedIPs) {
-			return next(c)
+		if !utils.IsTrustedIP(c.RealIP(), h.AppConfig.TrustedIPs) {
+			return c.NoContent(http.StatusForbidden)
 		}
-		return c.NoContent(http.StatusForbidden)
+
+		// Throttling / Slowdown logic
+		ip := c.RealIP()
+		ctx := c.Request().Context()
+		key := "metrics_throttle:" + ip
+
+		count, err := h.Storage.Client.Incr(ctx, key).Result()
+		if err == nil {
+			if count == 1 {
+				h.Storage.Client.Expire(ctx, key, time.Minute)
+			}
+
+			// If more than 5 requests in a minute, start slowing down
+			if count > 5 {
+				delay := time.Duration(count-5) * 500 * time.Millisecond
+				if delay > 10*time.Second {
+					delay = 10 * time.Second
+				}
+				utils.Log.Warn("throttling metrics access", utils.Field("ip", ip), utils.Field("count", count), utils.Field("delay", delay))
+
+				select {
+				case <-time.After(delay):
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}
+		}
+
+		return next(c)
 	}
 }
 

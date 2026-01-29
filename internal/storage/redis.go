@@ -27,6 +27,8 @@ type RedisClient interface {
 	Pipeline() redis.Pipeliner
 	Ping(ctx context.Context) *redis.StatusCmd
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
+	Incr(ctx context.Context, key string) *redis.IntCmd
+	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
 }
 
 type Storage struct {

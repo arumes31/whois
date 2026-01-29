@@ -302,6 +302,30 @@ func TestHandlers(t *testing.T) {
 		_ = mw(c)
 	})
 
+	t.Run("Metrics Throttle", func(t *testing.T) {
+		h.AppConfig.TrustedIPs = "127.0.0.1"
+		mw := h.Metrics(func(c echo.Context) error { return c.String(200, "ok") })
+
+		// Send 6 requests, the 6th should be delayed
+		for i := 1; i <= 6; i++ {
+			req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+			req.RemoteAddr = "127.0.0.1:1234"
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			start := time.Now()
+			_ = mw(c)
+			elapsed := time.Since(start)
+
+			if i > 5 {
+				// Should have at least 500ms delay
+				if elapsed < 400*time.Millisecond {
+					t.Errorf("Expected delay for request %d, but took only %v", i, elapsed)
+				}
+			}
+		}
+	})
+
 	t.Run("Login Invalid", func(t *testing.T) {
 		f := url.Values{}
 		f.Add("username", "admin")
