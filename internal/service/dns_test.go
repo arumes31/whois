@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -185,6 +188,55 @@ func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
 
 	svc := NewDNSService("", "")
 	_, _ = svc.Trace(context.Background(), "example.com")
+}
+
+func TestDNSService_DoH(t *testing.T) {
+	// Mock DoH Server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != "application/dns-message" {
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+			return
+		}
+
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		msg := new(dns.Msg)
+		if err := msg.Unpack(body); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// Create response
+		reply := new(dns.Msg)
+		reply.SetReply(msg)
+		reply.Authoritative = true
+		
+		if msg.Question[0].Qtype == dns.TypeA {
+			reply.Answer = append(reply.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: msg.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   net.ParseIP("127.0.0.1"),
+			})
+		}
+
+		resp, _ := reply.Pack()
+		w.Header().Set("Content-Type", "application/dns-message")
+		w.Write(resp)
+	}))
+	defer ts.Close()
+
+	svc := NewDNSService(ts.URL, "8.8.8.8")
+	res, err := svc.query(context.Background(), "test.com", dns.TypeA, false)
+	if err != nil {
+		t.Fatalf("DoH query failed: %v", err)
+	}
+
+	if len(res) == 0 || res[0] != "127.0.0.1" {
+		t.Errorf("Expected 127.0.0.1, got %v", res)
+	}
 }
 
 func TestDNSService_Trace_TooLong(t *testing.T) {

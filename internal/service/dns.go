@@ -23,11 +23,32 @@ type DNSService struct {
 }
 
 func NewDNSService(resolvers string, bootstrap string) *DNSService {
-	resList := strings.Split(resolvers, ",")
-	bootList := strings.Split(bootstrap, ",")
+	var resList []string
+	if resolvers != "" {
+		for _, s := range strings.Split(resolvers, ",") {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				resList = append(resList, trimmed)
+			}
+		}
+	}
 
-	if resolvers == "" {
-		resList = []string{"8.8.8.8:53"}
+	var bootList []string
+	if bootstrap != "" {
+		for _, s := range strings.Split(bootstrap, ",") {
+			if trimmed := strings.TrimSpace(s); trimmed != "" {
+				bootList = append(bootList, trimmed)
+			}
+		}
+	}
+
+	// If no resolvers are configured, fallback to bootstrap
+	if len(resList) == 0 {
+		resList = bootList
+	}
+
+	// If still empty (both empty), provide a ultimate fallback
+	if len(resList) == 0 {
+		resList = []string{"8.8.8.8:53", "1.1.1.1:53"}
 	}
 
 	// Setup custom transport to use bootstrap DNS for DoH hostname resolution
@@ -36,12 +57,11 @@ func NewDNSService(resolvers string, bootstrap string) *DNSService {
 		KeepAlive: 30 * time.Second,
 	}
 
-	// We use a custom dialer for the HTTP client used for DoH
-	// to ensure hostnames like cloudflare-dns.com are resolved using bootstrap servers
+	// HTTP client used for DoH uses bootstrap servers to resolve hostnames
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, _ := net.SplitHostPort(addr)
-			if net.ParseIP(host) == nil {
+			if net.ParseIP(host) == nil && len(bootList) > 0 {
 				// Resolve using bootstrap
 				m := new(dns.Msg)
 				m.SetQuestion(dns.Fqdn(host), dns.TypeA)
@@ -50,14 +70,17 @@ func NewDNSService(resolvers string, bootstrap string) *DNSService {
 				var resolvedIP string
 				for _, b := range bootList {
 					srv := b
-					if !strings.Contains(srv, ":") {
+					if !strings.Contains(srv, ":") && !strings.HasPrefix(srv, "https://") {
 						srv += ":53"
 					}
-					in, _, err := c.Exchange(m, srv)
-					if err == nil && len(in.Answer) > 0 {
-						if a, ok := in.Answer[0].(*dns.A); ok {
-							resolvedIP = a.A.String()
-							break
+					// Only use standard DNS bootstrap servers for resolving DoH hostnames
+					if !strings.HasPrefix(srv, "https://") {
+						in, _, err := c.Exchange(m, srv)
+						if err == nil && len(in.Answer) > 0 {
+							if a, ok := in.Answer[0].(*dns.A); ok {
+								resolvedIP = a.A.String()
+								break
+							}
 						}
 					}
 				}
