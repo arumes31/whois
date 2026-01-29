@@ -109,7 +109,7 @@
     if (typeof connectWS === 'function') connectWS();
 
     // Global tooltips
-    tippy('[title]', { theme: 'matrix' });
+    tippy('[title], [data-tippy-content]', { theme: 'matrix' });
     tippy('.help-icon', { theme: 'matrix', placement: 'right' });
 </script>
 
