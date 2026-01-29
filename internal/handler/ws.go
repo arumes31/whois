@@ -143,12 +143,13 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			_ = h.DNS.DiscoverSubdomainsStream(ctx, target, nil, func(fqdn string, res map[string][]string) {
 				smu.Lock()
 				results[fqdn] = res
+				// Create a copy for sending to avoid race condition during Marshal
+				msgData := make(map[string]interface{})
+				for k, v := range results {
+					msgData[k] = v
+				}
 				smu.Unlock()
-
-				// Send incremental result
-				smu.Lock()
-				send("subdomains", results)
-				smu.Unlock()
+				send("subdomains", msgData)
 			})
 
 			sendLog("Subdomain discovery completed for " + target)
@@ -221,8 +222,13 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			err := h.DNS.LookupStream(ctx, target, isIP, func(rtype string, data interface{}) {
 				dmu.Lock()
 				dnsData[rtype] = data
+				// Create a copy for sending to avoid race condition during Marshal
+				msgData := make(map[string]interface{})
+				for k, v := range dnsData {
+					msgData[k] = v
+				}
 				dmu.Unlock()
-				send("dns", dnsData)
+				send("dns", msgData)
 			})
 
 			if err != nil {
@@ -308,11 +314,13 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 					if err == nil {
 						pmu.Lock()
 						results[port] = banner
+						// Create a copy for sending to avoid race condition during Marshal
+						msgData := make(map[int]string)
+						for k, v := range results {
+							msgData[k] = v
+						}
 						pmu.Unlock()
-
-						pmu.Lock()
-						send("portscan", results)
-						pmu.Unlock()
+						send("portscan", msgData)
 					}
 				})
 			}

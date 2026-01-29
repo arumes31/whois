@@ -42,7 +42,7 @@ func TestScheduler_Start(t *testing.T) {
 func TestDownloadBackground_Error(t *testing.T) {
 	// Trigger os.Create error by using a path that is actually a directory
 	_ = os.MkdirAll("static/background.jpg", 0755)
-	defer os.RemoveAll("static/background.jpg")
+	defer func() { _ = os.RemoveAll("static/background.jpg") }()
 
 	DownloadBackground()
 }

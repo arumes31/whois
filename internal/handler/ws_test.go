@@ -80,7 +80,7 @@ func TestHandleWS(t *testing.T) {
 		t.Log("Did not receive geo result in initial loop")
 	}
 
-	// Send query for more services
+	// Send query for all domain services
 	input2 := struct {
 		Targets []string `json:"targets"`
 		Config  struct {
@@ -97,7 +97,7 @@ func TestHandleWS(t *testing.T) {
 			Ports      string `json:"ports"`
 		} `json:"config"`
 	}{
-		Targets: []string{"google.com", "1.1.1.1"},
+		Targets: []string{"google.com"},
 		Config: struct {
 			Whois      bool   `json:"whois"`
 			DNS        bool   `json:"dns"`
@@ -112,52 +112,77 @@ func TestHandleWS(t *testing.T) {
 			Ports      string `json:"ports"`
 		}{
 			Whois: true, DNS: true, CT: true, SSL: true, HTTP: true, Geo: true,
-			Ping: true, Trace: true, Route: true, Subdomains: true, Ports: "80,443",
+			Ping: true, Trace: true, Route: true, Subdomains: true, Ports: "",
 		},
 	}
-
 	_ = ws.WriteJSON(input2)
 
-	// Consume and check for diverse results
-	for i := 0; i < 200; i++ {
+	// Send query for IP services including port scan
+	inputIP := struct {
+		Targets []string `json:"targets"`
+		Config  struct {
+			Geo   bool   `json:"geo"`
+			Ports string `json:"ports"`
+		} `json:"config"`
+	}{
+		Targets: []string{"8.8.8.8"},
+		Config: struct {
+			Geo   bool   `json:"geo"`
+			Ports string `json:"ports"`
+		}{Geo: true, Ports: "53"},
+	}
+	_ = ws.WriteJSON(inputIP)
+
+	// Consume messages to trigger all-done
+	for i := 0; i < 300; i++ {
 		_, p, err := ws.ReadMessage()
 		if err != nil {
 			break
 		}
 		var m WSMessage
 		_ = json.Unmarshal(p, &m)
-		if m.Type == "all_done" {
+		if m.Type == "all_done" && m.Target == "8.8.8.8" {
 			break
 		}
 	}
 
-	// Test invalid JSON input to HandleWS loop
-	_ = ws.WriteMessage(websocket.TextMessage, []byte("invalid json"))
-
-	// Test empty target input
-	input3 := struct {
-		Targets []string `json:"targets"`
-	}{
-		Targets: []string{""},
-	}
-	_ = ws.WriteJSON(input3)
-
-	// Test error paths in streamQuery
-	inputError := struct {
+	// Test edge cases in streamQuery
+	inputEdge := struct {
 		Targets []string `json:"targets"`
 		Config  struct {
-			DNS bool `json:"dns"`
-			CT  bool `json:"ct"`
+			Ports string `json:"ports"`
+			CT    bool   `json:"ct"`
 		} `json:"config"`
 	}{
-		Targets: []string{"invalid..domain"},
+		// 1. Port scan on domain (should be skipped)
+		// 2. CT on IP (should be skipped)
+		Targets: []string{"google.com", "8.8.8.8"},
 		Config: struct {
-			DNS bool `json:"dns"`
-			CT  bool `json:"ct"`
-		}{DNS: true, CT: true},
+			Ports string `json:"ports"`
+			CT    bool   `json:"ct"`
+		}{Ports: "80", CT: true},
 	}
-	_ = ws.WriteJSON(inputError)
+	_ = ws.WriteJSON(inputEdge)
 
-	// Test read error branch
+	// Test invalid port numbers
+	inputBadPort := struct {
+		Targets []string `json:"targets"`
+		Config  struct {
+			Ports string `json:"ports"`
+		} `json:"config"`
+	}{
+		Targets: []string{"8.8.8.8"},
+		Config: struct {
+			Ports string `json:"ports"`
+		}{Ports: "invalid,99999"},
+	}
+	_ = ws.WriteJSON(inputBadPort)
+
+	// Consume more messages
+	for i := 0; i < 50; i++ {
+		_, _, _ = ws.ReadMessage()
+	}
+
+	// Trigger read error by closing
 	_ = ws.Close()
 }

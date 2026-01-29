@@ -153,7 +153,7 @@ func TestDNSService_Trace_Success(t *testing.T) {
 	go func() {
 		_ = server.ListenAndServe()
 	}()
-	defer server.Shutdown()
+	defer func() { _ = server.Shutdown() }()
 
 	// Wait for server
 	time.Sleep(100 * time.Millisecond)
@@ -180,7 +180,7 @@ func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
 
 	server := &dns.Server{Addr: "127.0.0.1:15355", Net: "udp", Handler: handler}
 	go func() { _ = server.ListenAndServe() }()
-	defer server.Shutdown()
+	defer func() { _ = server.Shutdown() }()
 	time.Sleep(50 * time.Millisecond)
 
 	svc := NewDNSService("")

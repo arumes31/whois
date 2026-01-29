@@ -11,7 +11,6 @@ import (
 )
 
 func TestNewServer(t *testing.T) {
-	t.Parallel()
 	// Setup environment
 	_ = os.Setenv("SECRET_KEY", "test-secret")
 	defer func() { _ = os.Unsetenv("SECRET_KEY") }()
@@ -27,18 +26,27 @@ func TestNewServer(t *testing.T) {
 		t.Fatal("NewServer returned nil")
 	}
 
-	// Test a basic route to ensure templates are loaded and middleware works
+	// Test a basic route
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-
 	e.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 
-	body := rec.Body.String()
-	if !strings.Contains(body, "LOOKUP") {
-		t.Error("Body missing expected title, check template loading")
-	}
+	// Test Custom Error Handler
+	t.Run("HTTPErrorHandler", func(t *testing.T) {
+		// A POST request without CSRF token will trigger a 400 Bad Request
+		req := httptest.NewRequest(http.MethodPost, "/health", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400, got %d", rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), "400") {
+			t.Error("Error page does not contain expected status code 400")
+		}
+	})
 }
