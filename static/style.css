@@ -5,8 +5,8 @@
     --glass-glow: rgba(184, 115, 51, 0.15);
     --nordic-blue: #d4af37; /* Brass/Gold */
     --nordic-purple: #cd7f32; /* Copper/Bronze */
-    --text-main: #e3d5ca; /* Aged Paper */
-    --text-muted: #d1c4b9; /* Lighter Grey */
+    --text-main: #ffffff; /* White */
+    --text-muted: #ffffff; /* White */
     --danger: #ff4d4d; /* Lighter Red */
     --success: #2d5a27; /* Forest Green */
 }
@@ -23,6 +23,32 @@ body {
     margin: 0;
     min-height: 100vh;
     overflow-x: hidden;
+}
+
+.text-muted {
+    color: #ffffff !important;
+    opacity: 0.8;
+}
+
+/* Copy Banner Alert */
+.copy-banner {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: rgba(45, 90, 39, 0.95);
+    color: #ffffff;
+    padding: 12px 24px;
+    border-radius: 12px;
+    border: 1px solid #4caf50;
+    z-index: 9999;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    backdrop-filter: blur(8px);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.copy-banner.show {
+    transform: translateX(-50%) translateY(0);
 }
 
 .app-container {
