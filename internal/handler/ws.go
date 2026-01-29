@@ -336,9 +336,42 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			defer wg.Done()
 			sendLog("Starting port scan on " + target)
 			var portList []int
-			for _, p := range strings.Split(cfg.Ports, ",") {
-				if i, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
-					portList = append(portList, i)
+			seenPorts := make(map[int]bool)
+
+			parts := strings.Split(cfg.Ports, ",")
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if strings.Contains(p, "-") {
+					// Range support
+					rangeParts := strings.Split(p, "-")
+					if len(rangeParts) == 2 {
+						start, err1 := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
+						end, err2 := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
+						if err1 == nil && err2 == nil {
+							if start > end {
+								start, end = end, start
+							}
+							for i := start; i <= end; i++ {
+								if !seenPorts[i] && i > 0 && i < 65536 {
+									portList = append(portList, i)
+									seenPorts[i] = true
+								}
+								if len(portList) >= 10 {
+									break
+								}
+							}
+						}
+					}
+				} else {
+					if i, err := strconv.Atoi(p); err == nil {
+						if !seenPorts[i] && i > 0 && i < 65536 {
+							portList = append(portList, i)
+							seenPorts[i] = true
+						}
+					}
+				}
+				if len(portList) >= 10 {
+					break
 				}
 			}
 
