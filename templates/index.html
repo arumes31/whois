@@ -82,7 +82,7 @@
                         </div>
                         <div class="feature-toggle" title="Scan for open TCP ports (IPs only, max 10 ports)">
                             <input type="checkbox" id="cfg-portscan">
-                            <label for="cfg-portscan"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 576 512"><path d="M320 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V32zM448 160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V160zM64 288c0 17.7 14.3 32 32 32s32-14.3 32-32V160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288zM192 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V416c0 17.7 14.3 32 32 32s32-14.3 32-32V32z"/></svg>PORTSCAN <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Port scanning is only supported for direct IP addresses (skipped for domains)."><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></label>
+                            <label for="cfg-portscan"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 576 512"><path d="M320 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V32zM448 160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V160zM64 288c0 17.7 14.3 32 32 32s32-14.3 32-32V160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288zM192 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V416c0 17.7 14.3 32 32 32s32-14.3 32-32V32z"/></svg>PORTSCAN <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></label>
                         </div>
                         <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
                             <input type="text" id="cfg-ports" class="form-control matrix-input py-1" style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389" placeholder="Specific ports...">
@@ -447,7 +447,7 @@ function updateUI(msg) {
         case 'geo':
             if (data && !data.error) {
                 const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${data.country_emoji}</span>` : '';
-                html = `<details open><summary>${flag} LOCATION & ASN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Physical location and network owner data"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary>${flag} LOCATION & ASN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex align-items-center mb-2">
                                 <svg style="width:16px;height:16px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 384 512"><path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/></svg>
@@ -508,17 +508,17 @@ function updateUI(msg) {
             }
             break;
         case 'ping':
-            html = `<details open><summary>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Real-time latency check"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+            html = `<details open><summary>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
         case 'route':
-            html = `<details><summary>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network hop analysis"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+            html = `<details><summary>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <pre class="p-2 mt-1 rounded bg-dark text-info clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
         case 'trace':
-            html = `<details><summary>DNS TRACE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Recursive resolution from root"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+            html = `<details><summary>DNS TRACE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
@@ -526,7 +526,7 @@ function updateUI(msg) {
             if (data && data.error) {
                 html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
-                html = `<details open><summary>DNS RECORDS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="A, MX, TXT and other zone records"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary>DNS RECORDS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">`;
                 for (const [type, val] of Object.entries(data)) {
                     html += `<div class="mb-2 pb-1 border-bottom border-secondary border-opacity-10">
@@ -552,7 +552,7 @@ function updateUI(msg) {
             if (data.error) {
                 html = `<details><summary>SSL/TLS</summary><div class="p-2 text-white small">${data.error}</div></details>`;
             } else {
-                html = `<details><summary>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake and Certificate Validity"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details><summary>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <span class="badge bg-success mb-2">${data.protocol}</span><br>
                             <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${data.issuer}</span><br>
@@ -573,7 +573,7 @@ function updateUI(msg) {
                     </div>`;
                 }
 
-                html = `<details><summary>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Security headers and response metadata"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details><summary>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
                                 <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${data.status}</span>
