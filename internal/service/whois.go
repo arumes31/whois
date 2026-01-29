@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"github.com/likexian/whois"
 	"github.com/likexian/whois-parser"
+	"math/rand"
 	"strings"
+	"time"
 )
 
 type WhoisInfo struct {
@@ -15,30 +17,62 @@ type WhoisInfo struct {
 }
 
 func Whois(target string) interface{} {
+	// Try primary lookup
 	raw, err := whois.Whois(target)
-	if err != nil && strings.Contains(err.Error(), "no whois server found") {
-		// Manual fallbacks for common TLDs that might be missing in the library or IANA
-		tld := ""
-		parts := strings.Split(target, ".")
-		if len(parts) > 1 {
-			tld = strings.ToLower(parts[len(parts)-1])
+
+	// Determine TLD
+	tld := ""
+	parts := strings.Split(target, ".")
+	if len(parts) > 1 {
+		tld = strings.ToLower(parts[len(parts)-1])
+	}
+
+	// Expanded fallback map with multiple servers per TLD
+	fallbacks := map[string][]string{
+		"info":   {"whois.nic.info", "whois.afilias.net", "whois.identity.digital"},
+		"biz":    {"whois.nic.biz", "whois.neulevel.biz", "whois.biz"},
+		"mobi":   {"whois.dotmobi.net", "whois.afilias.net"},
+		"online": {"whois.nic.online", "whois.centralnic.com"},
+		"site":   {"whois.nic.site", "whois.centralnic.com"},
+		"top":    {"whois.nic.top", "whois.centralnic.com"},
+		"xyz":    {"whois.nic.xyz", "whois.centralnic.com", "whois.nic.gmo"},
+		"shop":   {"whois.nic.shop", "whois.gmo-registry.com"},
+		"cloud":  {"whois.nic.cloud", "whois.centralnic.com"},
+		"tech":   {"whois.nic.tech", "whois.centralnic.com"},
+		"vip":    {"whois.nic.vip", "whois.centralnic.com"},
+		"icu":    {"whois.nic.icu", "whois.centralnic.com"},
+		"club":   {"whois.nic.club", "whois.centralnic.com"},
+		"me":     {"whois.nic.me", "whois.meregistry.net"},
+		"io":     {"whois.nic.io", "whois.io-registry.net"},
+		"co":     {"whois.nic.co", "whois.cointernet.co"},
+		"tv":     {"whois.nic.tv", "whois.verisign-grs.com"},
+		"cc":     {"whois.nic.cc", "whois.verisign-grs.com"},
+		"us":     {"whois.nic.us", "whois.neustar.us"},
+	}
+
+	// If primary failed or returned suspiciously little data, try fallbacks in random order
+	if err != nil || len(raw) < 100 {
+		if servers, ok := fallbacks[tld]; ok {
+			// Create a copy to shuffle
+			shuffled := make([]string, len(servers))
+			copy(shuffled, servers)
+			r := rand.New(rand.NewSource(time.Now().UnixNano()))
+			r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+
+			for _, s := range shuffled {
+				rRaw, rErr := whois.Whois(target, s)
+				if rErr == nil && len(rRaw) > 100 {
+					raw = rRaw
+					err = nil
+					break
+				}
+			}
 		}
 
-		fallbacks := map[string]string{
-			"info": "whois.nic.info",
-			"biz":  "whois.nic.biz",
-			"mobi": "whois.dotmobi.net",
-		}
-
-		if server, ok := fallbacks[tld]; ok {
-			raw, err = whois.Whois(target, server)
-		}
-
-		if err != nil || raw == "" {
-			// Fallback to IANA to find the correct referral server
+		// Still no good result? Try recursive IANA lookup
+		if err != nil || len(raw) < 100 {
 			ianaRaw, ianaErr := whois.Whois(target, "whois.iana.org")
 			if ianaErr == nil {
-				// Find "whois: " or "refer: " line
 				lines := strings.Split(ianaRaw, "\n")
 				for _, line := range lines {
 					lowerLine := strings.ToLower(strings.TrimSpace(line))
