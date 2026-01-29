@@ -237,7 +237,26 @@ func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 				Query:        target,
 			}, nil
 		}
-...
+	}
+
+	// Fallback to API
+	client := &http.Client{Timeout: 5 * time.Second}
+	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query", target)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	var info GeoInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return nil, err
 	}
