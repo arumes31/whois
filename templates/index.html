@@ -423,22 +423,22 @@ function updateUI(msg) {
                                 <svg style="width:16px;height:16px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 384 512"><path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/></svg>
                                 <div>
                                     <div class="fw-bold">${data.city || 'Unknown City'}, ${data.country}</div>
-                                    <div class="text-muted" style="font-size:0.65rem;">${data.timezone || ''}</div>
+                                    <div class="text-white" style="font-size:0.65rem;">${data.timezone || ''}</div>
                                 </div>
                             </div>
                             <div class="d-flex align-items-center mb-2">
                                 <svg style="width:16px;height:16px;margin-right:12px;fill:#0dcaf0" viewBox="0 0 640 512"><path d="M640 352c0 35.3-28.7 64-64 64H512V320H640v32zm-192 64H320V320H448v96zm-192 0H64c-35.3 0-64-28.7-64-64V320H192v96zm448-160H0V160c0-35.3 28.7-64 64-64H576c35.3 0 64 28.7 64 64V256zM64 128c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32z"/></svg>
                                 <div>
                                     <div class="fw-bold">${data.as || 'Unknown AS'}</div>
-                                    <div class="text-muted" style="font-size:0.65rem;">IP: ${data.query}</div>
+                                    <div class="text-white" style="font-size:0.65rem;">IP: ${data.query}</div>
                                 </div>
                             </div>
                             <div class="mt-2 pt-2 border-top border-secondary opacity-25">
-                                <div class="text-muted" style="font-size:0.6rem; letter-spacing:1px;">COORDINATES: ${data.lat}, ${data.lon}</div>
+                                <div class="text-white" style="font-size:0.6rem; letter-spacing:1px;">COORDINATES: ${data.lat}, ${data.lon}</div>
                             </div>
                         </div></details>`;
             } else {
-                html = `<details><summary>LOCATION & ASN</summary><div class="p-2 text-muted small">Geo data unavailable</div></details>`;
+                html = `<details><summary>LOCATION & ASN</summary><div class="p-2 text-white small">Geo data unavailable</div></details>`;
             }
             break;
         case 'subdomains':
@@ -474,7 +474,7 @@ function updateUI(msg) {
                 }
                 html += `</div></details>`;
             } else {
-                html = `<details><summary>PORT SCAN</summary><div class="p-2 text-muted small">No open ports found</div></details>`;
+                html = `<details><summary>PORT SCAN</summary><div class="p-2 text-white small">No open ports found</div></details>`;
             }
             break;
         case 'ping':
@@ -574,7 +574,7 @@ function updateUI(msg) {
             } else if (data) {
                 html = `<details><summary>WHOIS RAW</summary><pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)"><code>${data}</code></pre></details>`;
             } else {
-                html = `<details><summary>WHOIS</summary><div class="p-2 text-muted small">No WHOIS data</div></details>`;
+                html = `<details><summary>WHOIS</summary><div class="p-2 text-white small">No WHOIS data</div></details>`;
             }
             break;
         case 'ct':
@@ -587,7 +587,7 @@ function updateUI(msg) {
                 }
                 html += `</ul></details>`;
             } else {
-                html = `<details><summary>CT SUBDOMAINS</summary><div class="p-2 text-muted small">No subdomains found</div></details>`;
+                html = `<details><summary>CT SUBDOMAINS</summary><div class="p-2 text-white small">No subdomains found</div></details>`;
             }
             break;
     }
