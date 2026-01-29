@@ -6,7 +6,7 @@
     --nordic-blue: #ffd700; /* Brighter Gold */
     --nordic-purple: #ff9966; /* Brighter Copper */
     --text-main: #ffffff; /* White */
-    --text-muted: #f0f0f0; /* Very Light Grey */
+    --text-muted: #ffffff; /* White */
     --text-info: #00ffff; /* Brighter Cyan */
     --danger: #ff4d4d; /* Lighter Red */
     --success: #2d5a27; /* Forest Green */
@@ -30,12 +30,16 @@ body {
 }
 
 .text-muted {
-    color: #f0f0f0 !important;
-    opacity: 0.9;
+    color: #ffffff !important;
+    opacity: 1;
 }
 
 .text-info {
     color: var(--text-info) !important;
+}
+
+#liveLog {
+    padding: 2px;
 }
 
 /* Copy Banner Alert */

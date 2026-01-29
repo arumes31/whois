@@ -19,7 +19,7 @@
         <strong class="text-success small d-block mb-2">OPEN PORTS ({{ len .result.Open }})</strong>
         <div class="list-group list-group-flush">
           {{ range $port, $banner := .result.Open }}
-            <div class="list-group-item bg-transparent text-main border-secondary opacity-75 p-2 clickable-record" onclick="copyToClipboard(this)">
+            <div class="list-group-item bg-transparent text-main border-secondary p-2 clickable-record" onclick="copyToClipboard(this)">
               <div class="d-flex align-items-center gap-3">
                   <span class="badge bg-success-dim text-success" style="width: 60px;">{{ $port }}</span>
                   {{ if $banner }}
