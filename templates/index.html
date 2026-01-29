@@ -210,12 +210,34 @@ function connectWS() {
     };
 }
 
+const targetColors = new Map();
+const palette = [
+    '#0dcaf0', // info blue
+    '#ffc107', // warning yellow
+    '#ff4d4d', // danger red
+    '#4caf50', // success green
+    '#ff9966', // orange
+    '#cc99ff', // purple
+    '#99ffcc', // teal
+    '#ffff99'  // light yellow
+];
+let colorIndex = 0;
+
+function getTargetColor(target) {
+    if (!targetColors.has(target)) {
+        targetColors.set(target, palette[colorIndex % palette.length]);
+        colorIndex++;
+    }
+    return targetColors.get(target);
+}
+
 function appendLog(target, message) {
     const log = document.getElementById('liveLog');
     const time = new Date().toLocaleTimeString();
     const entry = document.createElement('div');
     entry.className = "mb-1";
-    entry.innerHTML = `<span class="text-white">[${time}]</span> <span class="text-danger">${target}</span>: ${message}`;
+    const color = getTargetColor(target);
+    entry.innerHTML = `<span class="text-white opacity-50">[${time}]</span> <span style="color: ${color}; font-weight: bold;">${target}</span>: <span class="text-white">${message}</span>`;
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
     

@@ -1,8 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -11,16 +15,73 @@ import (
 )
 
 type DNSService struct {
-	Resolver string
+	Resolvers    []string
+	Bootstrap    []string
+	httpClient   *http.Client
+	currentIndex int
+	mu           sync.Mutex
 }
 
-func NewDNSService(resolver string) *DNSService {
-	if resolver == "" {
-		resolver = "8.8.8.8:53"
+func NewDNSService(resolvers string, bootstrap string) *DNSService {
+	resList := strings.Split(resolvers, ",")
+	bootList := strings.Split(bootstrap, ",")
+
+	if resolvers == "" {
+		resList = []string{"8.8.8.8:53"}
 	}
+
+	// Setup custom transport to use bootstrap DNS for DoH hostname resolution
+	dialer := &net.Dialer{
+		Timeout:   5 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+
+	// We use a custom dialer for the HTTP client used for DoH
+	// to ensure hostnames like cloudflare-dns.com are resolved using bootstrap servers
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, _ := net.SplitHostPort(addr)
+			if net.ParseIP(host) == nil {
+				// Resolve using bootstrap
+				m := new(dns.Msg)
+				m.SetQuestion(dns.Fqdn(host), dns.TypeA)
+				c := new(dns.Client)
+				
+				var resolvedIP string
+				for _, b := range bootList {
+					srv := b
+					if !strings.Contains(srv, ":") {
+						srv += ":53"
+					}
+					in, _, err := c.Exchange(m, srv)
+					if err == nil && len(in.Answer) > 0 {
+						if a, ok := in.Answer[0].(*dns.A); ok {
+							resolvedIP = a.A.String()
+							break
+						}
+					}
+				}
+				if resolvedIP != "" {
+					addr = net.JoinHostPort(resolvedIP, port)
+				}
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
+	}
+
 	return &DNSService{
-		Resolver: resolver,
+		Resolvers:  resList,
+		Bootstrap:  bootList,
+		httpClient: &http.Client{Transport: transport, Timeout: 10 * time.Second},
 	}
+}
+
+func (s *DNSService) getNextResolver() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	res := s.Resolvers[s.currentIndex]
+	s.currentIndex = (s.currentIndex + 1) % len(s.Resolvers)
+	return res
 }
 
 func (s *DNSService) Lookup(ctx context.Context, target string, isIP bool) (map[string]interface{}, error) {
@@ -301,6 +362,8 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 }
 
 func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isReverse bool) ([]string, error) {
+	resolver := s.getNextResolver()
+	
 	m := new(dns.Msg)
 	queryName := target
 	if isReverse && !strings.HasSuffix(target, ".arpa.") {
@@ -314,23 +377,33 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 	}
 
 	m.SetQuestion(queryName, qtype)
-	m.SetEdns0(4096, false) // Request larger UDP buffer
+	m.SetEdns0(4096, false)
 
-	c := new(dns.Client)
-	c.Timeout = 5 * time.Second
-	
-	in, _, err := c.ExchangeContext(ctx, m, s.Resolver)
+	var in *dns.Msg
+	var err error
+
+	if strings.HasPrefix(resolver, "https://") {
+		// DoH Query
+		in, err = s.dohQuery(ctx, resolver, m)
+	} else {
+		// Standard DNS
+		if !strings.Contains(resolver, ":") {
+			resolver += ":53"
+		}
+		c := new(dns.Client)
+		c.Timeout = 5 * time.Second
+		in, _, err = c.ExchangeContext(ctx, m, resolver)
+		if err == nil && in != nil && in.Truncated {
+			c.Net = "tcp"
+			in, _, err = c.ExchangeContext(ctx, m, resolver)
+		}
+	}
+
 	if err != nil {
 		return nil, err
 	}
-
-	// Fallback to TCP if truncated
-	if in.Truncated {
-		c.Net = "tcp"
-		in, _, err = c.ExchangeContext(ctx, m, s.Resolver)
-		if err != nil {
-			return nil, err
-		}
+	if in == nil {
+		return nil, fmt.Errorf("no response from resolver")
 	}
 
 	var results []string
@@ -360,7 +433,6 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 		case *dns.SRV:
 			results = append(results, fmt.Sprintf("%d %d %d %s", t.Priority, t.Weight, t.Port, strings.TrimSuffix(t.Target, ".")))
 		default:
-			// Fallback for other types
 			str := ans.String()
 			parts := strings.Split(str, "\t")
 			if len(parts) > 4 {
@@ -369,4 +441,41 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 		}
 	}
 	return results, nil
+}
+
+func (s *DNSService) dohQuery(ctx context.Context, url string, m *dns.Msg) (*dns.Msg, error) {
+	data, err := m.Pack()
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("Content-Type", "application/dns-message")
+	req.Header.Set("Accept", "application/dns-message")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("doh status error: %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	reply := new(dns.Msg)
+	if err := reply.Unpack(body); err != nil {
+		return nil, err
+	}
+
+	return reply, nil
 }

@@ -17,7 +17,7 @@ func init() {
 
 func TestDNSService_Lookup(t *testing.T) {
 	t.Parallel()
-	s := NewDNSService("")
+	s := NewDNSService("", "")
 
 	tests := []struct {
 		name     string
@@ -58,7 +58,7 @@ func TestDNSService_Lookup(t *testing.T) {
 
 func TestDNSService_DiscoverSubdomains(t *testing.T) {
 	t.Parallel()
-	s := NewDNSService("")
+	s := NewDNSService("", "")
 	res := s.DiscoverSubdomains(context.Background(), "google.com", nil)
 
 	if len(res) == 0 {
@@ -70,7 +70,7 @@ func TestDNSService_DiscoverSubdomains(t *testing.T) {
 
 func TestDNSService_LookupStream(t *testing.T) {
 	t.Parallel()
-	s := NewDNSService("8.8.8.8:53")
+	s := NewDNSService("8.8.8.8:53", "")
 
 	count := 0
 	err := s.LookupStream(context.Background(), "google.com", false, func(rtype string, data interface{}) {
@@ -89,7 +89,7 @@ func TestDNSService_LookupStream(t *testing.T) {
 
 func TestDNSService_DiscoverSubdomainsStream(t *testing.T) {
 	t.Parallel()
-	s := NewDNSService("8.8.8.8:53")
+	s := NewDNSService("8.8.8.8:53", "")
 
 	custom := []string{"www"}
 	err := s.DiscoverSubdomainsStream(context.Background(), "google.com", custom, func(fqdn string, res map[string][]string) {
@@ -104,7 +104,7 @@ func TestDNSService_DiscoverSubdomainsStream(t *testing.T) {
 
 func TestDNSService_Query_Errors(t *testing.T) {
 	t.Parallel()
-	s := NewDNSService("1.2.3.4:53") // Non-existent resolver
+	s := NewDNSService("1.2.3.4:53", "") // Non-existent resolver
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -158,7 +158,7 @@ func TestDNSService_Trace_Success(t *testing.T) {
 	// Wait for server
 	time.Sleep(100 * time.Millisecond)
 
-	s := NewDNSService("")
+	s := NewDNSService("", "")
 	_, _ = s.Trace(context.Background(), "google.com")
 }
 
@@ -183,7 +183,7 @@ func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
 	defer func() { _ = server.Shutdown() }()
 	time.Sleep(50 * time.Millisecond)
 
-	svc := NewDNSService("")
+	svc := NewDNSService("", "")
 	_, _ = svc.Trace(context.Background(), "example.com")
 }
 

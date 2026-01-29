@@ -33,7 +33,7 @@ type Handler struct {
 func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 	return &Handler{
 		Storage:   storage,
-		DNS:       service.NewDNSService(cfg.DNSResolver),
+		DNS:       service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS),
 		AppConfig: cfg,
 	}
 }

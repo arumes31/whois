@@ -25,6 +25,8 @@ type Config struct {
 	MaxMindLicenseKey string
 	MaxMindAccountID  string
 	DNSResolver       string
+	DNSServers        string
+	BootstrapDNS      string
 }
 
 func LoadConfig() (*Config, error) {
@@ -33,8 +35,7 @@ func LoadConfig() (*Config, error) {
 		RedisPort:         getEnv("REDIS_PORT", "6379"),
 		Port:              getEnv("PORT", "5000"),
 		ConfigUser:        getEnv("CONFIG_USER", "admin"),
-		ConfigPass:        getEnv("CONFIG_PASS", "admin"),
-		SecretKey:         os.Getenv("SECRET_KEY"),
+		ConfigPass:        getEnv("CONFIG_PASS", "admin"),		SecretKey:         os.Getenv("SECRET_KEY"),
 		TrustedIPs:        getEnv("TRUSTED_IPS", "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"),
 		TrustProxy:        getEnvBool("TRUST_PROXY", true),
 		UseCloudflare:     getEnvBool("USE_CLOUDFLARE", false),
@@ -47,6 +48,8 @@ func LoadConfig() (*Config, error) {
 		MaxMindLicenseKey: os.Getenv("MAXMIND_LICENSE_KEY"),
 		MaxMindAccountID:  os.Getenv("MAXMIND_ACCOUNT_ID"),
 		DNSResolver:       getEnv("DNS_RESOLVER", "8.8.8.8:53"),
+		DNSServers:        getEnv("DNS_SERVERS", "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query"),
+		BootstrapDNS:      getEnv("BOOTSTRAP_DNS", "1.1.1.1,9.9.9.9"),
 	}
 
 	if cfg.SecretKey == "" {
