@@ -28,20 +28,32 @@ var (
 )
 
 type GeoInfo struct {
-	Country     string  `json:"country"`
-	CountryCode string  `json:"countryCode"`
-	RegionName  string  `json:"regionName"`
-	City        string  `json:"city"`
-	Zip         string  `json:"zip"`
-	Lat         float64 `json:"lat"`
-	Lon         float64 `json:"lon"`
-	Timezone    string  `json:"timezone"`
-	ISP         string  `json:"isp"`
-	Org         string  `json:"org"`
-	AS          string  `json:"as"`
-	Query       string  `json:"query"`
-	Status      string  `json:"status"`
-	Message     string  `json:"message,omitempty"`
+	Country      string  `json:"country"`
+	CountryCode  string  `json:"countryCode"`
+	CountryEmoji string  `json:"country_emoji"`
+	RegionName   string  `json:"regionName"`
+	City         string  `json:"city"`
+	Zip          string  `json:"zip"`
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+	Timezone     string  `json:"timezone"`
+	ISP          string  `json:"isp"`
+	Org          string  `json:"org"`
+	AS           string  `json:"as"`
+	Query        string  `json:"query"`
+	Status       string  `json:"status"`
+	Message      string  `json:"message,omitempty"`
+}
+
+func getFlagEmoji(countryCode string) string {
+	if len(countryCode) != 2 {
+		return ""
+	}
+	countryCode = strings.ToUpper(countryCode)
+	// Regional Indicator Symbol Letter A is 127462 (0x1F1E6)
+	// 'A' is 65
+	const offset = 127397
+	return string(rune(countryCode[0])+offset) + string(rune(countryCode[1])+offset)
 }
 
 func InitializeGeoDB(licenseKey, accountID string) {
@@ -214,39 +226,23 @@ func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 		record, err := reader.City(ip)
 		if err == nil {
 			return &GeoInfo{
-				Country:     record.Country.Names["en"],
-				CountryCode: record.Country.IsoCode,
-				City:        record.City.Names["en"],
-				Lat:         record.Location.Latitude,
-				Lon:         record.Location.Longitude,
-				Timezone:    record.Location.TimeZone,
-				Status:      "success",
-				Query:       target,
+				Country:      record.Country.Names["en"],
+				CountryCode:  record.Country.IsoCode,
+				CountryEmoji: getFlagEmoji(record.Country.IsoCode),
+				City:         record.City.Names["en"],
+				Lat:          record.Location.Latitude,
+				Lon:          record.Location.Longitude,
+				Timezone:     record.Location.TimeZone,
+				Status:       "success",
+				Query:        target,
 			}, nil
 		}
-	}
-
-	// Fallback to API
-	client := &http.Client{Timeout: 5 * time.Second}
-	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query", target)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	var info GeoInfo
+...
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		return nil, err
 	}
+
+	info.CountryEmoji = getFlagEmoji(info.CountryCode)
 
 	if info.Status == "fail" {
 		return nil, fmt.Errorf("%s", info.Message)
