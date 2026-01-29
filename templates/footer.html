@@ -56,21 +56,7 @@
         modal.show();
     }
 
-    function copyToClipboard(el) {
-        let text = el.innerText;
-        navigator.clipboard.writeText(text.trim());
-        
-        const banner = document.getElementById('copyBanner');
-        banner.classList.add('show');
-        
-        const originalBg = el.style.background;
-        el.style.background = "rgba(45, 90, 39, 0.3)";
-        
-        setTimeout(() => {
-            banner.classList.remove('show');
-            el.style.background = originalBg;
-        }, 2000);
-    }    // Initialize connection and settings
+    // Initialize connection and settings
     if (typeof loadSettings === 'function') loadSettings();
     if (typeof connectWS === 'function') connectWS();
 

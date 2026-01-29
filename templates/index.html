@@ -11,7 +11,7 @@
                             <svg style="width:20px;height:20px;margin-right:8px;fill:#0dcaf0" viewBox="0 0 512 512"><path d="M416 0c-17.7 0-32 14.3-32 32s14.3 32 32 32h32V128H320V96c0-17.7-14.3-32-32-32s-32 14.3-32 32V384c0 17.7 14.3 32 32 32s32-14.3 32-32V352H448v64H416c-17.7 0-32 14.3-32 32s14.3 32 32 32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32H480V128h32c17.7 0 32-14.3 32-32s-14.3-32-32-32H416zM32 128c-17.7 0-32 14.3-32 32V352c0 17.7 14.3 32 32 32H224c17.7 0 32-14.3 32-32V160c0-17.7-14.3-32-32-32H32zM64 192h32v32H64V192zm96 0h32v32h-32V192zM64 288h32v32H64V288zm96 0h32v32h-32V288z"/></svg>
                             LOOKUP
                         </h4>
-                        <p class="text-muted small mb-0">Multi-vector diagnostic analysis for network recon</p>
+                        <p class="text-white small mb-0">Multi-vector diagnostic analysis for network recon</p>
                     </div>
                     <div class="d-flex gap-2">
                         <button onclick="clearResults()" class="btn btn-sm btn-outline-secondary" title="Clear all search results and target list">
@@ -122,29 +122,29 @@
         </div>
 
         <div class="glass-panel border-nordic mb-4 p-3">
-            <h6 class="text-muted small border-bottom border-secondary pb-2 mb-3">
+            <h6 class="text-white small border-bottom border-secondary pb-2 mb-3">
                 <svg style="width:14px;height:14px;margin-right:8px;fill:#0dcaf0" viewBox="0 0 448 512"><path d="M160 80c0-26.5 21.5-48 48-48h32c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H208c-26.5 0-48-21.5-48-48V80zM0 272c0-26.5 21.5-48 48-48H80c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V272zM368 224c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H336c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48h32z"/></svg>
                 SYSTEM STATISTICS
             </h6>
             <div class="row text-center">
                 <div class="col-6 border-end border-secondary border-opacity-25">
                     <div class="h4 mb-0 text-nordic-blue fw-bold">{{ .stats.MonitoredCount }}</div>
-                    <div class="text-muted" style="font-size: 0.6rem; letter-spacing: 1px;">MONITORED</div>
+                    <div class="text-white" style="font-size: 0.6rem; letter-spacing: 1px;">MONITORED</div>
                 </div>
                 <div class="col-6">
                     <div class="h4 mb-0 text-nordic-blue fw-bold">{{ .stats.HistoryCount }}</div>
-                    <div class="text-muted" style="font-size: 0.6rem; letter-spacing: 1px;">HISTORY</div>
+                    <div class="text-white" style="font-size: 0.6rem; letter-spacing: 1px;">HISTORY</div>
                 </div>
             </div>
         </div>
 
         <div class="glass-panel border-nordic mb-4 h-100 p-3" style="min-height: 400px; display: flex; flex-direction: column;">
-            <h6 class="text-muted small border-bottom border-secondary pb-2 mb-3">
+            <h6 class="text-white small border-bottom border-secondary pb-2 mb-3">
                 <svg style="width:14px;height:14px;margin-right:8px;fill:#ff4d4d" viewBox="0 0 512 512"><path d="M192 128a64 64 0 1 0 128 0 64 64 0 1 0 -128 0zm157.6 12c-8.3-14-19-26.8-31.3-38.1c-13.1-12.1-28.1-21.8-44.3-28.6c-5.9-2.5-12.5-3.8-19.2-3.8s-13.3 1.3-19.2 3.8c-16.2 6.8-31.2 16.5-44.3 28.6c-12.3 11.3-23 24.1-31.3 38.1c-13.1 22.1-19.7 47.1-19.7 73.1c0 33.7 11.4 69.4 31.7 98.2c18.8 26.6 44.2 44.7 72.2 53.9c6.3 2.1 13 3.2 19.8 3.2s13.5-1.1 19.8-3.2c28-9.2 53.4-27.3 72.2-53.9c20.3-28.8 31.7-64.5 31.7-98.2c0-26-6.6-51-19.7-73.1zM352 128c0 53-43 96-96 96s-96-43-96-96s43-96 96-96s96 43 96 96zm128 0c0 123.7-100.3 224-224 224S32 251.7 32 128S132.3-96 256-96s224 100.3 224 224zM256 448c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32z"/></svg>
                 LIVE ACTIVITY
             </h6>
             <div id="liveLog" class="flex-grow-1 font-monospace" style="font-size: 0.7rem; overflow-y: auto; max-height: 600px;">
-                <div class="text-muted italic">Waiting for scan data...</div>
+                <div class="text-white italic">Waiting for scan data...</div>
             </div>
         </div>
     </div>
@@ -213,7 +213,7 @@ function appendLog(target, message) {
     const time = new Date().toLocaleTimeString();
     const entry = document.createElement('div');
     entry.className = "mb-1";
-    entry.innerHTML = `<span class="text-muted">[${time}]</span> <span class="text-danger">${target}</span>: ${message}`;
+    entry.innerHTML = `<span class="text-white">[${time}]</span> <span class="text-danger">${target}</span>: ${message}`;
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
     
@@ -520,7 +520,7 @@ function updateUI(msg) {
             break;
         case 'ssl':
             if (data.error) {
-                html = `<details><summary>SSL/TLS</summary><div class="p-2 text-muted small">${data.error}</div></details>`;
+                html = `<details><summary>SSL/TLS</summary><div class="p-2 text-white small">${data.error}</div></details>`;
             } else {
                 html = `<details><summary>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.5" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake and Certificate Validity"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
@@ -532,13 +532,13 @@ function updateUI(msg) {
             break;
         case 'http':
             if (data.error) {
-                html = `<details><summary>HTTP</summary><div class="p-2 text-muted small">${data.error}</div></details>`;
+                html = `<details><summary>HTTP</summary><div class="p-2 text-white small">${data.error}</div></details>`;
             } else {
                 let securityHtml = "";
                 for (const [h, val] of Object.entries(data.security)) {
                     const isSet = val !== "Not Set";
                     securityHtml += `<div class="d-flex justify-content-between mb-1 clickable-record" onclick="copyToClipboard(this)">
-                        <span class="text-muted" style="font-size: 0.65rem;">${h}</span>
+                        <span class="text-white" style="font-size: 0.65rem;">${h}</span>
                         <span class="badge ${isSet ? 'bg-success-dim text-success' : 'bg-danger-dim text-danger'}" style="font-size: 0.6rem;">${isSet ? 'SECURE' : 'MISSING'}</span>
                     </div>`;
                 }
@@ -720,22 +720,30 @@ function copyTarget(btn) {
     const content = card.querySelector('.diagnostic-content').innerText;
     const fullText = `TARGET: ${target}\n\n${content}`;
     
-    navigator.clipboard.writeText(fullText.trim());
-    
-    // Use the global banner for feedback
     const banner = document.getElementById('copyBanner');
-    if (banner) {
-        banner.classList.add('show');
-        setTimeout(() => banner.classList.remove('show'), 2000);
-    }
-
     const originalHTML = btn.innerHTML;
-    btn.innerHTML = `<path d="M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"/>`;
-    btn.style.fill = "#2d5a27";
-    setTimeout(() => {
-        btn.innerHTML = originalHTML;
-        btn.style.fill = "currentColor";
-    }, 2000);
+    
+    const onSuccess = () => {
+        if (banner) {
+            banner.classList.add('show');
+            setTimeout(() => banner.classList.remove('show'), 2000);
+        }
+        btn.innerHTML = `<path d="M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"/>`;
+        btn.style.fill = "#2d5a27";
+        setTimeout(() => {
+            btn.innerHTML = originalHTML;
+            btn.style.fill = "currentColor";
+        }, 2000);
+    };
+
+    if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(fullText.trim()).then(onSuccess).catch(err => {
+            console.error('Clipboard error:', err);
+            fallbackCopy(fullText.trim(), onSuccess);
+        });
+    } else {
+        fallbackCopy(fullText.trim(), onSuccess);
+    }
 }
 
 // Cookie Management

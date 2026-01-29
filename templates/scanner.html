@@ -2,16 +2,16 @@
 
 <div class="glass-panel mx-auto p-4" style="max-width: 800px;">
     <h4 class="text-danger mb-4 fw-bold"><svg style="width:20px;height:20px;margin-right:12px;fill:currentColor" viewBox="0 0 512 512"><path d="M448 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V128H320c-17.7 0-32 14.3-32 32s14.3 32 32 32h64v32H224c-17.7 0-32 14.3-32 32s14.3 32 32 32h32v64c0 17.7 14.3 32 32 32s32-14.3 32-32V320h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H320V224h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H352V32h96z"/></svg> PORT SCANNER</h4>
-    <p class="text-muted small mb-4 font-monospace italic">Security scanning for common open ports. Use responsibly.</p>
+    <p class="text-white small mb-4 font-monospace italic">Security scanning for common open ports. Use responsibly.</p>
     
     <form hx-post="/scan" hx-target="#scanResults" hx-indicator="#scanIndicator">
         <div class="row g-3">
             <div class="col-md-8">
-                <label class="small text-muted mb-2 fw-bold">TARGET IP OR DOMAIN</label>
+                <label class="small text-white mb-2 fw-bold">TARGET IP OR DOMAIN</label>
                 <input type="text" name="target" class="form-control matrix-input" placeholder="e.g. 192.168.1.1" title="Enter an IP address or domain name to scan" required>
             </div>
             <div class="col-md-4">
-                <label class="small text-muted mb-2 fw-bold">PORT RANGE</label>
+                <label class="small text-white mb-2 fw-bold">PORT RANGE</label>
                 <input type="text" name="ports" class="form-control matrix-input" value="21,22,23,25,53,80,110,143,443,445,3306,3389,5432,8080" title="Comma-separated list of ports or ranges (e.g., 80, 443, 8080-8085)">
             </div>
         </div>
@@ -25,7 +25,7 @@
 
     <div id="scanIndicator" class="htmx-indicator mt-4 text-center">
         <div class="spinner-border text-danger" role="status"></div>
-        <div class="mt-2 text-muted small">Scanning ports...</div>
+        <div class="mt-2 text-white small">Scanning ports...</div>
     </div>
 
     <div id="scanResults" class="mt-5">

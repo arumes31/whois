@@ -19,6 +19,54 @@
     <script src="/static/vendor/chart.min.js"></script>
     
     <script src="/static/vendor/htmx.min.js"></script>
+    <script>
+        function fallbackCopy(text, callback) {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            textArea.style.top = "0";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                const successful = document.execCommand('copy');
+                if (successful && callback) callback();
+            } catch (err) {
+                console.error('Fallback copy failed', err);
+            }
+            document.body.removeChild(textArea);
+        }
+
+        function copyToClipboard(el) {
+            let text = el.innerText.trim();
+            const strong = el.querySelector('strong');
+            if (strong) {
+                text = text.replace(strong.innerText, "").trim();
+                if (text.startsWith(':')) text = text.substring(1).trim();
+            }
+
+            const banner = document.getElementById('copyBanner');
+            const onSuccess = () => {
+                if (banner) banner.classList.add('show');
+                const originalBg = el.style.background;
+                el.style.background = "rgba(45, 90, 39, 0.3)";
+                setTimeout(() => {
+                    if (banner) banner.classList.remove('show');
+                    el.style.background = originalBg;
+                }, 2000);
+            };
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(onSuccess).catch(err => {
+                    console.error('Clipboard error:', err);
+                    fallbackCopy(text, onSuccess);
+                });
+            } else {
+                fallbackCopy(text, onSuccess);
+            }
+        }
+    </script>
 </head>
 <body>
 
