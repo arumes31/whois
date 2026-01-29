@@ -16,8 +16,11 @@ body {
     background-image: 
         radial-gradient(at 0% 0%, rgba(139, 94, 60, 0.15) 0px, transparent 50%),
         radial-gradient(at 100% 0%, rgba(212, 175, 55, 0.1) 0px, transparent 50%),
-        radial-gradient(at 50% 100%, rgba(26, 18, 11, 1) 0px, transparent 80%);
+        radial-gradient(at 50% 100%, rgba(26, 18, 11, 1) 0px, transparent 80%),
+        url('/static/background.jpg');
     background-attachment: fixed;
+    background-size: cover;
+    background-position: center;
     color: var(--text-main);
     font-family: 'Inter', -apple-system, sans-serif;
     margin: 0;
