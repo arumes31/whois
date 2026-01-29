@@ -2,6 +2,9 @@
 
 [![Build and Publish Docker Image](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml)
 [![Daily Security Scan](https://github.com/arumes31/whois/actions/workflows/security-scan.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/security-scan.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/arumes31/whois)](https://golang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Docker Image Size](https://img.shields.io/docker/image-size/arumes31/whois-go?label=docker%20image)](https://ghcr.io/arumes31/whois)
 
 A high-performance, professional-grade network diagnostic platform designed for deep reconnaissance and system monitoring. Featuring a modern Copper/Brass Steampunk aesthetic with a glassmorphism layout, it provides real-time, multi-vector analysis for IT professionals and security researchers.
 
@@ -48,7 +51,8 @@ Access the dashboard at `http://localhost:14400`.
 | `REDIS_HOST` | Redis server hostname | redis |
 | `REDIS_PORT` | Redis server port | 6379 |
 | `PORT` | Web server port | 5000 |
-| `DNS_RESOLVER` | Recursive DNS resolver for discovery | 8.8.8.8:53 |
+| `DNS_SERVERS` | List of resolvers (supports DoH) | Cloudflare, Google, Quad9 DoH |
+| `BOOTSTRAP_DNS` | DNS used to resolve DoH providers | 1.1.1.1, 9.9.9.9 |
 | `TRUSTED_IPS` | IP whitelist for `/metrics` (CIDR supported) | - |
 | `TRUST_PROXY` | Use proxy headers for client IP | true |
 | `USE_CLOUDFLARE` | Use CF-Connecting-IP header | false |
