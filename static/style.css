@@ -3,10 +3,11 @@
     --glass-bg: rgba(44, 24, 16, 0.8); /* Dark Bronze */
     --glass-border: #8b5e3c; /* Copper */
     --glass-glow: rgba(184, 115, 51, 0.15);
-    --nordic-blue: #d4af37; /* Brass/Gold */
-    --nordic-purple: #cd7f32; /* Copper/Bronze */
+    --nordic-blue: #ffd700; /* Brighter Gold */
+    --nordic-purple: #ff9966; /* Brighter Copper */
     --text-main: #ffffff; /* White */
-    --text-muted: #ffffff; /* White */
+    --text-muted: #f0f0f0; /* Very Light Grey */
+    --text-info: #00ffff; /* Brighter Cyan */
     --danger: #ff4d4d; /* Lighter Red */
     --success: #2d5a27; /* Forest Green */
 }
@@ -29,8 +30,12 @@ body {
 }
 
 .text-muted {
-    color: #ffffff !important;
-    opacity: 0.8;
+    color: #f0f0f0 !important;
+    opacity: 0.9;
+}
+
+.text-info {
+    color: var(--text-info) !important;
 }
 
 /* Copy Banner Alert */

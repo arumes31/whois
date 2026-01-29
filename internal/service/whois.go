@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/likexian/whois"
 	"github.com/likexian/whois-parser"
+	"strings"
 )
 
 type WhoisInfo struct {
@@ -18,6 +19,21 @@ func Whois(target string) interface{} {
 	if err != nil {
 		return fmt.Sprintf("WHOIS error: %v", err)
 	}
+
+	// Filter raw lines
+	lines := strings.Split(raw, "\n")
+	var filtered []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "%") || strings.Contains(trimmed, "#") {
+			continue
+		}
+		if trimmed == "" && (len(filtered) == 0 || filtered[len(filtered)-1] == "") {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	raw = strings.Join(filtered, "\n")
 
 	result, err := whoisparser.Parse(raw)
 	if err != nil {
