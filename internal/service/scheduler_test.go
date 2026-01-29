@@ -14,7 +14,7 @@ func init() {
 func TestNewScheduler(t *testing.T) {
 	t.Parallel()
 	s := storage.NewStorage("localhost", "6379")
-	sched := NewScheduler(s, "")
+	sched := NewScheduler(s, "", "")
 	if sched == nil {
 		t.Error("Failed to create scheduler")
 	}
@@ -34,7 +34,7 @@ func TestDownloadBackground(t *testing.T) {
 }
 
 func TestScheduler_Start(t *testing.T) {
-	sched := NewScheduler(nil, "")
+	sched := NewScheduler(nil, "", "")
 	sched.Start()
 	sched.Cron.Stop()
 }
