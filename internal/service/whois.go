@@ -50,8 +50,16 @@ func Whois(target string) interface{} {
 		"us":     {"whois.nic.us", "whois.neustar.us"},
 	}
 
-	// If primary failed or returned suspiciously little data, try fallbacks in random order
-	if err != nil || len(raw) < 100 {
+	// If primary failed or returned suspiciously little data or an error message, try fallbacks in random order
+	isErrorResponse := func(r string) bool {
+		rLower := strings.ToLower(r)
+		return len(r) < 100 || 
+			   strings.Contains(rLower, "tld is not supported") || 
+			   strings.Contains(rLower, "invalid tld") ||
+			   strings.Contains(rLower, "no whois server found")
+	}
+
+	if err != nil || isErrorResponse(raw) {
 		if servers, ok := fallbacks[tld]; ok {
 			// Create a copy to shuffle
 			shuffled := make([]string, len(servers))
@@ -61,7 +69,7 @@ func Whois(target string) interface{} {
 
 			for _, s := range shuffled {
 				rRaw, rErr := whois.Whois(target, s)
-				if rErr == nil && len(rRaw) > 100 {
+				if rErr == nil && !isErrorResponse(rRaw) {
 					raw = rRaw
 					err = nil
 					break
@@ -70,7 +78,7 @@ func Whois(target string) interface{} {
 		}
 
 		// Still no good result? Try recursive IANA lookup
-		if err != nil || len(raw) < 100 {
+		if err != nil || isErrorResponse(raw) {
 			ianaRaw, ianaErr := whois.Whois(target, "whois.iana.org")
 			if ianaErr == nil {
 				lines := strings.Split(ianaRaw, "\n")
@@ -81,8 +89,12 @@ func Whois(target string) interface{} {
 						if len(rParts) > 1 {
 							server := strings.TrimSpace(rParts[1])
 							if server != "" {
-								raw, err = whois.Whois(target, server)
-								break
+								ianaResultRaw, ianaResultErr := whois.Whois(target, server)
+								if ianaResultErr == nil && !isErrorResponse(ianaResultRaw) {
+									raw = ianaResultRaw
+									err = nil
+									break
+								}
 							}
 						}
 					}
