@@ -15,6 +15,10 @@ func TestWhois(t *testing.T) {
 		target string
 	}{
 		{"Valid Domain", "google.com"},
+		{"Info Domain Fallback", "google.info"},
+		{"Biz Domain Fallback", "google.biz"},
+		{"Online Domain Fallback", "google.online"},
+		{"IO Domain Fallback", "google.io"},
 		{"Valid IP", "8.8.8.8"},
 		{"Invalid Target", "this.is.not.a.real.domain.at.all.nonexistent"},
 		{"Empty Target", ""},
