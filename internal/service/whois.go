@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/likexian/whois"
 	"github.com/likexian/whois-parser"
+	"github.com/openrdap/rdap"
 	"math/rand"
 	"strings"
 	"time"
@@ -50,18 +51,17 @@ func Whois(target string) interface{} {
 		"us":     {"whois.nic.us", "whois.neustar.us"},
 	}
 
-	// If primary failed or returned suspiciously little data or an error message, try fallbacks in random order
 	isErrorResponse := func(r string) bool {
 		rLower := strings.ToLower(r)
-		return len(r) < 100 || 
-			   strings.Contains(rLower, "tld is not supported") || 
-			   strings.Contains(rLower, "invalid tld") ||
-			   strings.Contains(rLower, "no whois server found")
+		return len(r) < 100 ||
+			strings.Contains(rLower, "tld is not supported") ||
+			strings.Contains(rLower, "invalid tld") ||
+			strings.Contains(rLower, "no whois server found")
 	}
 
+	// If primary failed or returned error, try fallbacks
 	if err != nil || isErrorResponse(raw) {
 		if servers, ok := fallbacks[tld]; ok {
-			// Create a copy to shuffle
 			shuffled := make([]string, len(servers))
 			copy(shuffled, servers)
 			r := rand.New(rand.NewSource(time.Now().UnixNano()))
@@ -101,6 +101,15 @@ func Whois(target string) interface{} {
 				}
 			}
 		}
+
+		// FINAL FALLBACK: RDAP (Modern replacement for WHOIS)
+		if err != nil || isErrorResponse(raw) {
+			rdapRaw, rdapErr := rdapLookup(target)
+			if rdapErr == nil && rdapRaw != "" {
+				raw = rdapRaw
+				err = nil
+			}
+		}
 	}
 
 	if err != nil {
@@ -120,7 +129,7 @@ func Whois(target string) interface{} {
 						if refErr == nil && len(refRaw) > len(raw)/2 {
 							raw = refRaw
 						}
-						break
+					break
 					}
 				}
 			}
@@ -132,7 +141,7 @@ func Whois(target string) interface{} {
 	var filtered []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "%") || strings.HasPrefix(trimmed, "#") {
+		if strings.HasPrefix(trimmed, "%" ) || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 		if trimmed == "" && (len(filtered) == 0 || filtered[len(filtered)-1] == "") {
@@ -157,4 +166,26 @@ func Whois(target string) interface{} {
 	}
 
 	return info
+}
+
+func rdapLookup(target string) (string, error) {
+	client := &rdap.Client{}
+	domain, err := client.QueryDomain(target)
+	if err != nil {
+		return "", err
+	}
+
+	resp := &rdap.Response{Object: domain}
+	whoisStyle := resp.ToWhoisStyleResponse()
+
+	var sb strings.Builder
+	sb.WriteString("RDAP SOURCE DATA (Converted to WHOIS Style)\n")
+	sb.WriteString(strings.Repeat("-", 40) + "\n")
+	for _, key := range whoisStyle.KeyDisplayOrder {
+		values := whoisStyle.Data[key]
+		for _, value := range values {
+			sb.WriteString(fmt.Sprintf("%s: %s\n", key, value))
+		}
+	}
+	return sb.String(), nil
 }
