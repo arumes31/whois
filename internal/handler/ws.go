@@ -141,6 +141,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			case subSem <- struct{}{}:
 				defer func() { <-subSem }()
 			}
+			sendLog("Resolving DNS for discovered subdomain: " + fqdn)
 			records = h.DNS.Resolve(ctx, fqdn)
 		}
 
@@ -153,6 +154,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			}
 			subMu.Unlock()
 			send("subdomains", msgData)
+			sendLog("Confirmed subdomain: " + fqdn + " (" + strconv.Itoa(len(records)) + " records)")
 		}
 	}
 
@@ -256,6 +258,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 				}
 				dmu.Unlock()
 				send("dns", msgData)
+
+				if list, ok := data.([]string); ok && len(list) > 0 {
+					sendLog("Found " + rtype + " record: " + list[0])
+				}
 			})
 
 			if err != nil {
@@ -301,7 +307,11 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		go func() {
 			defer wg.Done()
 			sendLog("Analyzing SSL/TLS configuration for " + target)
-			send("ssl", service.GetSSLInfo(ctx, target))
+			res := service.GetSSLInfo(ctx, target)
+			send("ssl", res)
+			if res.Protocol != "" {
+				sendLog("SSL/TLS verified: " + res.Protocol + " (" + strconv.Itoa(res.DaysLeft) + " days left)")
+			}
 			sendLog("SSL/TLS analysis complete for " + target)
 			sendDone("ssl")
 		}()
@@ -312,7 +322,11 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		go func() {
 			defer wg.Done()
 			sendLog("Inspecting HTTP response from " + target)
-			send("http", service.GetHTTPInfo(ctx, target))
+			res := service.GetHTTPInfo(ctx, target)
+			send("http", res)
+			if res.Status != "" {
+				sendLog("HTTP status: " + res.Status + " (" + strconv.FormatInt(res.ResponseTime, 10) + "ms)")
+			}
 			sendLog("HTTP inspection finished for " + target)
 			sendDone("http")
 		}()
@@ -391,6 +405,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 						}
 						pmu.Unlock()
 						send("portscan", msgData)
+						sendLog("Port " + strconv.Itoa(port) + " is OPEN")
 					}
 				})
 				if !foundOpen {

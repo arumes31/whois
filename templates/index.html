@@ -103,21 +103,21 @@
 
     <!-- Quick Tools & Side Info -->
     <div class="col-xl-4">
-        <div class="glass-panel border-nordic mb-4">
+        <div class="glass-panel border-nordic mb-4 p-4">
             <h5 class="fw-bold mb-3">
                 <svg style="width:16px;height:16px;margin-right:8px;fill:#ffc107" viewBox="0 0 512 512"><path d="M448 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V128H320c-17.7 0-32 14.3-32 32s14.3 32 32 32h64v32H224c-17.7 0-32 14.3-32 32s14.3 32 32 32h32v64c0 17.7 14.3 32 32 32s32-14.3 32-32V320h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H320V224h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H352V32h96z"/></svg>
                 QUICK TOOLS
             </h5>
             <div class="list-group list-group-flush bg-transparent">
-                <a href="#" onclick="openTool('dns')" class="list-group-item bg-transparent text-muted border-secondary py-3 px-0 d-flex justify-content-between align-items-center">
+                <a href="#" onclick="openTool('dns')" class="list-group-item bg-transparent text-muted border-secondary py-3 d-flex justify-content-between align-items-center" title="Open single-target DNS lookup tool">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#0dcaf0" viewBox="0 0 512 512"><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z"/></svg> SINGLE DNS LOOKUP</span>
                     <svg style="width:10px;height:10px;opacity:0.5;fill:currentColor" viewBox="0 0 320 512"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>
                 </a>
-                <a href="#" onclick="openTool('mac')" class="list-group-item bg-transparent text-muted border-secondary py-3 px-0 d-flex justify-content-between align-items-center">
+                <a href="#" onclick="openTool('mac')" class="list-group-item bg-transparent text-muted border-secondary py-3 d-flex justify-content-between align-items-center" title="Open MAC address vendor lookup tool">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#ffc107" viewBox="0 0 512 512"><path d="M0 80V432c0 26.5 21.5 48 48 48H464c26.5 0 48-21.5 48-48V80c0-26.5-21.5-48-48-48H48C21.5 32 0 53.5 0 80zM64 96H96v320H64V96zm64 0h32v320H128V96zM224 96h64V416H224V96zm96 0h32v320H320V96zm64 0h32v320H384V96zm64 0h32v320H448V96z"/></svg> MAC VENDOR LOOKUP</span>
                     <svg style="width:10px;height:10px;opacity:0.5;fill:currentColor" viewBox="0 0 320 512"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>
                 </a>
-                <a href="/metrics" target="_blank" class="list-group-item bg-transparent text-muted border-0 py-3 px-0 d-flex justify-content-between align-items-center">
+                <a href="/metrics" target="_blank" class="list-group-item bg-transparent text-muted border-0 py-3 d-flex justify-content-between align-items-center" title="View real-time system and application metrics">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 640 512"><path d="M0 64C0 28.7 28.7 0 64 0H576c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V64zm384 64c-17.7 0-32 14.3-32 32s14.3 32 32 32h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H384zm0 128c-17.7 0-32 14.3-32 32s14.3 32 32 32h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H384zm0 128c-17.7 0-32 14.3-32 32s14.3 32 32 32h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H384zM64 128c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32z"/></svg> SYSTEM METRICS</span>
                     <svg style="width:10px;height:10px;opacity:0.5;fill:currentColor" viewBox="0 0 512 512"><path d="M320 0c-17.7 0-32 14.3-32 32s14.3 32 32 32h82.7L201.4 265.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L448 109.3V192c0 17.7 14.3 32 32 32s32-14.3 32-32V32c0-17.7-14.3-32-32-32H320zM80 32C35.8 32 0 67.8 0 112V432c0 44.2 35.8 80 80 80H400c44.2 0 80-35.8 80-80V320c0-17.7-14.3-32-32-32s-32 14.3-32 32V432c0 8.8-7.2 16-16 16H80c-8.8 0-16-7.2-16-16V112c0-8.8 7.2-16 16-16H192c17.7 0 32-14.3 32-32s-14.3-32-32-32H80z"/></svg>
                 </a>
