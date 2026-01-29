@@ -195,7 +195,7 @@ body {
     user-select: none;
     transition: transform 0.2s, box-shadow 0.2s;
     height: fit-content;
-    width: 450px;
+    width: 400px;
     background: #2c1810;
     border: 1px solid var(--glass-border);
 }

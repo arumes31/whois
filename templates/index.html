@@ -258,6 +258,7 @@ function startQuery() {
             completed: 0
         });
         updateProgressBar(t);
+        appendLog(t, `Initializing diagnostic vectors...`);
         socket.send(JSON.stringify({ targets: [t], config }));
     });
 }
@@ -723,33 +724,48 @@ function reScanTarget(btn) {
 
 function copyTarget(btn) {
     const card = btn.closest('.result-card');
+    if (!card) return;
+    
     const target = card.querySelector('.target-name').innerText;
-    const content = card.querySelector('.diagnostic-content').innerText;
-    const fullText = `TARGET: ${target}\n\n${content}`;
+    const contentEl = card.querySelector('.diagnostic-content');
     
+    // Explicitly clean up the text to avoid messy copies
+    let cleanText = `DIAGNOSTIC REPORT FOR: ${target}\n`;
+    cleanText += `Generated: ${new Date().toLocaleString()}\n`;
+    cleanText += `------------------------------------------\n\n`;
+    
+    const sections = contentEl.querySelectorAll('details');
+    sections.forEach(s => {
+        const summary = s.querySelector('summary');
+        if (summary) {
+            const title = summary.innerText.replace(/[^a-zA-Z &]/g, '').trim();
+            // Clone the detail to get text without summary if needed, but innerText on details usually works well
+            const bodyText = s.innerText.replace(summary.innerText, '').trim();
+            if (bodyText) {
+                cleanText += `[${title}]\n${bodyText}\n\n`;
+            }
+        }
+    });
+
     const banner = document.getElementById('copyBanner');
-    const originalHTML = btn.innerHTML;
-    
     const onSuccess = () => {
         if (banner) {
             banner.classList.add('show');
             setTimeout(() => banner.classList.remove('show'), 2000);
         }
-        btn.innerHTML = `<path d="M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"/>`;
-        btn.style.fill = "#2d5a27";
-        setTimeout(() => {
-            btn.innerHTML = originalHTML;
-            btn.style.fill = "currentColor";
-        }, 2000);
+        // Simple visual feedback on the button (svg)
+        const originalFill = btn.style.fill;
+        btn.style.fill = "#4caf50";
+        setTimeout(() => btn.style.fill = originalFill, 2000);
     };
 
     if (navigator.clipboard && window.isSecureContext) {
-        navigator.clipboard.writeText(fullText.trim()).then(onSuccess).catch(err => {
+        navigator.clipboard.writeText(cleanText.trim()).then(onSuccess).catch(err => {
             console.error('Clipboard error:', err);
-            fallbackCopy(fullText.trim(), onSuccess);
+            fallbackCopy(cleanText.trim(), onSuccess);
         });
     } else {
-        fallbackCopy(fullText.trim(), onSuccess);
+        fallbackCopy(cleanText.trim(), onSuccess);
     }
 }
 
