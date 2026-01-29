@@ -4,7 +4,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    {{ if .config.SEOEnabled }}
+    <title>{{ if .page_title }}{{ .page_title }} | {{ end }}WHOIS Network Diagnostics</title>
+    <meta name="description" content="{{ if .meta_description }}{{ .meta_description }}{{ else }}Professional-grade network diagnostic platform for WHOIS, DNS, GeoIP, and security reconnaissance.{{ end }}">
+    <link rel="canonical" href="{{ .config.SEODomain }}{{ .current_path }}">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ .config.SEODomain }}{{ .current_path }}">
+    <meta property="og:title" content="{{ if .page_title }}{{ .page_title }}{{ else }}WHOIS Network Diagnostics{{ end }}">
+    <meta property="og:description" content="Professional network reconnaissance and diagnostic toolset.">
+    <meta property="og:image" content="{{ .config.SEODomain }}/static/android-chrome-512x512.png">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="{{ .config.SEODomain }}{{ .current_path }}">
+    <meta property="twitter:title" content="{{ if .page_title }}{{ .page_title }}{{ else }}WHOIS Network Diagnostics{{ end }}">
+    <meta property="twitter:description" content="Professional network reconnaissance and diagnostic toolset.">
+    <meta property="twitter:image" content="{{ .config.SEODomain }}/static/android-chrome-512x512.png">
+    
+    <meta name="robots" content="index, follow">
+    {{ else }}
     <title>WHOIS | Network Diagnostics</title>
+    <meta name="robots" content="noindex, nofollow">
+    {{ end }}
     
     <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
     
