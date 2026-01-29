@@ -113,14 +113,16 @@ func (h *Handler) Index(c echo.Context) error {
 			"auto_expand":   true,
 			"stats":         stats,
 			"config":        h.AppConfig,
+			"current_path":  c.Request().URL.Path,
 		})
 	}
 
 	return c.Render(http.StatusOK, "index.html", map[string]interface{}{
-		"auto_expand": false,
-		"real_ip":     realIP,
-		"stats":       stats,
-		"config":      h.AppConfig,
+		"auto_expand":  false,
+		"real_ip":      realIP,
+		"stats":        stats,
+		"config":       h.AppConfig,
+		"current_path": c.Request().URL.Path,
 	})
 }
 
@@ -521,4 +523,12 @@ func (h *Handler) UpdateGeoDB(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "GeoIP database updated successfully"})
+}
+
+func (h *Handler) Robots(c echo.Context) error {
+	content := "User-agent: *\nDisallow: /"
+	if h.AppConfig.SEOEnabled {
+		content = "User-agent: *\nAllow: /\nDisallow: /config\nDisallow: /metrics\nDisallow: /login"
+	}
+	return c.String(http.StatusOK, content)
 }

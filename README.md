@@ -67,6 +67,8 @@ Access the dashboard at `http://localhost:14400`.
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `SECRET_KEY` | **Required**. Key for session encryption and CSRF protection | - |
+| `SEO_ENABLED` | Enable SEO optimizations and dynamic metadata | `false` |
+| `SEO_DOMAIN` | Canonical domain for SEO indexing | - |
 | `CONFIG_USER` | Administrator username for restricted tools | `admin` |
 | `CONFIG_PASS` | Administrator passcode for restricted tools | `admin` |
 | `TRUSTED_IPS` | CSV of IPs allowed to access `/metrics` | `127.0.0.1,::1,...` |
