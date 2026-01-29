@@ -66,7 +66,7 @@ func NewDNSService(resolvers string, bootstrap string) *DNSService {
 				m := new(dns.Msg)
 				m.SetQuestion(dns.Fqdn(host), dns.TypeA)
 				c := new(dns.Client)
-				
+
 				var resolvedIP string
 				for _, b := range bootList {
 					srv := b
@@ -127,7 +127,7 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			
+
 			select {
 			case <-ctx.Done():
 				return
@@ -158,7 +158,7 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 			wg.Add(1)
 			go func(t uint16, name string) {
 				defer wg.Done()
-				
+
 				select {
 				case <-ctx.Done():
 					return
@@ -191,7 +191,7 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			
+
 			select {
 			case <-ctx.Done():
 				return
@@ -386,7 +386,7 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 
 func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isReverse bool) ([]string, error) {
 	resolver := s.getNextResolver()
-	
+
 	m := new(dns.Msg)
 	queryName := target
 	if isReverse && !strings.HasSuffix(target, ".arpa.") {
@@ -446,11 +446,11 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 		case *dns.MX:
 			results = append(results, fmt.Sprintf("%d %s", t.Preference, strings.TrimSuffix(t.Mx, ".")))
 		case *dns.TXT:
-			results = append(results, strings.Join(t.Txt, "")) 
+			results = append(results, strings.Join(t.Txt, ""))
 		case *dns.SOA:
-			results = append(results, fmt.Sprintf("%s %s %d %d %d %d %d", 
-				strings.TrimSuffix(t.Ns, "."), 
-				strings.TrimSuffix(t.Mbox, "."), 
+			results = append(results, fmt.Sprintf("%s %s %d %d %d %d %d",
+				strings.TrimSuffix(t.Ns, "."),
+				strings.TrimSuffix(t.Mbox, "."),
 				t.Serial, t.Refresh, t.Retry, t.Expire, t.Minttl))
 		case *dns.CAA:
 			results = append(results, fmt.Sprintf("%d %s %s", t.Flag, t.Tag, t.Value))
@@ -485,7 +485,7 @@ func (s *DNSService) dohQuery(ctx context.Context, url string, m *dns.Msg) (*dns
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("doh status error: %s", resp.Status)

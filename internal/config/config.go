@@ -31,11 +31,11 @@ type Config struct {
 
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		RedisHost:         getEnv("REDIS_HOST", "localhost"),
-		RedisPort:         getEnv("REDIS_PORT", "6379"),
-		Port:              getEnv("PORT", "5000"),
-		ConfigUser:        getEnv("CONFIG_USER", "admin"),
-		ConfigPass:        getEnv("CONFIG_PASS", "admin"),		SecretKey:         os.Getenv("SECRET_KEY"),
+		RedisHost:  getEnv("REDIS_HOST", "localhost"),
+		RedisPort:  getEnv("REDIS_PORT", "6379"),
+		Port:       getEnv("PORT", "5000"),
+		ConfigUser: getEnv("CONFIG_USER", "admin"),
+		ConfigPass: getEnv("CONFIG_PASS", "admin"), SecretKey: os.Getenv("SECRET_KEY"),
 		TrustedIPs:        getEnv("TRUSTED_IPS", "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"),
 		TrustProxy:        getEnvBool("TRUST_PROXY", true),
 		UseCloudflare:     getEnvBool("USE_CLOUDFLARE", false),

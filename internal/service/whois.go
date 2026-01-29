@@ -129,7 +129,7 @@ func Whois(target string) interface{} {
 						if refErr == nil && len(refRaw) > len(raw)/2 {
 							raw = refRaw
 						}
-					break
+						break
 					}
 				}
 			}
@@ -141,7 +141,7 @@ func Whois(target string) interface{} {
 	var filtered []string
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "%" ) || strings.HasPrefix(trimmed, "#") {
+		if strings.HasPrefix(trimmed, "%") || strings.HasPrefix(trimmed, "#") {
 			continue
 		}
 		if trimmed == "" && (len(filtered) == 0 || filtered[len(filtered)-1] == "") {

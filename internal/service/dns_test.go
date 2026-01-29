@@ -214,7 +214,7 @@ func TestDNSService_DoH(t *testing.T) {
 		reply := new(dns.Msg)
 		reply.SetReply(msg)
 		reply.Authoritative = true
-		
+
 		if msg.Question[0].Qtype == dns.TypeA {
 			reply.Answer = append(reply.Answer, &dns.A{
 				Hdr: dns.RR_Header{Name: msg.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
@@ -224,7 +224,7 @@ func TestDNSService_DoH(t *testing.T) {
 
 		resp, _ := reply.Pack()
 		w.Header().Set("Content-Type", "application/dns-message")
-		w.Write(resp)
+		_, _ = w.Write(resp)
 	}))
 	defer ts.Close()
 
