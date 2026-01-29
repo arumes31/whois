@@ -194,7 +194,7 @@ body {
 .result-card {
     position: relative;
     cursor: default;
-    user-select: none;
+    user-select: text;
     transition: transform 0.2s, box-shadow 0.2s;
     height: fit-content;
     width: 400px;

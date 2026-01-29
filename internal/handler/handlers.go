@@ -371,7 +371,7 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 
 	html := fmt.Sprintf("<div class='glass-panel p-3 border-nordic'><strong class='text-nordic-blue d-block mb-2'>%s RECORDS FOR %s</strong>", rtype, domain)
 	for _, res := range results {
-		html += fmt.Sprintf("<div class='clickable-record p-1 small border-bottom border-secondary border-opacity-25' onclick='copyToClipboard(this)'>%s</div>", res)
+		html += fmt.Sprintf("<div class='clickable-record p-1 small border-bottom border-secondary border-opacity-10' onclick='copyToClipboard(this)'>%s</div>", res)
 	}
 	html += "</div>"
 

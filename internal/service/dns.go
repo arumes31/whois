@@ -36,12 +36,21 @@ func (s *DNSService) Lookup(ctx context.Context, target string, isIP bool) (map[
 
 func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
 	var wg sync.WaitGroup
+	sem := make(chan struct{}, 5) // Limit to 5 concurrent queries per target
 
 	if isIP {
 		// Reverse Lookup
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			}
+
 			r, err := s.query(ctx, target, dns.TypePTR, true)
 			if err == nil && len(r) > 0 {
 				callback("PTR", r)
@@ -65,6 +74,14 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 			wg.Add(1)
 			go func(t uint16, name string) {
 				defer wg.Done()
+				
+				select {
+				case <-ctx.Done():
+					return
+				case sem <- struct{}{}:
+					defer func() { <-sem }()
+				}
+
 				r, err := s.query(ctx, target, t, false)
 				if err == nil && len(r) > 0 {
 					callback(name, r)
@@ -90,6 +107,14 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			}
+
 			r, err := s.query(ctx, "_dmarc."+target, dns.TypeTXT, false)
 			if err == nil && len(r) > 0 {
 				callback("DMARC", r)
@@ -289,16 +314,27 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 	}
 
 	m.SetQuestion(queryName, qtype)
+	m.SetEdns0(4096, false) // Request larger UDP buffer
+
 	c := new(dns.Client)
 	c.Timeout = 5 * time.Second
+	
 	in, _, err := c.ExchangeContext(ctx, m, s.Resolver)
 	if err != nil {
 		return nil, err
 	}
 
+	// Fallback to TCP if truncated
+	if in.Truncated {
+		c.Net = "tcp"
+		in, _, err = c.ExchangeContext(ctx, m, s.Resolver)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	var results []string
 	for _, ans := range in.Answer {
-		// Clean up output to match Python's style roughly
 		switch t := ans.(type) {
 		case *dns.A:
 			results = append(results, t.A.String())
@@ -313,9 +349,23 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 		case *dns.MX:
 			results = append(results, fmt.Sprintf("%d %s", t.Preference, strings.TrimSuffix(t.Mx, ".")))
 		case *dns.TXT:
-			results = append(results, strings.Join(t.Txt, "")) // TXT strings are often split
+			results = append(results, strings.Join(t.Txt, "")) 
+		case *dns.SOA:
+			results = append(results, fmt.Sprintf("%s %s %d %d %d %d %d", 
+				strings.TrimSuffix(t.Ns, "."), 
+				strings.TrimSuffix(t.Mbox, "."), 
+				t.Serial, t.Refresh, t.Retry, t.Expire, t.Minttl))
+		case *dns.CAA:
+			results = append(results, fmt.Sprintf("%d %s %s", t.Flag, t.Tag, t.Value))
+		case *dns.SRV:
+			results = append(results, fmt.Sprintf("%d %d %d %s", t.Priority, t.Weight, t.Port, strings.TrimSuffix(t.Target, ".")))
 		default:
-			results = append(results, strings.TrimSuffix(ans.Header().Name, "."))
+			// Fallback for other types
+			str := ans.String()
+			parts := strings.Split(str, "\t")
+			if len(parts) > 4 {
+				results = append(results, strings.Join(parts[4:], " "))
+			}
 		}
 	}
 	return results, nil
