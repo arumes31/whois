@@ -368,16 +368,16 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 	}
 
 	if len(results) == 0 {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-warning'>No %s records found for %s</div>", rtype, domain))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-warning'>No %s records found for %s</div>", html.EscapeString(rtype), html.EscapeString(domain)))
 	}
 
-	html := fmt.Sprintf("<div class='glass-panel p-3 border-nordic'><strong class='text-nordic-blue d-block mb-2'>%s RECORDS FOR %s</strong>", rtype, domain)
+	htmlRes := fmt.Sprintf("<div class='glass-panel p-3 border-nordic'><strong class='text-nordic-blue d-block mb-2'>%s RECORDS FOR %s</strong>", html.EscapeString(rtype), html.EscapeString(domain))
 	for _, res := range results {
-		html += fmt.Sprintf("<div class='clickable-record p-1 small border-bottom border-secondary border-opacity-10' onclick='copyToClipboard(this)'>%s</div>", res)
+		htmlRes += fmt.Sprintf("<div class='clickable-record p-1 small border-bottom border-secondary border-opacity-10' onclick='copyToClipboard(this)'>%s</div>", html.EscapeString(res))
 	}
-	html += "</div>"
+	htmlRes += "</div>"
 
-	return c.HTML(http.StatusOK, html)
+	return c.HTML(http.StatusOK, htmlRes)
 }
 
 func (h *Handler) MacLookup(c echo.Context) error {
@@ -388,17 +388,17 @@ func (h *Handler) MacLookup(c echo.Context) error {
 	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
 		var vendor string
 		if json.Unmarshal([]byte(cached), &vendor) == nil {
-			return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", mac, vendor))
+			return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", html.EscapeString(mac), html.EscapeString(vendor)))
 		}
 	}
 
 	vendor, err := service.LookupMacVendor(ctx, mac)
 	if err != nil {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", err))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", html.EscapeString(err.Error())))
 	}
 
 	_ = h.Storage.SetCache(ctx, cacheKey, vendor, 24*time.Hour)
-	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", mac, vendor))
+	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", html.EscapeString(mac), html.EscapeString(vendor)))
 }
 
 func (h *Handler) Login(c echo.Context) error {

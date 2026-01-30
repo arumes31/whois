@@ -19,27 +19,42 @@ type SSLInfo struct {
 }
 
 func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
-	conf := &tls.Config{
-		InsecureSkipVerify: true,
-	}
-
 	addr := host
 	if !strings.Contains(host, ":") {
 		addr = host + ":443"
 	}
 
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	
+	// First try with verification
+	conf := &tls.Config{InsecureSkipVerify: false}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
-	if err != nil {
-		return &SSLInfo{Error: err.Error()}
+	var tlsConn *tls.Conn
+	var handshakeErr error
+	
+	if err == nil {
+		tlsConn = tls.Client(conn, conf)
+		handshakeErr = tlsConn.HandshakeContext(ctx)
+		if handshakeErr != nil {
+			_ = conn.Close()
+			// Fallback to insecure if verification fails
+			conf.InsecureSkipVerify = true
+			conn, err = dialer.DialContext(ctx, "tcp", addr)
+			if err == nil {
+				tlsConn = tls.Client(conn, conf)
+				handshakeErr = tlsConn.HandshakeContext(ctx)
+			}
+		}
 	}
 
-	tlsConn := tls.Client(conn, conf)
-	err = tlsConn.HandshakeContext(ctx)
 	if err != nil {
-		_ = conn.Close()
 		return &SSLInfo{Error: err.Error()}
 	}
+	if handshakeErr != nil {
+		_ = conn.Close()
+		return &SSLInfo{Error: handshakeErr.Error()}
+	}
+	
 	defer func() {
 		_ = tlsConn.Close()
 	}()
