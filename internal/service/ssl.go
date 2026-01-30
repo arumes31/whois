@@ -25,13 +25,13 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 	}
 
 	dialer := &net.Dialer{Timeout: 5 * time.Second}
-	
+
 	// First try with verification
 	conf := &tls.Config{InsecureSkipVerify: false}
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	var tlsConn *tls.Conn
 	var handshakeErr error
-	
+
 	if err == nil {
 		tlsConn = tls.Client(conn, conf)
 		handshakeErr = tlsConn.HandshakeContext(ctx)
@@ -54,7 +54,7 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 		_ = conn.Close()
 		return &SSLInfo{Error: handshakeErr.Error()}
 	}
-	
+
 	defer func() {
 		_ = tlsConn.Close()
 	}()
