@@ -111,7 +111,17 @@
     // Global tooltips - Consolidated to prevent double-init
     tippy('[title], [data-tippy-content]', {
         theme: 'matrix',
-        placement: (reference) => reference.classList.contains('help-icon') ? 'right' : 'top',
+        content(reference) {
+            const content = reference.getAttribute('data-tippy-content') || reference.getAttribute('title');
+            if (reference.hasAttribute('title')) {
+                reference.setAttribute('data-tippy-original-title', reference.getAttribute('title'));
+                reference.removeAttribute('title');
+            }
+            return content;
+        },
+        placement(reference) {
+            return reference.classList.contains('help-icon') ? 'right' : 'top';
+        },
         allowHTML: true
     });
 </script>
