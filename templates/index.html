@@ -511,9 +511,48 @@ function updateUI(msg) {
             }
             break;
         case 'ping':
+            const latencies = data.map(line => {
+                const match = line.match(/time=([0-9.]+)/);
+                return match ? parseFloat(match[1]) : null;
+            }).filter(v => v !== null);
+
             html = `<details open><summary>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network latency and packet round-trip time (ICMP Echo Request)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    <div class="mt-2" style="height: 40px; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 2px;">
+                        <canvas id="chart-ping-${msg.target.replace(/\./g, '-')}" style="width: 100%; height: 100%;"></canvas>
+                    </div>
                     <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
                     </details>`;
+            
+            section.innerHTML = html;
+            
+            // Render Sparkline
+            setTimeout(() => {
+                const ctx = document.getElementById(`chart-ping-${msg.target.replace(/\./g, '-')}`).getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: latencies.map((_, i) => i),
+                        datasets: [{
+                            data: latencies,
+                            borderColor: '#b8860b',
+                            borderWidth: 1.5,
+                            pointRadius: 0,
+                            tension: 0.4,
+                            fill: true,
+                            backgroundColor: 'rgba(184, 134, 11, 0.1)'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                        scales: {
+                            x: { display: false },
+                            y: { display: false, beginAtZero: false }
+                        }
+                    }
+                });
+            }, 0);
             break;
         case 'route':
             html = `<details><summary>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of network hops and routing paths to the target"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
