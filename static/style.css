@@ -226,12 +226,12 @@ body {
     transition: background 0.2s;
     border-radius: 4px;
     padding: 2px 4px;
-    display: inline-block;
+    display: block;
     width: 100%;
     color: #ffffff !important;
     opacity: 1 !important;
     overflow-x: auto;
-    white-space: nowrap;
+    white-space: pre;
     scrollbar-width: thin;
     scrollbar-color: var(--glass-border) transparent;
 }
