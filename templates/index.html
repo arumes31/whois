@@ -40,47 +40,47 @@
                 
                 <div class="mt-4 pt-3 border-top border-secondary border-opacity-10">
                     <div class="d-flex flex-wrap gap-2">
-                        <div class="feature-toggle" title="Retrieve WHOIS ownership and registration data">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
                             <label for="cfg-whois"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 576 512"><path d="M0 96l576 0c0-35.3-28.7-64-64-64L64 32C28.7 32 0 60.7 0 96zm0 32V416c0 35.3 28.7 64 64 64H512c35.3 0 64-28.7 64-64V128H0zM128 224a64 64 0 1 1 128 0 64 64 0 1 1 -128 0zM48 352c0-35.3 28.7-64 64-64H208c35.3 0 64 28.7 64 64v32H48V352zM480 336c0 8.8-7.2 16-16 16H336c-8.8 0-16-7.2-16-16s7.2-16 16-16h128c8.8 0 16 7.2 16 16zm0-64c0 8.8-7.2 16-16 16H336c-8.8 0-16-7.2-16-16s7.2-16 16-16h128c8.8 0 16 7.2 16 16zm0-64c0 8.8-7.2 16-16 16H336c-8.8 0-16-7.2-16-16s7.2-16 16-16h128c8.8 0 16 7.2 16 16z"/></svg>WHOIS</label>
                         </div>
-                        <div class="feature-toggle" title="Resolve common DNS records (A, MX, TXT, etc.)">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-dns" {{ if .config.EnableDNS }}checked{{ end }}>
                             <label for="cfg-dns"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M64 32C28.7 32 0 60.7 0 96V416c0 35.3 28.7 64 64 64H448c35.3 0 64-28.7 64-64V96c0-35.3-28.7-64-64-64H64zM96 96H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H96c-17.7 0-32-14.3-32-32s14.3-32 32-32zm0 96H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H96c-17.7 0-32-14.3-32-32s14.3-32 32-32zm32 160a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg>DNS</label>
                         </div>
-                        <div class="feature-toggle" title="Brute-force common subdomain prefixes">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-subdomains">
                             <label for="cfg-subdomains"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 448 512"><path d="M160 80c0-26.5 21.5-48 48-48h32c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H208c-26.5 0-48-21.5-48-48V80zM0 272c0-26.5 21.5-48 48-48H80c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V272zM368 224c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H336c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48h32z"/></svg>PREFIXES</label>
                         </div>
-                        <div class="feature-toggle" title="Scan for SSL/TLS certificate validity and configuration">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}>
                             <label for="cfg-ssl"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 448 512"><path d="M144 144v48H304V144c0-44.2-35.8-80-80-80s-80 35.8-80 80zM80 192V144C80 64.5 144.5 0 224 0s144 64.5 144 144v48h16c35.3 0 64 28.7 64 64V448c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V256c0-35.3 28.7-64 64-64H80z"/></svg>SSL/TLS</label>
                         </div>
-                        <div class="feature-toggle" title="Inspect HTTP headers and security policies">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}>
                             <label for="cfg-http"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M0 96C0 60.7 28.7 32 64 32H448c35.3 0 64 28.7 64 64V416c0 35.3-28.7 64-64 64H64c-35.3 0-64-28.7-64-64V96zm64 64V416H448V160H64zm32 24c0-13.3 10.7-24 24-24h64c13.3 0 24 10.7 24 24s-10.7 24-24 24H120c-13.3 0-24-10.7-24-24zm160 0c0-13.3 10.7-24 24-24h64c13.3 0 24 10.7 24 24s-10.7 24-24 24H280c-13.3 0-24-10.7-24-24z"/></svg>HTTP</label>
                         </div>
-                        <div class="feature-toggle" title="Locate IP physical origin and ASN owner">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
                             <label for="cfg-geo"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M57.7 193l9.4 16.4c8.3 14.5 21.9 25.2 38 29.8L163 255.7c17.2 4.9 29 20.6 29 38.5v39.9c0 11 6.2 21 16 25.9s16 14.9 16 25.9v39c0 15.6 14.9 26.9 29.9 22.6c16.1-4.6 28.6-17.5 32.7-33.8l2.8-11.2c4.2-16.9 15.2-31.4 30.3-40l8.1-4.6c15-8.5 24.2-24.5 24.2-41.7v-8.3c0-12.7-5.1-24.9-14.1-33.9l-3.9-3.9c-9-9-21.2-14.1-33.9-14.1H257c-11.1 0-22.1-2.9-31.8-8.4l-34.5-19.7c-4.3-2.5-7.6-6.5-9.2-11.2l-3.2-9.6c-1.1-3.3-3.1-6.2-5.8-8.5L142 171.2c-7.9-6.7-11.7-17.3-9.9-27.6l3.2-18.8c1.7-10.2-1.7-20.4-9.3-27.3l-3.6-3.3c-15.9-14.4-40-13-54.2 3.3L13 161.5C3 173 1.3 189.3 8.8 202.5l4.1 7.1c7.1 12.3 18.1 22.2 31.3 28l13.5 6zM497 273.9c4.9-18.2 1.3-37.5-9.8-52.5l-7.1-9.4c-23.4-31.2-64.1-41.3-99.2-24.4l-30 14.4c-15.6 7.5-25.6 23.3-25.6 40.7v57.4c0 16.9 9.1 32.6 24 41.2l62.7 36c13.2 7.6 27.3 12.7 42 15.1l15 2.5c10.3 1.7 20.4-2.1 27-9.8l14.9-17.6c12.7-14.9 15.3-35.6 6.9-53.1l-1.1-2.4zM256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg>GEO/ASN</label>
                         </div>
-                        <div class="feature-toggle" title="Search Certificate Transparency logs for historical subdomains">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
                             <label for="cfg-ct"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M75 75L41 109c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0L109 109c9.4-9.4 9.4-24.6 0-33.9s-24.6-9.4-33.9 0zM503 7c-9.4-9.4-24.6-9.4-33.9 0L435 41c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0L503 41c9.4-9.4 9.4-24.6 0-33.9zM9 403c-9.4 9.4-9.4 24.6 0 33.9l34 34c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-34-34c-9.4-9.4-24.6-9.4-33.9 0zM437 437c-9.4 9.4-9.4 24.6 0 33.9l34 34c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-34-34c-9.4-9.4-24.6-9.4-33.9 0zM256 160c-53 0-96 43-96 96s43 96 96 96s96-43 96-96s-43-96-96-96zm0 256c-88.4 0-160-71.6-160-160s71.6-160 160-160s160 71.6 160 160s-71.6 160-160 160z"/></svg>CT LOGS</label>
                         </div>
-                        <div class="feature-toggle" title="Perform real-time ICMP ping to check availability and latency">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-ping">
                             <label for="cfg-ping"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 640 512"><path d="M352 128c0 17.7-14.3 32-32 32s-32-14.3-32-32s14.3-32 32-32s32 14.3 32 32zm96 96c0 17.7-14.3 32-32 32s-32-14.3-32-32s14.3-32 32-32s32 14.3 32 32zm96 96c0 17.7-14.3 32-32 32s-32-14.3-32-32s14.3-32 32-32s32 14.3 32 32zM128 352c0 17.7-14.3 32-32 32s-32-14.3-32-32s14.3-32 32-32s32 14.3 32 32z"/></svg>PING</label>
                         </div>
-                        <div class="feature-toggle" title="Execute recursive DNS trace from root servers">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-trace">
                             <label for="cfg-trace"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zm50.7-186.9L204 328c-10.1 2.5-18.4 10.1-20.9 20.2L171.1 404c-2.4 9.7-13.1 14.3-21.7 9.3s-9.8-15.3-2.4-22.1l102.7-94.3c10.1-9.3 25.1-9.3 35.2 0l102.7 94.3c7.4 6.8 6.2 17.1-2.4 22.1s-19.3 .4-21.7-9.3l-12-55.9z"/></svg>TRACE</label>
                         </div>
-                        <div class="feature-toggle" title="Perform standard traceroute to identify network hops">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-route">
                             <label for="cfg-route"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM369 209L241 209c-13.3 0-24 10.7-24 24s10.7 24 24 24l128 0c13.3 0 24-10.7 24-24s-10.7-24-24-24zM143 303c-13.3 0-24 10.7-24 24s10.7 24 24 24l128 0c13.3 0 24-10.7 24-24s-10.7-24-24-24L143 303z"/></svg>ROUTE</label>
                         </div>
-                        <div class="feature-toggle" title="Scan for open TCP ports (IPs only, max 10 ports)">
+                        <div class="feature-toggle">
                             <input type="checkbox" id="cfg-portscan">
                             <label for="cfg-portscan"><svg style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2" viewBox="0 0 576 512"><path d="M320 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V32zM448 160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V160zM64 288c0 17.7 14.3 32 32 32s32-14.3 32-32V160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288zM192 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V416c0 17.7 14.3 32 32 32s32-14.3 32-32V32z"/></svg>PORTSCAN <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Port scanning is only supported for direct IP addresses (skipped for domains)."><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></label>
                         </div>
