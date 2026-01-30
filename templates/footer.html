@@ -108,9 +108,12 @@
     if (typeof loadSettings === 'function') loadSettings();
     if (typeof connectWS === 'function') connectWS();
 
-    // Global tooltips
-    tippy('[title], [data-tippy-content]', { theme: 'matrix' });
-    tippy('.help-icon', { theme: 'matrix', placement: 'right' });
+    // Global tooltips - Consolidated to prevent double-init
+    tippy('[title], [data-tippy-content]', {
+        theme: 'matrix',
+        placement: (reference) => reference.classList.contains('help-icon') ? 'right' : 'top',
+        allowHTML: true
+    });
 </script>
 
 </body>

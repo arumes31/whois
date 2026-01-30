@@ -376,7 +376,10 @@ function createCard(target) {
     document.getElementById('resultsGrid').prepend(card);
     
     // Initialize tooltips for the new card
-    tippy(card.querySelectorAll('[title], [data-tippy-content]'), { theme: 'matrix' });
+    tippy(card.querySelectorAll('[title], [data-tippy-content]'), {
+        theme: 'matrix',
+        placement: (reference) => reference.classList.contains('help-icon') ? 'right' : 'top'
+    });
 }
 
 function updateProgressBar(target) {
@@ -678,10 +681,9 @@ function updateUI(msg) {
     });
 
     // Initialize tooltips for new content
-    tippy(section.querySelectorAll('[title], [data-tippy-content]'), { theme: 'matrix' });
-    tippy(section.querySelectorAll('.help-icon'), {
+    tippy(section.querySelectorAll('[title], [data-tippy-content]'), {
         theme: 'matrix',
-        placement: 'right'
+        placement: (reference) => reference.classList.contains('help-icon') ? 'right' : 'top'
     });
 
     Prism.highlightAllUnder(section);
