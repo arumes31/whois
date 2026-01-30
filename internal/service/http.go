@@ -8,7 +8,17 @@ import (
 	"time"
 	"whois/internal/utils"
 )
-...
+
+type HTTPInfo struct {
+	Status       string            `json:"status"`
+	Protocol     string            `json:"protocol"`
+	Headers      map[string]string `json:"headers"`
+	Security     map[string]string `json:"security"`
+	ResponseTime int64             `json:"response_time_ms"`
+	IP           string            `json:"ip"`
+	Error        string            `json:"error,omitempty"`
+}
+
 func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 	if !utils.IsValidTarget(host) {
 		return &HTTPInfo{Error: "invalid target host"}

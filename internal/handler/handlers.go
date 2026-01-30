@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -473,14 +474,17 @@ func (h *Handler) GetHistory(c echo.Context) error {
 
 func (h *Handler) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
-		if !utils.IsTrustedIP(c.RealIP(), h.AppConfig.TrustedIPs) {
+		pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
+		clientIP := utils.ExtractIP(c, pCfg)
+
+		if !utils.IsTrustedIP(clientIP, h.AppConfig.TrustedIPs) {
+			utils.Log.Warn("untrusted metrics access attempt", utils.Field("ip", clientIP))
 			return c.NoContent(http.StatusForbidden)
 		}
 
 		// Throttling / Slowdown logic
-		ip := c.RealIP()
 		ctx := c.Request().Context()
-		key := "metrics_throttle:" + ip
+		key := "metrics_throttle:" + clientIP
 
 		count, err := h.Storage.Client.Incr(ctx, key).Result()
 		if err == nil {
@@ -494,7 +498,7 @@ func (h *Handler) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 				if delay > 10*time.Second {
 					delay = 10 * time.Second
 				}
-				utils.Log.Warn("throttling metrics access", utils.Field("ip", ip), utils.Field("count", count), utils.Field("delay", delay))
+				utils.Log.Warn("throttling metrics access", utils.Field("ip", clientIP), utils.Field("count", count), utils.Field("delay", delay))
 
 				select {
 				case <-time.After(delay):

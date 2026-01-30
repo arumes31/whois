@@ -39,6 +39,11 @@ func IsValidTarget(target string) bool {
 	return strings.Contains(target, ".")
 }
 
+func IsValidMAC(mac string) bool {
+	_, err := net.ParseMAC(mac)
+	return err == nil
+}
+
 func IsTrustedIP(remoteAddr string, trustedList string) bool {
 	clientIP := net.ParseIP(remoteAddr)
 	if clientIP == nil {
