@@ -230,6 +230,8 @@ body {
     width: 100%;
     color: #ffffff !important;
     opacity: 1 !important;
+    word-break: break-all;
+    white-space: pre-wrap;
 }
 
 .text-white {
