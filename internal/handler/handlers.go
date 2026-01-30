@@ -402,6 +402,9 @@ func (h *Handler) MacLookup(c echo.Context) error {
 }
 
 func (h *Handler) Login(c echo.Context) error {
+	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
+	realIP := utils.ExtractIP(c, pCfg)
+
 	if c.Request().Method == http.MethodPost {
 		user := c.FormValue("username")
 		pass := c.FormValue("password")
@@ -423,12 +426,15 @@ func (h *Handler) Login(c echo.Context) error {
 			})
 			return c.Redirect(http.StatusFound, "/config")
 		}
-		return c.Render(http.StatusOK, "login.html", map[string]interface{}{"error": "Invalid credentials", "csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey)})
+		return c.Render(http.StatusOK, "login.html", map[string]interface{}{"error": "Invalid credentials", "csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey), "real_ip": realIP})
 	}
-	return c.Render(http.StatusOK, "login.html", map[string]interface{}{"csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey)})
+	return c.Render(http.StatusOK, "login.html", map[string]interface{}{"csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey), "real_ip": realIP})
 }
 
 func (h *Handler) Config(c echo.Context) error {
+	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
+	realIP := utils.ExtractIP(c, pCfg)
+
 	ctx := c.Request().Context()
 	if c.Request().Method == http.MethodPost {
 		action := c.FormValue("action")
@@ -444,6 +450,7 @@ func (h *Handler) Config(c echo.Context) error {
 	items, _ := h.Storage.GetMonitoredItems(ctx)
 	return c.Render(http.StatusOK, "config.html", map[string]interface{}{
 		"monitored": items,
+		"real_ip":   realIP,
 	})
 }
 

@@ -129,7 +129,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 		errorData := map[string]interface{}{
 			"Code":    code,
 			"Message": http.StatusText(code),
-			"real_ip": c.RealIP(),
+			"real_ip": utils.ExtractIP(c, utils.ProxyConfig{TrustProxy: cfg.TrustProxy, UseCloudflare: cfg.UseCloudflare}),
 		}
 
 		if renderErr := c.Render(code, "error.html", errorData); renderErr != nil {

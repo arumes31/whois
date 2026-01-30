@@ -10,19 +10,81 @@ import (
 )
 
 var (
-	CRTURL         = "https://crt.sh/?q=%s&output=json"
-	CertspotterURL = "https://api.certspotter.com/v1/issuances?domain=%s&include_subdomains=true&expand=dns_names"
+	CRTURL             = "https://crt.sh/?q=%s&output=json"
+	CertspotterURL     = "https://api.certspotter.com/v1/issuances?domain=%s&include_subdomains=true&expand=dns_names"
+	SubdomainCenterURL = "https://api.subdomain.center/?domain=%s"
 )
 
 func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface{}, error) {
-	// Try Certspotter first (usually much faster)
+	var allErrors []string
+
+	// 1. Try Certspotter (usually fastest and most reliable)
 	results, err := fetchCertspotter(ctx, domain)
 	if err == nil && len(results) > 0 {
 		return results, nil
 	}
+	if err != nil {
+		allErrors = append(allErrors, fmt.Sprintf("Certspotter: %v", err))
+	}
 
-	// Fallback to crt.sh
-	return fetchCrtSh(ctx, domain)
+	// 2. Fallback to crt.sh
+	results, err = fetchCrtSh(ctx, domain)
+	if err == nil && len(results) > 0 {
+		return results, nil
+	}
+	if err != nil {
+		allErrors = append(allErrors, fmt.Sprintf("crt.sh: %v", err))
+	}
+
+	// 3. Fallback to Subdomain Center
+	results, err = fetchSubdomainCenter(ctx, domain)
+	if err == nil && len(results) > 0 {
+		return results, nil
+	}
+	if err != nil {
+		allErrors = append(allErrors, fmt.Sprintf("SubdomainCenter: %v", err))
+	}
+
+	if len(allErrors) > 0 {
+		return nil, fmt.Errorf("All CT sources failed: %s", strings.Join(allErrors, "; "))
+	}
+
+	return nil, fmt.Errorf("No subdomains found from any source")
+}
+
+func fetchSubdomainCenter(ctx context.Context, domain string) (map[string]interface{}, error) {
+	url := fmt.Sprintf(SubdomainCenterURL, domain)
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+
+	var data []string
+	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+		return nil, err
+	}
+
+	subdomains := make(map[string]interface{})
+	for _, sub := range data {
+		sub = strings.TrimSpace(sub)
+		sub = strings.TrimPrefix(sub, "*.")
+		if sub != "" && sub != domain && strings.HasSuffix(sub, "."+domain) {
+			subdomains[sub] = map[string]interface{}{}
+		}
+	}
+	return subdomains, nil
 }
 
 func fetchCertspotter(ctx context.Context, domain string) (map[string]interface{}, error) {

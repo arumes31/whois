@@ -197,7 +197,7 @@ body {
     user-select: text;
     transition: transform 0.2s, box-shadow 0.2s;
     height: fit-content;
-    width: 400px;
+    width: 450px;
     background: #2c1810;
     border: 1px solid var(--glass-border);
 }
@@ -226,10 +226,23 @@ body {
     transition: background 0.2s;
     border-radius: 4px;
     padding: 2px 4px;
-    display: inline-block;
+    display: block;
     width: 100%;
     color: #ffffff !important;
     opacity: 1 !important;
+    overflow-x: auto;
+    white-space: pre;
+    scrollbar-width: thin;
+    scrollbar-color: var(--glass-border) transparent;
+}
+
+.clickable-record::-webkit-scrollbar {
+    height: 4px;
+}
+
+.clickable-record::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 10px;
 }
 
 .text-white {
@@ -336,6 +349,25 @@ summary:hover {
     height: 10px;
     background: var(--nordic-blue);
     box-shadow: 0 0 12px var(--nordic-blue);
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin {
+    animation: spin 2s linear infinite;
+}
+
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-right: 8px;
+    vertical-align: middle;
 }
 
 @media (max-width: 768px) {
