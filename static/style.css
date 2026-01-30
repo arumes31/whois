@@ -230,8 +230,19 @@ body {
     width: 100%;
     color: #ffffff !important;
     opacity: 1 !important;
-    word-break: break-all;
-    white-space: pre-wrap;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: thin;
+    scrollbar-color: var(--glass-border) transparent;
+}
+
+.clickable-record::-webkit-scrollbar {
+    height: 4px;
+}
+
+.clickable-record::-webkit-scrollbar-thumb {
+    background: var(--glass-border);
+    border-radius: 10px;
 }
 
 .text-white {
