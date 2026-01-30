@@ -203,22 +203,65 @@ func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 	}, nil
 }
 
-// normalizeData recursively sorts slices to prevent false positives in diffs due to ordering
+// normalizeData recursively sorts and deduplicates slices, and removes empty fields
 func normalizeData(i interface{}) interface{} {
 	switch v := i.(type) {
 	case map[string]interface{}:
+		cleaned := make(map[string]interface{})
 		for k, val := range v {
-			v[k] = normalizeData(val)
+			normVal := normalizeData(val)
+			// Remove empty/nil values to reduce noise from flaky lookups
+			if normVal == nil {
+				continue
+			}
+			if s, ok := normVal.(string); ok && s == "" {
+				continue
+			}
+			if sl, ok := normVal.([]interface{}); ok && len(sl) == 0 {
+				continue
+			}
+			if m, ok := normVal.(map[string]interface{}); ok && len(m) == 0 {
+				continue
+			}
+			cleaned[k] = normVal
 		}
-		return v
+		if len(cleaned) == 0 {
+			return nil
+		}
+		return cleaned
 	case []interface{}:
+		if len(v) == 0 {
+			return nil
+		}
+		
+		// Recurse first
 		for idx, val := range v {
 			v[idx] = normalizeData(val)
 		}
-		sort.Slice(v, func(i, j int) bool {
-			return fmt.Sprintf("%v", v[i]) < fmt.Sprintf("%v", v[j])
+
+		// Deduplicate
+		uniqueMap := make(map[string]interface{})
+		var uniqueSlice []interface{}
+		for _, val := range v {
+			if val == nil {
+				continue
+			}
+			key := fmt.Sprintf("%v", val)
+			if _, exists := uniqueMap[key]; !exists {
+				uniqueMap[key] = val
+				uniqueSlice = append(uniqueSlice, val)
+			}
+		}
+
+		// Sort
+		sort.Slice(uniqueSlice, func(i, j int) bool {
+			return fmt.Sprintf("%v", uniqueSlice[i]) < fmt.Sprintf("%v", uniqueSlice[j])
 		})
-		return v
+		
+		if len(uniqueSlice) == 0 {
+			return nil
+		}
+		return uniqueSlice
 	default:
 		return i
 	}
