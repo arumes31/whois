@@ -23,13 +23,10 @@
                 
                 <div class="row g-3">
                     <div class="col-md-9">
-                        <textarea 
-                          id="targetInput"
-                          class="form-control matrix-input" 
-                          rows="1"
-                          placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
-                          title="Enter domain names or IP addresses separated by commas"
-                          required></textarea>
+                                <input type="text" id="targetInput" class="form-control matrix-input mb-3" 
+                                       placeholder="e.g. google.com, 1.1.1.1, example.org"
+                                       data-tippy-content="Enter domain names or IP addresses separated by commas"
+                                       required>
                     </div>
             <div class="col-md-2">
                 <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100">
@@ -154,7 +151,7 @@
 
 <template id="resultCardTemplate">
     <div class="result-card glass-panel" data-target="" draggable="true">
-        <div class="card-handle" title="Drag to reorder widgets">
+        <div class="card-handle" data-tippy-content="Drag to reorder widgets">
             <div class="d-flex align-items-center gap-2">
                 <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 320 512"><path d="M40 352a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm160 320a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80z"/></svg>
             </div>
@@ -395,19 +392,13 @@ function createCard(target) {
     document.getElementById('resultsGrid').prepend(card);
     
     // Initialize tooltips for the new card
-    tippy(card.querySelectorAll('[title], [data-tippy-content]'), {
+    tippy(card.querySelectorAll('[data-tippy-content]:not(.help-icon)'), {
         theme: 'matrix',
-        content(reference) {
-            const content = reference.getAttribute('data-tippy-content') || reference.getAttribute('title');
-            if (reference.hasAttribute('title')) {
-                reference.setAttribute('data-tippy-original-title', reference.getAttribute('title'));
-                reference.removeAttribute('title');
-            }
-            return content;
-        },
-        placement(reference) {
-            return reference.classList.contains('help-icon') ? 'right' : 'top';
-        }
+        placement: 'top'
+    });
+    tippy(card.querySelectorAll('.help-icon[data-tippy-content]'), {
+        theme: 'matrix',
+        placement: 'right'
     });
 }
 
@@ -759,19 +750,13 @@ function updateUI(msg) {
     });
 
     // Initialize tooltips for new content
-    tippy(section.querySelectorAll('[title], [data-tippy-content]'), {
+    tippy(section.querySelectorAll('[data-tippy-content]:not(.help-icon)'), {
         theme: 'matrix',
-        content(reference) {
-            const content = reference.getAttribute('data-tippy-content') || reference.getAttribute('title');
-            if (reference.hasAttribute('title')) {
-                reference.setAttribute('data-tippy-original-title', reference.getAttribute('title'));
-                reference.removeAttribute('title');
-            }
-            return content;
-        },
-        placement(reference) {
-            return reference.classList.contains('help-icon') ? 'right' : 'top';
-        }
+        placement: 'top'
+    });
+    tippy(section.querySelectorAll('.help-icon[data-tippy-content]'), {
+        theme: 'matrix',
+        placement: 'right'
     });
 
     Prism.highlightAllUnder(section);
