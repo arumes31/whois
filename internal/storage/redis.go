@@ -233,7 +233,7 @@ func normalizeData(i interface{}) interface{} {
 		if len(v) == 0 {
 			return nil
 		}
-		
+
 		// Recurse first
 		for idx, val := range v {
 			v[idx] = normalizeData(val)
@@ -257,7 +257,7 @@ func normalizeData(i interface{}) interface{} {
 		sort.Slice(uniqueSlice, func(i, j int) bool {
 			return fmt.Sprintf("%v", uniqueSlice[i]) < fmt.Sprintf("%v", uniqueSlice[j])
 		})
-		
+
 		if len(uniqueSlice) == 0 {
 			return nil
 		}
