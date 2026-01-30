@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
+	"whois/internal/utils"
 )
 
 var (
@@ -67,14 +69,19 @@ func DownloadOUI() error {
 }
 
 func LookupMacVendor(ctx context.Context, mac string) (string, error) {
+	if !utils.IsValidMAC(mac) {
+		return "", fmt.Errorf("invalid MAC address format")
+	}
+
 	// Try local lookup first
 	if vendor, err := localOUILookup(mac); err == nil && vendor != "" {
 		return vendor, nil
 	}
 
-	url := fmt.Sprintf(MacVendorsURL, mac)
+	escapedMac := url.PathEscape(mac)
+	targetURL := fmt.Sprintf(MacVendorsURL, escapedMac)
 	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		return "", err
 	}

@@ -6,9 +6,15 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"whois/internal/utils"
 )
 
 func Ping(ctx context.Context, target string, count int, callback func(string)) {
+	if !utils.IsValidTarget(target) {
+		callback("Error: invalid target for ping")
+		return
+	}
+
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "ping", "-n", fmt.Sprintf("%d", count), target)

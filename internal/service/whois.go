@@ -2,12 +2,14 @@ package service
 
 import (
 	"fmt"
-	"github.com/likexian/whois"
-	"github.com/likexian/whois-parser"
-	"github.com/openrdap/rdap"
 	"math/rand"
 	"strings"
 	"time"
+	"whois/internal/utils"
+
+	"github.com/likexian/whois"
+	"github.com/likexian/whois-parser"
+	"github.com/openrdap/rdap"
 )
 
 type WhoisInfo struct {
@@ -18,6 +20,10 @@ type WhoisInfo struct {
 }
 
 func Whois(target string) interface{} {
+	if !utils.IsValidTarget(target) {
+		return "Error: invalid target for WHOIS"
+	}
+
 	// Try primary lookup
 	raw, err := whois.Whois(target)
 

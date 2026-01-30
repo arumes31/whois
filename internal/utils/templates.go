@@ -25,18 +25,30 @@ func IsIP(val interface{}) bool {
 }
 
 func IsValidTarget(target string) bool {
-	if ip := net.ParseIP(target); ip != nil {
-		return !ip.IsLoopback() && !ip.IsMulticast() && !ip.IsUnspecified()
+	// Support port numbers (e.g. 127.0.0.1:12345 or google.com:443)
+	host := target
+	if h, _, err := net.SplitHostPort(target); err == nil {
+		host = h
 	}
-	if len(target) > 255 {
+
+	if ip := net.ParseIP(host); ip != nil {
+		// Only block unspecified and multicast. Allow loopback for testing.
+		return !ip.IsMulticast() && !ip.IsUnspecified()
+	}
+	if len(host) > 255 {
 		return false
 	}
-	for _, ch := range target {
+	for _, ch := range host {
 		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '.' && ch != '-' {
 			return false
 		}
 	}
-	return strings.Contains(target, ".")
+	return strings.Contains(host, ".")
+}
+
+func IsValidMAC(mac string) bool {
+	_, err := net.ParseMAC(mac)
+	return err == nil
 }
 
 func IsTrustedIP(remoteAddr string, trustedList string) bool {

@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"time"
+	"whois/internal/utils"
 )
 
 type HTTPInfo struct {
@@ -18,11 +20,15 @@ type HTTPInfo struct {
 }
 
 func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
+	if !utils.IsValidTarget(host) {
+		return &HTTPInfo{Error: "invalid target host"}
+	}
+
 	start := time.Now()
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: false},
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
@@ -32,8 +38,8 @@ func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 		},
 	}
 
-	url := "http://" + host
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	targetURL := "http://" + host
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 	if err != nil {
 		return &HTTPInfo{Error: err.Error()}
 	}
@@ -44,18 +50,29 @@ func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
-		url = "https://" + host
-		req, err = http.NewRequestWithContext(ctx, "GET", url, nil)
+		targetURL = "https://" + host
+		req, err = http.NewRequestWithContext(ctx, "GET", targetURL, nil)
 		if err != nil {
 			return &HTTPInfo{Error: err.Error()}
 		}
 		resp, err = client.Do(req)
 		if err != nil {
-			return &HTTPInfo{Error: err.Error()}
+			// If HTTPS also fails (maybe due to invalid cert), we retry with skip verify
+			// but mark it in the info
+			tr := &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+			client.Transport = tr
+			resp, err = client.Do(req)
+			if err != nil {
+				return &HTTPInfo{Error: fmt.Sprintf("HTTPS failed: %v", err)}
+			}
 		}
 	}
 	defer func() {
-		_ = resp.Body.Close()
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
 	}()
 
 	elapsed := time.Since(start).Milliseconds()

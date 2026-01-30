@@ -7,9 +7,15 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"whois/internal/utils"
 )
 
 func Traceroute(ctx context.Context, target string, callback func(string)) {
+	if !utils.IsValidTarget(target) {
+		callback("Error: invalid target for traceroute")
+		return
+	}
+
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
 		cmd = exec.CommandContext(ctx, "tracert", "-d", "-h", "20", target)

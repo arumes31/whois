@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"time"
 	"whois/internal/model"
 	"whois/internal/utils"
@@ -101,6 +102,10 @@ func (s *Storage) GetHistoryWithDiffs(ctx context.Context, item string) ([]model
 		_ = json.Unmarshal([]byte(currentRaw), &currentObj)
 		_ = json.Unmarshal([]byte(previousRaw), &previousObj)
 
+		// Normalize to reduce noise from reordered arrays
+		currentObj = normalizeData(currentObj)
+		previousObj = normalizeData(previousObj)
+
 		currentPretty, _ := json.MarshalIndent(currentObj, "", "  ")
 		previousPretty, _ := json.MarshalIndent(previousObj, "", "  ")
 
@@ -123,7 +128,13 @@ type HistoryMetadata struct {
 }
 
 func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interface{}) error {
+	// Normalize input data before saving to ensure consistent comparison
+	// Marshal and Unmarshal to ensure we have a generic interface{} structure to normalize
 	resBytes, _ := json.Marshal(result)
+	var obj interface{}
+	_ = json.Unmarshal(resBytes, &obj)
+	normalizedObj := normalizeData(obj)
+	resBytes, _ = json.Marshal(normalizedObj)
 	resStr := string(resBytes)
 
 	// Fetch metadata or versioning info if needed
@@ -190,4 +201,68 @@ func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 		MonitoredCount: len(monitored),
 		HistoryCount:   count,
 	}, nil
+}
+
+// normalizeData recursively sorts and deduplicates slices, and removes empty fields
+func normalizeData(i interface{}) interface{} {
+	switch v := i.(type) {
+	case map[string]interface{}:
+		cleaned := make(map[string]interface{})
+		for k, val := range v {
+			normVal := normalizeData(val)
+			// Remove empty/nil values to reduce noise from flaky lookups
+			if normVal == nil {
+				continue
+			}
+			if s, ok := normVal.(string); ok && s == "" {
+				continue
+			}
+			if sl, ok := normVal.([]interface{}); ok && len(sl) == 0 {
+				continue
+			}
+			if m, ok := normVal.(map[string]interface{}); ok && len(m) == 0 {
+				continue
+			}
+			cleaned[k] = normVal
+		}
+		if len(cleaned) == 0 {
+			return nil
+		}
+		return cleaned
+	case []interface{}:
+		if len(v) == 0 {
+			return nil
+		}
+
+		// Recurse first
+		for idx, val := range v {
+			v[idx] = normalizeData(val)
+		}
+
+		// Deduplicate
+		uniqueMap := make(map[string]interface{})
+		var uniqueSlice []interface{}
+		for _, val := range v {
+			if val == nil {
+				continue
+			}
+			key := fmt.Sprintf("%v", val)
+			if _, exists := uniqueMap[key]; !exists {
+				uniqueMap[key] = val
+				uniqueSlice = append(uniqueSlice, val)
+			}
+		}
+
+		// Sort
+		sort.Slice(uniqueSlice, func(i, j int) bool {
+			return fmt.Sprintf("%v", uniqueSlice[i]) < fmt.Sprintf("%v", uniqueSlice[j])
+		})
+
+		if len(uniqueSlice) == 0 {
+			return nil
+		}
+		return uniqueSlice
+	default:
+		return i
+	}
 }

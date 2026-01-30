@@ -23,13 +23,10 @@
                 
                 <div class="row g-3">
                     <div class="col-md-9">
-                        <textarea 
-                          id="targetInput"
-                          class="form-control matrix-input" 
-                          rows="1"
-                          placeholder="google.com, 1.1.1.1, sub.domain.tld ..."
-                          title="Enter domain names or IP addresses separated by commas"
-                          required></textarea>
+                                <input type="text" id="targetInput" class="form-control matrix-input mb-3" 
+                                       placeholder="e.g. google.com, 1.1.1.1, example.org"
+                                       data-tippy-content="Enter domain names or IP addresses separated by commas"
+                                       required>
                     </div>
             <div class="col-md-2">
                 <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100">
@@ -154,7 +151,7 @@
 
 <template id="resultCardTemplate">
     <div class="result-card glass-panel" data-target="" draggable="true">
-        <div class="card-handle" title="Drag to reorder widgets">
+        <div class="card-handle" data-tippy-content="Drag to reorder widgets">
             <div class="d-flex align-items-center gap-2">
                 <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 320 512"><path d="M40 352a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm160 320a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80z"/></svg>
             </div>
@@ -194,6 +191,7 @@
 <script>
 let socket;
 const activeScans = new Map();
+const pingCharts = new Map();
 
 function connectWS() {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -394,20 +392,14 @@ function createCard(target) {
 
     document.getElementById('resultsGrid').prepend(card);
     
-    // Initialize tooltips for the new card
-    tippy(card.querySelectorAll('[title], [data-tippy-content]'), {
+    // Initialize tooltips for the new card - only if not already initialized
+    tippy(card.querySelectorAll('[data-tippy-content]:not(.help-icon):not([data-tippy-root]):not(._tippy)'), {
         theme: 'matrix',
-        content(reference) {
-            const content = reference.getAttribute('data-tippy-content') || reference.getAttribute('title');
-            if (reference.hasAttribute('title')) {
-                reference.setAttribute('data-tippy-original-title', reference.getAttribute('title'));
-                reference.removeAttribute('title');
-            }
-            return content;
-        },
-        placement(reference) {
-            return reference.classList.contains('help-icon') ? 'right' : 'top';
-        }
+        placement: 'top'
+    });
+    tippy(card.querySelectorAll('.help-icon[data-tippy-content]:not([data-tippy-root]):not(._tippy)'), {
+        theme: 'matrix',
+        placement: 'right'
     });
 }
 
@@ -566,8 +558,17 @@ function updateUI(msg) {
             
             // Render Sparkline
             setTimeout(() => {
-                const ctx = document.getElementById(`chart-ping-${msg.target.replace(/\./g, '-')}`).getContext('2d');
-                new Chart(ctx, {
+                const canvasId = `chart-ping-${msg.target.replace(/\./g, '-')}`;
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return;
+                
+                // Destroy old chart if exists
+                if (pingCharts.has(canvasId)) {
+                    pingCharts.get(canvasId).destroy();
+                }
+
+                const ctx = canvas.getContext('2d');
+                const newChart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: latencies.map((_, i) => i),
@@ -584,6 +585,7 @@ function updateUI(msg) {
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        animation: false,
                         plugins: { legend: { display: false }, tooltip: { enabled: false } },
                         scales: {
                             x: { display: false },
@@ -591,6 +593,7 @@ function updateUI(msg) {
                         }
                     }
                 });
+                pingCharts.set(canvasId, newChart);
             }, 0);
             break;
         case 'route':
@@ -758,20 +761,14 @@ function updateUI(msg) {
         }
     });
 
-    // Initialize tooltips for new content
-    tippy(section.querySelectorAll('[title], [data-tippy-content]'), {
+    // Initialize tooltips for new content - only if not already initialized
+    tippy(section.querySelectorAll('[data-tippy-content]:not(.help-icon):not([data-tippy-root]):not(._tippy)'), {
         theme: 'matrix',
-        content(reference) {
-            const content = reference.getAttribute('data-tippy-content') || reference.getAttribute('title');
-            if (reference.hasAttribute('title')) {
-                reference.setAttribute('data-tippy-original-title', reference.getAttribute('title'));
-                reference.removeAttribute('title');
-            }
-            return content;
-        },
-        placement(reference) {
-            return reference.classList.contains('help-icon') ? 'right' : 'top';
-        }
+        placement: 'top'
+    });
+    tippy(section.querySelectorAll('.help-icon[data-tippy-content]:not([data-tippy-root]):not(._tippy)'), {
+        theme: 'matrix',
+        placement: 'right'
     });
 
     Prism.highlightAllUnder(section);
@@ -1016,12 +1013,25 @@ async function fetchHistory(btn) {
         if (data.diffs && data.diffs.length > 0) {
             html += `<div class="mb-4">
                         <h6 class="text-danger fw-bold small mb-2 border-bottom border-danger border-border-opacity-10 pb-1">RECENT CHANGES DETECTED</h6>
-                        <div class="glass-panel p-3 border-danger border-border-opacity-10">
-                            <ul class="list-group list-group-flush bg-transparent">`;
+                        <div class="glass-panel p-0 border-danger border-border-opacity-10 overflow-hidden">
+                            <div class="diff-viewer font-monospace small" style="font-size: 0.7rem; max-height: 300px; overflow-y: auto;">`;
+            
             data.diffs.forEach(d => {
-                html += `<li class="list-group-item bg-transparent text-white border-0 py-1 small font-monospace"><svg style="width:10px;height:10px;margin-right:8px;fill:#dc3545" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM232 344V280H168c-13.3 0-24-10.7-24-24s10.7-24 24-24h64V168c0-13.3 10.7-24 24-24s24 10.7 24 24v64h64c13.3 0 24 10.7 24 24s-10.7 24-24 24H280v64c0 13.3-10.7 24-24 24s-24-10.7-24-24z"/></svg>${d}</li>`;
+                if (d === "No changes") return;
+                const lines = d.split('\n');
+                lines.forEach(line => {
+                    let cls = "";
+                    if (line.startsWith('+') && !line.startsWith('+++')) cls = "diff-line-added";
+                    else if (line.startsWith('-') && !line.startsWith('---')) cls = "diff-line-removed";
+                    else if (line.startsWith('@@')) cls = "diff-line-info";
+                    
+                    if (line.trim()) {
+                        html += `<div class="px-3 py-0 ${cls}">${line}</div>`;
+                    }
+                });
             });
-            html += `</ul></div></div>`;
+            
+            html += `</div></div></div>`;
         }
 
         html += `<h6 class="text-nordic-blue fw-bold small mb-2 border-bottom border-nordic border-border-opacity-10 pb-1">FULL SCAN ARCHIVE</h6>
