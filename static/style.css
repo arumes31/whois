@@ -338,6 +338,25 @@ summary:hover {
     box-shadow: 0 0 12px var(--nordic-blue);
 }
 
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin {
+    animation: spin 2s linear infinite;
+}
+
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
 @media (max-width: 768px) {
     .results-grid { grid-template-columns: 1fr; }
     .search-section { padding: 0 1rem; }

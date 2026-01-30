@@ -176,17 +176,17 @@
             <div class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
         </div>
         <div class="diagnostic-content p-3 pt-0">
-            <div class="service-section" data-service="geo"></div>
-            <div class="service-section" data-service="whois"></div>
-            <div class="service-section" data-service="dns"></div>
-            <div class="service-section" data-service="subdomains"></div>
-            <div class="service-section" data-service="portscan"></div>
-            <div class="service-section" data-service="ping"></div>
-            <div class="service-section" data-service="route"></div>
-            <div class="service-section" data-service="trace"></div>
-            <div class="service-section" data-service="ssl"></div>
-            <div class="service-section" data-service="http"></div>
-            <div class="service-section" data-service="ct"></div>
+            <div class="service-section" data-service="geo"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>LOCATION & ASN</summary></details></div>
+            <div class="service-section" data-service="whois"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>WHOIS DATA</summary></details></div>
+            <div class="service-section" data-service="dns"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>DNS RECORDS</summary></details></div>
+            <div class="service-section" data-service="subdomains"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>SUBDOMAIN DISCOVERY</summary></details></div>
+            <div class="service-section" data-service="portscan"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>PORT SCAN</summary></details></div>
+            <div class="service-section" data-service="ping"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>PING ICMP</summary></details></div>
+            <div class="service-section" data-service="route"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>TRACEROUTE</summary></details></div>
+            <div class="service-section" data-service="trace"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>DNS TRACE</summary></details></div>
+            <div class="service-section" data-service="ssl"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>SSL/TLS</summary></details></div>
+            <div class="service-section" data-service="http"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>HTTP INSPECTOR</summary></details></div>
+            <div class="service-section" data-service="ct"><details><summary><span class="status-indicator" data-status="pending"><svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg></span>CT SUBDOMAINS</summary></details></div>
         </div>
     </div>
 </template>
@@ -229,6 +229,25 @@ function getTargetColor(target) {
         colorIndex++;
     }
     return targetColors.get(target);
+}
+
+const statusIcons = {
+    pending: `<svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg>`,
+    running: `<svg class="spin" style="width:12px;height:12px;fill:#ffd700" viewBox="0 0 512 512"><path d="M495.9 166.6c3.2 8.7 .5 18.4-6.4 24.6l-75.6 68.1c.7 9.7 1.1 19.5 1.1 29.4s-.4 19.7-1.1 29.4l75.6 68.1c6.9 6.2 9.6 15.9 6.4 24.6c-4.4 11.9-9.7 23.3-15.8 34.3l-4.7 8.1c-6.6 11-14 21.4-22.1 31.2c-5.9 7.2-15.7 9.6-24.5 6.8l-95.7-30.7c-18.4 14.6-38.4 26.8-59.9 36.1l-14.8 95.2c-1.4 9.3-9.1 16.4-18.5 16.4h-11c-9.4 0-17.2-7.1-18.5-16.4l-14.8-95.2c-21.5-9.3-41.5-21.5-59.9-36.1l-95.7 30.7c-8.8 2.8-18.6 .4-24.5-6.8c-8.1-9.8-15.5-20.2-22.1-31.2l-4.7-8.1c-6.1-11-11.4-22.4-15.8-34.3c-3.2-8.7-.5-18.4 6.4-24.6l75.6-68.1c-.7-9.7-1.1-19.5-1.1-29.4s.4-19.7 1.1-29.4L16.1 191.2c-6.9-6.2-9.6-15.9-6.4-24.6c4.4-11.9 9.7-23.3 15.8-34.3l4.7-8.1c6.6-11 14-21.4 22.1-31.2c5.9-7.2 15.7-9.6 24.5-6.8l95.7 30.7c18.4-14.6 38.4-26.8 59.9-36.1l14.8-95.2C220.4 7.1 228.2 0 237.6 0h11c9.4 0 17.2 7.1 18.5 16.4l14.8 95.2c21.5 9.3 41.5 21.5 59.9 36.1l95.7-30.7c8.8-2.8 18.6-.4 24.5 6.8c8.1 9.8 15.5 20.2 22.1 31.2l4.7 8.1c6.1 11 11.4 22.4 15.8 34.3zM256 336a80 80 0 1 0 0-160 80 80 0 1 0 0 160z"/></svg>`,
+    success: `<svg style="width:12px;height:12px;fill:#4caf50" viewBox="0 0 448 512"><path d="M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"/></svg>`,
+    error: `<svg style="width:12px;height:12px;fill:#ff4d4d" viewBox="0 0 384 512"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>`
+};
+
+function setServiceStatus(target, service, status) {
+    const card = document.querySelector(`[data-target="${target}"]`);
+    if (!card) return;
+    const section = card.querySelector(`[data-service="${service}"]`);
+    if (!section) return;
+    const indicator = section.querySelector('.status-indicator');
+    if (indicator) {
+        indicator.innerHTML = statusIcons[status];
+        indicator.setAttribute('data-status', status);
+    }
 }
 
 function appendLog(target, message) {
@@ -415,6 +434,7 @@ function updateUI(msg) {
         if (scan) {
             scan.completed++;
             updateProgressBar(msg.target);
+            setServiceStatus(msg.target, msg.service, 'success');
             appendLog(msg.target, `Service ${msg.service.toUpperCase()} completed successfully.`);
         }
         return;
@@ -430,6 +450,15 @@ function updateUI(msg) {
             statusBadge.classList.replace('bg-nordic-blue-dim', 'bg-success-dim');
             statusBadge.classList.replace('text-nordic-blue', 'text-success');
             card.querySelector('.streaming-indicator').style.display = 'none';
+            
+            // Mark any remaining enabled modules as success
+            card.querySelectorAll('.status-indicator[data-status="running"], .status-indicator[data-status="pending"]').forEach(el => {
+                const section = el.closest('.service-section');
+                if (section && section.innerHTML.trim().length > 0) {
+                    el.innerHTML = statusIcons.success;
+                }
+            });
+
             appendLog(msg.target, `All diagnostics finished.`);
         }
         return;
@@ -450,7 +479,7 @@ function updateUI(msg) {
         case 'geo':
             if (data && !data.error) {
                 const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${data.country_emoji}</span>` : '';
-                html = `<details open><summary>${flag} LOCATION & ASN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Geographic location, ISP, and Autonomous System Number (ASN) data"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>${flag} LOCATION & ASN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Geographic location, ISP, and Autonomous System Number (ASN) data"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex align-items-center mb-2">
                                 <svg style="width:16px;height:16px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 384 512"><path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/></svg>
@@ -476,7 +505,7 @@ function updateUI(msg) {
             break;
         case 'subdomains':
             if (data && Object.keys(data).length > 0) {
-                html = `<details open><summary>SUBDOMAIN DISCOVERY <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Brute-forced common prefixes"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>SUBDOMAIN DISCOVERY <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Brute-forced common prefixes"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
 `;
                 for (const [fqdn, records] of Object.entries(data)) {
@@ -496,7 +525,7 @@ function updateUI(msg) {
             break;
         case 'portscan':
             if (data && Object.keys(data).length > 0) {
-                html = `<details open><summary>PORT SCAN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Open ports and service banners"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>PORT SCAN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Open ports and service banners"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2">
 `;
                 for (const [port, banner] of Object.entries(data)) {
@@ -516,7 +545,7 @@ function updateUI(msg) {
                 return match ? parseFloat(match[1]) : null;
             }).filter(v => v !== null);
 
-            html = `<details open><summary>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network latency and packet round-trip time (ICMP Echo Request)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+            html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network latency and packet round-trip time (ICMP Echo Request)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <div class="mt-2" style="height: 40px; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 2px;">
                         <canvas id="chart-ping-${msg.target.replace(/\./g, '-')}" style="width: 100%; height: 100%;"></canvas>
                     </div>
@@ -555,20 +584,20 @@ function updateUI(msg) {
             }, 0);
             break;
         case 'route':
-            html = `<details><summary>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of network hops and routing paths to the target"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+            html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of network hops and routing paths to the target"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <pre class="p-2 mt-1 rounded bg-dark text-info clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
         case 'trace':
-            html = `<details><summary>DNS TRACE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Full recursive DNS resolution path starting from the Root Servers"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+            html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>DNS TRACE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Full recursive DNS resolution path starting from the Root Servers"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${data.join('\n')}</code></pre>
                     </details>`;
             break;
         case 'dns':
             if (data && data.error) {
-                html = `<details><summary>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
-                html = `<details open><summary>DNS RECORDS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative resource records (A, MX, TXT, NS, CNAME)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>DNS RECORDS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative resource records (A, MX, TXT, NS, CNAME)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">`;
                 for (const [type, val] of Object.entries(data)) {
                     html += `<div class="mb-2 pb-1 border-bottom border-secondary border-opacity-10">
@@ -592,9 +621,9 @@ function updateUI(msg) {
             break;
         case 'ssl':
             if (data.error) {
-                html = `<details><summary>SSL/TLS</summary><div class="p-2 text-white small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>SSL/TLS</summary><div class="p-2 text-white small">${data.error}</div></details>`;
             } else {
-                html = `<details><summary>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake, Cipher Suite, and Certificate Authority details"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake, Cipher Suite, and Certificate Authority details"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <span class="badge bg-success mb-2">${data.protocol}</span><br>
                             <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${data.issuer}</span><br>
@@ -604,7 +633,7 @@ function updateUI(msg) {
             break;
         case 'http':
             if (data.error) {
-                html = `<details><summary>HTTP</summary><div class="p-2 text-white small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>HTTP</summary><div class="p-2 text-white small">${data.error}</div></details>`;
             } else {
                 let securityHtml = "";
                 for (const [h, val] of Object.entries(data.security)) {
@@ -615,7 +644,7 @@ function updateUI(msg) {
                     </div>`;
                 }
 
-                html = `<details><summary>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of HTTP Security Headers (HSTS, CSP, XFO) and server metadata"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of HTTP Security Headers (HSTS, CSP, XFO) and server metadata"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
                                 <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${data.status}</span>
@@ -634,7 +663,7 @@ function updateUI(msg) {
             break;
         case 'whois':
             if (data && typeof data === 'object') {
-                html = `<details open><summary>WHOIS DATA <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative domain registration, registrar, and expiration timestamps"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>WHOIS DATA <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative domain registration, registrar, and expiration timestamps"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Registrar:</strong> ${data.registrar || 'Unknown'}</div>
                             <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Expires:</strong> ${data.expiry || 'Unknown'}</div>
@@ -651,9 +680,9 @@ function updateUI(msg) {
             break;
         case 'ct':
             if (data && data.error) {
-                html = `<details><summary>CT SUBDOMAINS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>CT SUBDOMAINS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
-                html = `<details><summary>CT SUBDOMAINS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Historical subdomains discovered via public Certificate Transparency (CT) logs"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary><ul class="list-unstyled p-2 small m-0" style="max-height: 150px; overflow-y: auto;">`;
+                html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>CT SUBDOMAINS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Historical subdomains discovered via public Certificate Transparency (CT) logs"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary><ul class="list-unstyled p-2 small m-0" style="max-height: 150px; overflow-y: auto;">`;
                 for (const [sub, _] of Object.entries(data)) {
                     html += `<li class="clickable-record" onclick="copyToClipboard(this)"><svg style="width:10px;height:10px;margin-right:8px;fill:#ff4d4d" viewBox="0 0 320 512"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>${sub}</li>`;
                 }
