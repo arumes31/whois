@@ -71,16 +71,54 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 
 		originalCertspotter := CertspotterURL
 		originalCrtSh := CRTURL
+		originalSubCenter := SubdomainCenterURL
 		CertspotterURL = ts.URL + "/%s"
 		CRTURL = ts.URL + "/%s"
+		SubdomainCenterURL = ts.URL + "/%s"
 		defer func() {
 			CertspotterURL = originalCertspotter
 			CRTURL = originalCrtSh
+			SubdomainCenterURL = originalSubCenter
 		}()
 
 		_, err := FetchCTSubdomains(context.Background(), "error.com")
 		if err == nil {
 			t.Error("Expected error when all sources fail")
+		}
+	})
+
+	t.Run("Subdomain Center Fallback", func(t *testing.T) {
+		// Fail Certspotter and crt.sh
+		tsFail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+		}))
+		defer tsFail.Close()
+
+		// Mock Subdomain Center
+		tsSub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintln(w, `["sub1.example.com", "sub2.example.com"]`)
+		}))
+		defer tsSub.Close()
+
+		originalCertspotter := CertspotterURL
+		originalCrtSh := CRTURL
+		originalSubCenter := SubdomainCenterURL
+		CertspotterURL = tsFail.URL + "/%s"
+		CRTURL = tsFail.URL + "/%s"
+		SubdomainCenterURL = tsSub.URL + "/%s"
+		defer func() {
+			CertspotterURL = originalCertspotter
+			CRTURL = originalCrtSh
+			SubdomainCenterURL = originalSubCenter
+		}()
+
+		subs, err := FetchCTSubdomains(context.Background(), "example.com")
+		if err != nil {
+			t.Fatalf("Subdomain Center fallback failed: %v", err)
+		}
+		if len(subs) != 2 {
+			t.Errorf("Expected 2 subdomains, got %d", len(subs))
 		}
 	})
 
