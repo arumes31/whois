@@ -351,6 +351,11 @@ summary:hover {
     box-shadow: 0 0 12px var(--nordic-blue);
 }
 
+/* Visual Diff Styling */
+.diff-line-added { color: #4caf50 !important; background: rgba(76, 175, 80, 0.1); }
+.diff-line-removed { color: #ff4d4d !important; background: rgba(255, 77, 77, 0.1); }
+.diff-line-info { color: #0dcaf0 !important; opacity: 0.6; }
+
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
