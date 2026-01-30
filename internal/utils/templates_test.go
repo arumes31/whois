@@ -58,7 +58,7 @@ func TestIsValidTarget(t *testing.T) {
 		{"sub-domain.example.co.uk", true},
 		{"invalid_chars!", false},
 		{"localhost", false},                       // Not contains "."
-		{"127.0.0.1", false},                       // Loopback
+		{"127.0.0.1", true},                        // Loopback allowed for local testing
 		{strings.Repeat("a", 256) + ".com", false}, // Too long
 	}
 
