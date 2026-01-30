@@ -8,7 +8,7 @@ RUN go build -o whois-app cmd/server/main.go
 
 # Runtime Stage
 FROM alpine:latest
-LABEL maintainer="arumes31"
+LABEL author="arumes31" maintainer="https://github.com/arumes31"
 WORKDIR /app
 
 # Create non-root user
