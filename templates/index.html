@@ -191,6 +191,7 @@
 <script>
 let socket;
 const activeScans = new Map();
+const pingCharts = new Map();
 
 function connectWS() {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -391,12 +392,12 @@ function createCard(target) {
 
     document.getElementById('resultsGrid').prepend(card);
     
-    // Initialize tooltips for the new card
-    tippy(card.querySelectorAll('[data-tippy-content]:not(.help-icon)'), {
+    // Initialize tooltips for the new card - only if not already initialized
+    tippy(card.querySelectorAll('[data-tippy-content]:not(.help-icon):not([data-tippy-root]):not(._tippy)'), {
         theme: 'matrix',
         placement: 'top'
     });
-    tippy(card.querySelectorAll('.help-icon[data-tippy-content]'), {
+    tippy(card.querySelectorAll('.help-icon[data-tippy-content]:not([data-tippy-root]):not(._tippy)'), {
         theme: 'matrix',
         placement: 'right'
     });
@@ -557,8 +558,17 @@ function updateUI(msg) {
             
             // Render Sparkline
             setTimeout(() => {
-                const ctx = document.getElementById(`chart-ping-${msg.target.replace(/\./g, '-')}`).getContext('2d');
-                new Chart(ctx, {
+                const canvasId = `chart-ping-${msg.target.replace(/\./g, '-')}`;
+                const canvas = document.getElementById(canvasId);
+                if (!canvas) return;
+                
+                // Destroy old chart if exists
+                if (pingCharts.has(canvasId)) {
+                    pingCharts.get(canvasId).destroy();
+                }
+
+                const ctx = canvas.getContext('2d');
+                const newChart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: latencies.map((_, i) => i),
@@ -575,6 +585,7 @@ function updateUI(msg) {
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        animation: false,
                         plugins: { legend: { display: false }, tooltip: { enabled: false } },
                         scales: {
                             x: { display: false },
@@ -582,6 +593,7 @@ function updateUI(msg) {
                         }
                     }
                 });
+                pingCharts.set(canvasId, newChart);
             }, 0);
             break;
         case 'route':
@@ -749,12 +761,12 @@ function updateUI(msg) {
         }
     });
 
-    // Initialize tooltips for new content
-    tippy(section.querySelectorAll('[data-tippy-content]:not(.help-icon)'), {
+    // Initialize tooltips for new content - only if not already initialized
+    tippy(section.querySelectorAll('[data-tippy-content]:not(.help-icon):not([data-tippy-root]):not(._tippy)'), {
         theme: 'matrix',
         placement: 'top'
     });
-    tippy(section.querySelectorAll('.help-icon[data-tippy-content]'), {
+    tippy(section.querySelectorAll('.help-icon[data-tippy-content]:not([data-tippy-root]):not(._tippy)'), {
         theme: 'matrix',
         placement: 'right'
     });

@@ -109,13 +109,13 @@
     if (typeof connectWS === 'function') connectWS();
 
     // Global tooltips - Simplified for reliability
-    tippy('[data-tippy-content]', {
+    tippy('[data-tippy-content]:not(.help-icon):not([data-tippy-root]):not(._tippy)', {
         theme: 'matrix',
         placement: 'top',
         allowHTML: true
     });
     // Help icons specifically on the right
-    tippy('.help-icon[data-tippy-content]', {
+    tippy('.help-icon[data-tippy-content]:not([data-tippy-root]):not(._tippy)', {
         theme: 'matrix',
         placement: 'right',
         allowHTML: true
