@@ -74,6 +74,10 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), h.Metrics)
 
 	// Security Middlewares
+	wsSkipper := func(c echo.Context) bool {
+		return c.Path() == "/ws"
+	}
+
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogStatus: true,
 		LogURI:    true,
@@ -86,20 +90,33 @@ func NewServer(cfg *config.Config) *echo.Echo {
 		},
 	}))
 	e.Use(middleware.Recover())
-	e.Use(middleware.BodyLimit("1M")) // Prevent large payload attacks
-	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(20)))
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		Skipper:      wsSkipper,
+		AllowOrigins: []string{"*"},
+		AllowMethods: []string{http.MethodGet, http.MethodPost},
+	}))
+	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
+		Skipper: wsSkipper,
+		Limit:   "1M",
+	}))
+	e.Use(middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+		Skipper: wsSkipper,
+		Store:   middleware.NewRateLimiterMemoryStore(20),
+	}))
 
 	// Secure Headers
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+		Skipper:               wsSkipper,
 		XSSProtection:         "1; mode=block",
 		ContentTypeNosniff:    "nosniff",
-		XFrameOptions:         "DENY",
+		XFrameOptions:         "SAMEORIGIN",
 		HSTSMaxAge:            31536000,
 		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:;",
 	}))
 
 	// CSRF Protection
 	e.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
+		Skipper:        wsSkipper,
 		TokenLookup:    "form:_csrf,header:X-CSRF-Token",
 		CookieName:     "_csrf",
 		CookieHTTPOnly: true,

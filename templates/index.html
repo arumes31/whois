@@ -212,13 +212,17 @@ function connectWS() {
         updateUI(msg);
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
         console.log("Socket closed. Reconnecting...");
-        setTimeout(connectWS, 2000);
+        if (!event.wasClean) {
+            appendLog("SYSTEM", `WebSocket connection failed (Code: ${event.code}). Possible proxy issue.`);
+        }
+        setTimeout(connectWS, 5000);
     };
 
     socket.onerror = (err) => {
         console.error("WebSocket error:", err);
+        appendLog("SYSTEM", "WebSocket protocol error detected. Check proxy headers.");
     };
 }
 
