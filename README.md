@@ -64,7 +64,7 @@ Access the dashboard at `http://localhost:14400`.
 ### Reverse Proxy Configuration (Nginx)
 If you are running behind Nginx, you **must** ensure WebSocket headers are forwarded correctly:
 ```nginx
-location /ws {
+location / {
     proxy_pass http://localhost:14400;
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;

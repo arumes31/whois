@@ -43,8 +43,9 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 	}
 
 	h.Upgrader = websocket.Upgrader{
-		ReadBufferSize:  1024,
-		WriteBufferSize: 1024,
+		ReadBufferSize:   1024,
+		WriteBufferSize:  1024,
+		HandshakeTimeout: 5 * time.Second,
 		CheckOrigin: func(r *http.Request) bool {
 			if cfg.SkipOriginCheck {
 				return true
