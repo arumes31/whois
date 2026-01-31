@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ import (
 	"whois/internal/storage"
 	"whois/internal/utils"
 
+	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -29,15 +31,88 @@ type Handler struct {
 	Storage   *storage.Storage
 	DNS       *service.DNSService
 	AppConfig *config.Config
+	Upgrader  websocket.Upgrader
 	wsMu      sync.Mutex
 }
 
 func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
-	return &Handler{
+	h := &Handler{
 		Storage:   storage,
 		DNS:       service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS),
 		AppConfig: cfg,
 	}
+
+	h.Upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			u, err := url.Parse(origin)
+			if err != nil {
+				return false
+			}
+
+			// Robust host comparison: strip ports if present
+			originHost := u.Hostname()
+			requestHost := r.Host
+			if host, _, err := net.SplitHostPort(requestHost); err == nil {
+				requestHost = host
+			}
+
+			// Also check X-Forwarded-Host if present (common behind reverse proxies)
+			forwardedHost := r.Header.Get("X-Forwarded-Host")
+			if forwardedHost != "" {
+				if host, _, err := net.SplitHostPort(forwardedHost); err == nil {
+					forwardedHost = host
+				}
+			}
+
+			utils.Log.Debug("websocket origin check",
+				utils.Field("origin", origin),
+				utils.Field("origin_hostname", originHost),
+				utils.Field("request_host", r.Host),
+				utils.Field("request_hostname", requestHost),
+				utils.Field("forwarded_host", forwardedHost),
+				utils.Field("allowed_domain", cfg.AllowedDomain),
+			)
+
+			// Allow if hosts match exactly
+			if originHost == requestHost || (forwardedHost != "" && originHost == forwardedHost) {
+				return true
+			}
+
+			// Fallback: Allow localhost/127.0.0.1 for development
+			if requestHost == "localhost" || requestHost == "127.0.0.1" || originHost == "localhost" || originHost == "127.0.0.1" {
+				return true
+			}
+
+			// If we are on a subdomain of the allowed domain
+			if cfg.AllowedDomain != "" {
+				if strings.HasSuffix(originHost, "."+cfg.AllowedDomain) || originHost == cfg.AllowedDomain {
+					return true
+				}
+			}
+
+			utils.Log.Warn("websocket origin rejected",
+				utils.Field("origin", origin),
+				utils.Field("request_host", r.Host),
+				utils.Field("allowed_domain", cfg.AllowedDomain),
+			)
+			return false
+		},
+		Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
+			utils.Log.Error("websocket upgrade error",
+				utils.Field("status", status),
+				utils.Field("reason", reason.Error()),
+				utils.Field("uri", r.URL.Path),
+			)
+		},
+	}
+
+	return h
 }
 
 // === Middleware ===

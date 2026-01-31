@@ -4,83 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"net"
-	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"whois/internal/service"
-	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 )
-
-var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true
-		}
-		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-
-		// Robust host comparison: strip ports if present
-		originHost := u.Hostname()
-		requestHost := r.Host
-		if h, _, err := net.SplitHostPort(requestHost); err == nil {
-			requestHost = h
-		}
-
-		// Also check X-Forwarded-Host if present (common behind reverse proxies)
-		forwardedHost := r.Header.Get("X-Forwarded-Host")
-		if forwardedHost != "" {
-			if h, _, err := net.SplitHostPort(forwardedHost); err == nil {
-				forwardedHost = h
-			}
-		}
-
-		utils.Log.Info("websocket origin check",
-			utils.Field("origin", origin),
-			utils.Field("origin_hostname", originHost),
-			utils.Field("request_host", r.Host),
-			utils.Field("request_hostname", requestHost),
-			utils.Field("forwarded_host", forwardedHost),
-		)
-
-		// Allow if hosts match exactly
-		if originHost == requestHost || (forwardedHost != "" && originHost == forwardedHost) {
-			return true
-		}
-
-		// Fallback: Allow localhost/127.0.0.1 for development
-		if requestHost == "localhost" || requestHost == "127.0.0.1" || originHost == "localhost" || originHost == "127.0.0.1" {
-			return true
-		}
-
-		// If we are on a subdomain of the same domain, it's likely safe enough for this app
-		if strings.HasSuffix(originHost, ".reitetschlaeger.com") && strings.HasSuffix(requestHost, ".reitetschlaeger.com") {
-			return true
-		}
-
-		utils.Log.Warn("websocket origin rejected",
-			utils.Field("origin", origin),
-			utils.Field("request_host", r.Host),
-		)
-		return false
-	},
-	Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
-		utils.Log.Error("websocket upgrade error",
-			utils.Field("status", status),
-			utils.Field("reason", reason.Error()),
-			utils.Field("uri", r.URL.Path),
-		)
-	},
-}
 
 type WSMessage struct {
 	Type    string      `json:"type"`
@@ -90,7 +21,7 @@ type WSMessage struct {
 }
 
 func (h *Handler) HandleWS(c echo.Context) error {
-	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	ws, err := h.Upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}

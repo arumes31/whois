@@ -29,6 +29,7 @@ type Config struct {
 	BootstrapDNS      string
 	SEOEnabled        bool
 	SEODomain         string
+	AllowedDomain     string
 }
 
 func LoadConfig() (*Config, error) {
@@ -54,6 +55,7 @@ func LoadConfig() (*Config, error) {
 		BootstrapDNS:      getEnv("BOOTSTRAP_DNS", "1.1.1.1,9.9.9.9"),
 		SEOEnabled:        getEnvBool("SEO_ENABLED", false),
 		SEODomain:         getEnv("SEO_DOMAIN", ""),
+		AllowedDomain:     getEnv("ALLOWED_DOMAIN", "example.com"),
 	}
 
 	if cfg.SecretKey == "" {

@@ -18,6 +18,7 @@ services:
       - BOOTSTRAP_DNS=${BOOTSTRAP_DNS:-1.1.1.1,9.9.9.9}
       - SEO_ENABLED=${SEO_ENABLED:-false}
       - SEO_DOMAIN=${SEO_DOMAIN}
+      - ALLOWED_DOMAIN=${ALLOWED_DOMAIN:-example.com}
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
