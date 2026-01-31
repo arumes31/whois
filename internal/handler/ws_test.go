@@ -9,10 +9,15 @@ import (
 	"time"
 	"whois/internal/config"
 	"whois/internal/storage"
+	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestHandleWS(t *testing.T) {
 	// Setup

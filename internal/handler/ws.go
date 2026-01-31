@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"whois/internal/service"
+	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
@@ -17,7 +18,6 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// Only allow connections from the same host
 		origin := r.Header.Get("Origin")
 		if origin == "" {
 			return true
@@ -26,7 +26,33 @@ var upgrader = websocket.Upgrader{
 		if err != nil {
 			return false
 		}
-		return u.Host == r.Host
+
+		// Robust host comparison: strip ports if present
+		originHost := u.Host
+		if h, _, err := net.SplitHostPort(originHost); err == nil {
+			originHost = h
+		}
+
+		requestHost := r.Host
+		if h, _, err := net.SplitHostPort(requestHost); err == nil {
+			requestHost = h
+		}
+
+		// Allow if hosts match exactly
+		if originHost == requestHost {
+			return true
+		}
+
+		// Fallback: Allow localhost/127.0.0.1 for development
+		if requestHost == "localhost" || requestHost == "127.0.0.1" {
+			return true
+		}
+
+		utils.Log.Warn("websocket origin rejected",
+			utils.Field("origin", origin),
+			utils.Field("request_host", r.Host),
+		)
+		return false
 	},
 }
 
