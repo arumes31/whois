@@ -17,6 +17,8 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
 		origin := r.Header.Get("Origin")
 		if origin == "" {
@@ -28,30 +30,40 @@ var upgrader = websocket.Upgrader{
 		}
 
 		// Robust host comparison: strip ports if present
-		originHost := u.Host
-		if h, _, err := net.SplitHostPort(originHost); err == nil {
-			originHost = h
-		}
-
+		originHost := u.Hostname()
 		requestHost := r.Host
 		if h, _, err := net.SplitHostPort(requestHost); err == nil {
 			requestHost = h
 		}
 
-		utils.Log.Debug("websocket origin check",
+		// Also check X-Forwarded-Host if present (common behind reverse proxies)
+		forwardedHost := r.Header.Get("X-Forwarded-Host")
+		if forwardedHost != "" {
+			if h, _, err := net.SplitHostPort(forwardedHost); err == nil {
+				forwardedHost = h
+			}
+		}
+
+		utils.Log.Info("websocket origin check",
 			utils.Field("origin", origin),
-			utils.Field("origin_host", originHost),
-			utils.Field("request_host_raw", r.Host),
-			utils.Field("request_host_stripped", requestHost),
+			utils.Field("origin_hostname", originHost),
+			utils.Field("request_host", r.Host),
+			utils.Field("request_hostname", requestHost),
+			utils.Field("forwarded_host", forwardedHost),
 		)
 
 		// Allow if hosts match exactly
-		if originHost == requestHost {
+		if originHost == requestHost || (forwardedHost != "" && originHost == forwardedHost) {
 			return true
 		}
 
 		// Fallback: Allow localhost/127.0.0.1 for development
-		if requestHost == "localhost" || requestHost == "127.0.0.1" {
+		if requestHost == "localhost" || requestHost == "127.0.0.1" || originHost == "localhost" || originHost == "127.0.0.1" {
+			return true
+		}
+
+		// If we are on a subdomain of the same domain, it's likely safe enough for this app
+		if strings.HasSuffix(originHost, ".reitetschlaeger.com") && strings.HasSuffix(requestHost, ".reitetschlaeger.com") {
 			return true
 		}
 
@@ -60,6 +72,13 @@ var upgrader = websocket.Upgrader{
 			utils.Field("request_host", r.Host),
 		)
 		return false
+	},
+	Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
+		utils.Log.Error("websocket upgrade error",
+			utils.Field("status", status),
+			utils.Field("reason", reason.Error()),
+			utils.Field("uri", r.URL.Path),
+		)
 	},
 }
 
