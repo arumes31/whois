@@ -30,6 +30,7 @@ type Config struct {
 	SEOEnabled        bool
 	SEODomain         string
 	AllowedDomain     string
+	SkipOriginCheck   bool
 }
 
 func LoadConfig() (*Config, error) {
@@ -55,7 +56,8 @@ func LoadConfig() (*Config, error) {
 		BootstrapDNS:      getEnv("BOOTSTRAP_DNS", "1.1.1.1,9.9.9.9"),
 		SEOEnabled:        getEnvBool("SEO_ENABLED", false),
 		SEODomain:         getEnv("SEO_DOMAIN", ""),
-		AllowedDomain:     getEnv("ALLOWED_DOMAIN", "example.com"),
+		AllowedDomain:     getEnv("ALLOWED_DOMAIN", ""),
+		SkipOriginCheck:   getEnvBool("WS_SKIP_ORIGIN_CHECK", false),
 	}
 
 	if cfg.SecretKey == "" {

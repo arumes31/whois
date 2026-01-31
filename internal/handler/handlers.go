@@ -46,6 +46,10 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
 		CheckOrigin: func(r *http.Request) bool {
+			if cfg.SkipOriginCheck {
+				return true
+			}
+
 			origin := r.Header.Get("Origin")
 			if origin == "" {
 				return true
@@ -70,7 +74,7 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 				}
 			}
 
-			utils.Log.Debug("websocket origin check",
+			utils.Log.Info("websocket origin check",
 				utils.Field("origin", origin),
 				utils.Field("origin_hostname", originHost),
 				utils.Field("request_host", r.Host),

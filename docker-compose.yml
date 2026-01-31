@@ -28,7 +28,8 @@ services:
       - BOOTSTRAP_DNS=${BOOTSTRAP_DNS:-1.1.1.1,9.9.9.9}
       - SEO_ENABLED=${SEO_ENABLED:-false}
       - SEO_DOMAIN=${SEO_DOMAIN}
-      - ALLOWED_DOMAIN=${ALLOWED_DOMAIN:-example.com}
+      - ALLOWED_DOMAIN=${ALLOWED_DOMAIN}
+      - WS_SKIP_ORIGIN_CHECK=${WS_SKIP_ORIGIN_CHECK:-false}
       - PORT=5000
     restart: unless-stopped
     security_opt:
