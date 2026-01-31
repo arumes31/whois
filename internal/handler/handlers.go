@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -44,7 +45,7 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		sess, _ := c.Cookie("session_id")
 		expected := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
-		if sess == nil || sess.Value == "" || sess.Value != expected {
+		if sess == nil || sess.Value == "" || subtle.ConstantTimeCompare([]byte(sess.Value), []byte(expected)) != 1 {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
 		return next(c)
@@ -115,6 +116,7 @@ func (h *Handler) Index(c echo.Context) error {
 			"stats":         stats,
 			"config":        h.AppConfig,
 			"current_path":  c.Request().URL.Path,
+			"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
 		})
 	}
 
@@ -124,6 +126,7 @@ func (h *Handler) Index(c echo.Context) error {
 		"stats":        stats,
 		"config":       h.AppConfig,
 		"current_path": c.Request().URL.Path,
+		"csrf":         c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
 
@@ -318,6 +321,7 @@ func (h *Handler) Scanner(c echo.Context) error {
 	return c.Render(http.StatusOK, "scanner.html", map[string]interface{}{
 		"real_ip": realIP,
 		"config":  h.AppConfig,
+		"csrf":    c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
 
@@ -413,7 +417,9 @@ func (h *Handler) Login(c echo.Context) error {
 		envUser := os.Getenv("CONFIG_USER")
 		envPass := os.Getenv("CONFIG_PASS")
 
-		if user != "" && user == envUser && pass == envPass {
+		if user != "" && envUser != "" && pass != "" && envPass != "" &&
+			subtle.ConstantTimeCompare([]byte(user), []byte(envUser)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(pass), []byte(envPass)) == 1 {
 			// Generate a simple secure token (In production, use JWT or Redis-backed sessions)
 			// For this hardening, we'll use a hash of the credentials + secret
 			token := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
@@ -452,6 +458,7 @@ func (h *Handler) Config(c echo.Context) error {
 	return c.Render(http.StatusOK, "config.html", map[string]interface{}{
 		"monitored": items,
 		"real_ip":   realIP,
+		"csrf":      c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
 

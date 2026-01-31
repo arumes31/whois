@@ -248,13 +248,25 @@ function setServiceStatus(target, service, status) {
     }
 }
 
+function escapeHTML(str) {
+    if (!str) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 function appendLog(target, message) {
     const log = document.getElementById('liveLog');
     const time = new Date().toLocaleTimeString();
     const entry = document.createElement('div');
     entry.className = "mb-1";
     const color = getTargetColor(target);
-    entry.innerHTML = `<span class="text-white opacity-50">[${time}]</span> <span style="color: ${color}; font-weight: bold;">${target}</span>: <span class="text-white">${message}</span>`;
+    const escapedTarget = escapeHTML(target);
+    const escapedMessage = escapeHTML(message);
+    entry.innerHTML = `<span class="text-white opacity-50">[${time}]</span> <span style="color: ${color}; font-weight: bold;">${escapedTarget}</span>: <span class="text-white">${escapedMessage}</span>`;
     log.appendChild(entry);
     log.scrollTop = log.scrollHeight;
     
@@ -486,19 +498,19 @@ function updateUI(msg) {
                             <div class="d-flex align-items-center mb-2">
                                 <svg style="width:16px;height:16px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 384 512"><path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/></svg>
                                 <div>
-                                    <div class="fw-bold">${data.city || 'Unknown City'}, ${data.country}</div>
-                                    <div class="text-white" style="font-size:0.65rem;">${data.timezone || ''}</div>
+                                    <div class="fw-bold">${escapeHTML(data.city) || 'Unknown City'}, ${escapeHTML(data.country)}</div>
+                                    <div class="text-white" style="font-size:0.65rem;">${escapeHTML(data.timezone) || ''}</div>
                                 </div>
                             </div>
                             <div class="d-flex align-items-center mb-2">
-                                <svg style="width:16px;height:16px;margin-right:12px;fill:#0dcaf0" viewBox="0 0 640 512"><path d="M640 352c0 35.3-28.7 64-64 64H512V320H640v32zm-192 64H320V320H448v96zm-192 0H64c-35.3 0-64-28.7-64-64V320H192v96zm448-160H0V160c0-35.3 28.7-64 64-64H576c35.3 0 64 28.7 64 64V256zM64 128c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32zm96 0c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32z"/></svg>
+                                <svg style="width:16px;height:16px;margin-right:12px;fill:#0dcaf0" viewBox="0 0 640 512"><path d="M640 352c0 35.3-28.7 64-64 64H512V320H640v32zm-192 64H320V320H448v96zm-192 0H64c-35.3 0-64-28.7-64-64V320H192v96zm448-160H0V160c0-35.3 28.7-64 64-64H576c35.3 0 64 28.7 64 64V256zM64 128c-17.7 0-32 14.3-32 32s14.3 32 32 32H224c17.7 0 32-14.3 32-32V160c0-17.7-14.3-32-32-32H32zM64 192h32v32H64V192zm96 0h32v32h-32V192zM64 288h32v32H64V288zm96 0h32v32h-32V288z"/></svg>
                                 <div>
-                                    <div class="fw-bold">${data.as || 'Unknown AS'}</div>
-                                    <div class="text-white" style="font-size:0.65rem;">IP: ${data.query}</div>
+                                    <div class="fw-bold">${escapeHTML(data.as) || 'Unknown AS'}</div>
+                                    <div class="text-white" style="font-size:0.65rem;">IP: ${escapeHTML(data.query)}</div>
                                 </div>
                             </div>
                             <div class="mt-2 pt-2 border-top border-secondary border-opacity-10">
-                                <div class="text-white" style="font-size:0.6rem; letter-spacing:1px;">COORDINATES: ${data.lat}, ${data.lon}</div>
+                                <div class="text-white" style="font-size:0.6rem; letter-spacing:1px;">COORDINATES: ${escapeHTML(data.lat)}, ${escapeHTML(data.lon)}</div>
                             </div>
                         </div></details>`;
             } else {
@@ -512,11 +524,11 @@ function updateUI(msg) {
 `;
                 for (const [fqdn, records] of Object.entries(data)) {
                     html += `<div class="mb-2 pb-1 border-bottom border-secondary border-opacity-10">
-                                <div class="text-danger fw-bold clickable-record" onclick="copyToClipboard(this)">${fqdn}</div>
+                                <div class="text-danger fw-bold clickable-record" onclick="copyToClipboard(this)">${escapeHTML(fqdn)}</div>
                                 <div class="ps-2">
 `;
                     for (const [type, vals] of Object.entries(records)) {
-                        html += `<div class="text-white" style="font-size: 0.65rem;"><span class="text-info">${type}:</span> <span class="subdomain-item clickable-record" onclick="copyToClipboard(this)">${vals.join(', ')}</span></div>`;
+                        html += `<div class="text-white" style="font-size: 0.65rem;"><span class="text-info">${escapeHTML(type)}:</span> <span class="subdomain-item clickable-record" onclick="copyToClipboard(this)">${escapeHTML(vals.join(', '))}</span></div>`;
                     }
                     html += `</div></div>`;
                 }
@@ -532,8 +544,8 @@ function updateUI(msg) {
 `;
                 for (const [port, banner] of Object.entries(data)) {
                     html += `<div class="d-flex justify-content-between align-items-center mb-1 small clickable-record" onclick="copyToClipboard(this)">
-                                <span class="badge bg-danger-dim text-danger" style="width: 60px;">${port}</span>
-                                <span class="text-info font-monospace flex-grow-1 ms-2" style="font-size: 0.65rem;">${banner || 'Open (No Banner)'}</span>
+                                <span class="badge bg-danger-dim text-danger" style="width: 60px;">${escapeHTML(port)}</span>
+                                <span class="text-info font-monospace flex-grow-1 ms-2" style="font-size: 0.65rem;">${escapeHTML(banner) || 'Open (No Banner)'}</span>
                              </div>`;
                 }
                 html += `</div></details>`;
@@ -551,7 +563,7 @@ function updateUI(msg) {
                     <div class="mt-2" style="height: 40px; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 2px;">
                         <canvas id="chart-ping-${msg.target.replace(/\./g, '-')}" style="width: 100%; height: 100%;"></canvas>
                     </div>
-                    <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
+                    <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(data.join('\n'))}</code></pre>
                     </details>`;
             
             section.innerHTML = html;
@@ -598,32 +610,32 @@ function updateUI(msg) {
             break;
         case 'route':
             html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of network hops and routing paths to the target"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
-                    <pre class="p-2 mt-1 rounded bg-dark text-info clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${data.join('\n')}</code></pre>
+                    <pre class="p-2 mt-1 rounded bg-dark text-info clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(data.join('\n'))}</code></pre>
                     </details>`;
             break;
         case 'trace':
             html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>DNS TRACE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Full recursive DNS resolution path starting from the Root Servers"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
-                    <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${data.join('\n')}</code></pre>
+                    <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${escapeHTML(data.join('\n'))}</code></pre>
                     </details>`;
             break;
         case 'dns':
             if (data && data.error) {
-                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>DNS RECORDS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>DNS RECORDS</summary><div class="p-2 text-danger small">${escapeHTML(data.error)}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
                 html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>DNS RECORDS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative resource records (A, MX, TXT, NS, CNAME)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">`;
                 for (const [type, val] of Object.entries(data)) {
                     html += `<div class="mb-2 pb-1 border-bottom border-secondary border-opacity-10">
-                                <div class="text-info fw-bold small">${type}</div>
+                                <div class="text-info fw-bold small">${escapeHTML(type)}</div>
                                 <div class="ps-2">`;
                     if (Array.isArray(val)) {
                         val.forEach(v => {
-                            html += `<div class="text-white clickable-record" onclick="copyToClipboard(this)">${v}</div>`;
+                            html += `<div class="text-white clickable-record" onclick="copyToClipboard(this)">${escapeHTML(v)}</div>`;
                         });
                     } else if (type === "Subdomains") {
                         html += `<div class="text-white italic">Found ${Object.keys(val).length} prefixes</div>`;
                     } else {
-                        html += `<div class="text-white clickable-record" onclick="copyToClipboard(this)">${JSON.stringify(val)}</div>`;
+                        html += `<div class="text-white clickable-record" onclick="copyToClipboard(this)">${escapeHTML(JSON.stringify(val))}</div>`;
                     }
                     html += `</div></div>`;
                 }
@@ -634,25 +646,25 @@ function updateUI(msg) {
             break;
         case 'ssl':
             if (data.error) {
-                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>SSL/TLS</summary><div class="p-2 text-white small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>SSL/TLS</summary><div class="p-2 text-white small">${escapeHTML(data.error)}</div></details>`;
             } else {
                 html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake, Cipher Suite, and Certificate Authority details"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
-                            <span class="badge bg-success mb-2">${data.protocol}</span><br>
-                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${data.issuer}</span><br>
-                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Expiry:</strong> ${data.expiry.split('T')[0]} (${data.days_left}d)</span>
+                            <span class="badge bg-success mb-2">${escapeHTML(data.protocol)}</span><br>
+                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${escapeHTML(data.issuer)}</span><br>
+                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Expiry:</strong> ${escapeHTML(data.expiry.split('T')[0])} (${escapeHTML(data.days_left)}d)</span>
                         </div></details>`;
             }
             break;
         case 'http':
             if (data.error) {
-                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>HTTP</summary><div class="p-2 text-white small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>HTTP</summary><div class="p-2 text-white small">${escapeHTML(data.error)}</div></details>`;
             } else {
                 let securityHtml = "";
                 for (const [h, val] of Object.entries(data.security)) {
                     const isSet = val !== "Not Set";
                     securityHtml += `<div class="d-flex justify-content-between mb-1 clickable-record" onclick="copyToClipboard(this)">
-                        <span class="text-white" style="font-size: 0.65rem;">${h}</span>
+                        <span class="text-white" style="font-size: 0.65rem;">${escapeHTML(h)}</span>
                         <span class="badge ${isSet ? 'bg-success-dim text-success' : 'bg-danger-dim text-danger'}" style="font-size: 0.6rem;">${isSet ? 'SECURE' : 'MISSING'}</span>
                     </div>`;
                 }
@@ -660,16 +672,16 @@ function updateUI(msg) {
                 html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of HTTP Security Headers (HSTS, CSP, XFO) and server metadata"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
-                                <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${data.status}</span>
-                                <span class="badge bg-dark border border-secondary text-info">${data.response_time_ms}ms</span>
+                                <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${escapeHTML(data.status)}</span>
+                                <span class="badge bg-dark border border-secondary text-info">${escapeHTML(data.response_time_ms)}ms</span>
                             </div>
-                            <div class="mb-2"><strong>Protocol:</strong> ${data.protocol}</div>
-                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Server:</strong> ${data.headers.Server || 'Unknown'}</div>
+                            <div class="mb-2"><strong>Protocol:</strong> ${escapeHTML(data.protocol)}</div>
+                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Server:</strong> ${escapeHTML(data.headers.Server) || 'Unknown'}</div>
                             <div class="security-headers-minimal mb-2">
                                 ${securityHtml}
                             </div>
                             <details class="mt-2"><summary><small>FULL HEADERS</small></summary>
-                            <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${JSON.stringify(data.headers, null, 2)}</code></pre>
+                            <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${escapeHTML(JSON.stringify(data.headers, null, 2))}</code></pre>
                             </details>
                         </div></details>`;
             }
@@ -678,26 +690,26 @@ function updateUI(msg) {
             if (data && typeof data === 'object') {
                 html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>WHOIS DATA <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Authoritative domain registration, registrar, and expiration timestamps"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
-                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Registrar:</strong> ${data.registrar || 'Unknown'}</div>
-                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Expires:</strong> ${data.expiry || 'Unknown'}</div>
-                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Created:</strong> ${data.created || 'Unknown'}</div>
+                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Registrar:</strong> ${escapeHTML(data.registrar) || 'Unknown'}</div>
+                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Expires:</strong> ${escapeHTML(data.expiry) || 'Unknown'}</div>
+                            <div class="clickable-record" onclick="copyToClipboard(this)"><strong>Created:</strong> ${escapeHTML(data.created) || 'Unknown'}</div>
                         </div>
                         <details><summary><small>RAW DATA</small></summary>
-                        <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)"><code>${data.raw}</code></pre>
+                        <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)"><code>${escapeHTML(data.raw)}</code></pre>
                         </details></details>`;
             } else if (data) {
-                html = `<details><summary>WHOIS RAW</summary><pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)"><code>${data}</code></pre></details>`;
+                html = `<details><summary>WHOIS RAW</summary><pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)"><code>${escapeHTML(data)}</code></pre></details>`;
             } else {
                 html = `<details><summary>WHOIS</summary><div class="p-2 text-white small">No WHOIS data</div></details>`;
             }
             break;
         case 'ct':
             if (data && data.error) {
-                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>CT SUBDOMAINS</summary><div class="p-2 text-danger small">${data.error}</div></details>`;
+                html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>CT SUBDOMAINS</summary><div class="p-2 text-danger small">${escapeHTML(data.error)}</div></details>`;
             } else if (data && Object.keys(data).length > 0) {
                 html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>CT SUBDOMAINS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Historical subdomains discovered via public Certificate Transparency (CT) logs"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary><ul class="list-unstyled p-2 small m-0">`;
                 for (const [sub, _] of Object.entries(data)) {
-                    html += `<li class="clickable-record" onclick="copyToClipboard(this)"><svg style="width:10px;height:10px;margin-right:8px;fill:#ff4d4d" viewBox="0 0 320 512"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>${sub}</li>`;
+                    html += `<li class="clickable-record" onclick="copyToClipboard(this)"><svg style="width:10px;height:10px;margin-right:8px;fill:#ff4d4d" viewBox="0 0 320 512"><path d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z"/></svg>${escapeHTML(sub)}</li>`;
                 }
                 html += `</ul></details>`;
             } else {
