@@ -297,21 +297,21 @@ func (s *DNSService) Resolve(ctx context.Context, fqdn string) map[string][]stri
 	return res
 }
 
+var RootServers = []string{
+	"198.41.0.4:53", "199.9.14.201:53", "192.33.4.12:53", "199.7.91.13:53",
+	"192.203.230.10:53", "192.5.5.241:53", "192.112.36.4:53", "198.97.190.53:53",
+	"192.36.148.17:53", "192.58.128.30:53", "193.0.14.129:53", "199.7.83.42:53",
+	"202.12.27.33:53",
+}
+
 func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error) {
 	var results []string
 	m := new(dns.Msg)
 	m.SetQuestion(dns.Fqdn(target), dns.TypeA)
 	m.RecursionDesired = false
 
-	rootServers := []string{
-		"198.41.0.4:53", "199.9.14.201:53", "192.33.4.12:53", "199.7.91.13:53",
-		"192.203.230.10:53", "192.5.5.241:53", "192.112.36.4:53", "198.97.190.53:53",
-		"192.36.148.17:53", "192.58.128.30:53", "193.0.14.129:53", "199.7.83.42:53",
-		"202.12.27.33:53",
-	}
-
 	// Start from a random root server
-	nextServer := rootServers[0]
+	nextServer := RootServers[0]
 
 	for {
 		select {

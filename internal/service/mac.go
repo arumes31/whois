@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	MacVendorsURL = "https://api.macvendors.com/%s"
-	OUIURL        = "https://standards-oui.ieee.org/oui/oui.txt"
-	OUIPath       = "data/oui.txt"
-	TestMode      = false
+	MacVendorsURL  = "https://api.macvendors.com/%s"
+	OUIURL         = "https://standards-oui.ieee.org/oui/oui.txt"
+	OUIPath        = "data/oui.txt"
+	TestMode       = false
+	UpdateInterval = 12 * time.Hour
 )
 
 func InitializeMACService() {
@@ -35,7 +36,7 @@ func InitializeMACService() {
 
 	// Start background watcher for 72h updates
 	go func() {
-		ticker := time.NewTicker(12 * time.Hour)
+		ticker := time.NewTicker(UpdateInterval)
 		for range ticker.C {
 			if stat, err := os.Stat(OUIPath); err == nil {
 				if time.Since(stat.ModTime()) > 72*time.Hour {
@@ -78,10 +79,17 @@ func LookupMacVendor(ctx context.Context, mac string) (string, error) {
 		return vendor, nil
 	}
 
-	escapedMac := url.PathEscape(mac)
-	targetURL := fmt.Sprintf(MacVendorsURL, escapedMac)
+	u, err := url.Parse(MacVendorsURL)
+	if err != nil {
+		return "", err
+	}
+	if !strings.HasSuffix(u.Path, "/") {
+		u.Path += "/"
+	}
+	u.Path += url.PathEscape(mac)
+
 	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return "", err
 	}

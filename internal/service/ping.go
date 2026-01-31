@@ -9,35 +9,34 @@ import (
 	"whois/internal/utils"
 )
 
+var PingCommandRunner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, name, args...)
+}
+
 func Ping(ctx context.Context, target string, count int, callback func(string)) {
 	if !utils.IsValidTarget(target) {
 		callback("Error: invalid target for ping")
 		return
 	}
 
+	countStr := fmt.Sprintf("%d", count)
 	var cmd *exec.Cmd
+
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "ping", "-n", fmt.Sprintf("%d", count), target)
+		cmd = PingCommandRunner(ctx, "ping", "-n", countStr, target)
 	} else {
-		cmd = exec.CommandContext(ctx, "ping", "-c", fmt.Sprintf("%d", count), target)
+		cmd = PingCommandRunner(ctx, "ping", "-c", countStr, target)
 	}
 
 	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-
 	if err := cmd.Start(); err != nil {
-		callback(fmt.Sprintf("Failed to start ping: %v", err))
+		callback(fmt.Sprintf("Error: %v", err))
 		return
 	}
 
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		callback(scanner.Text())
-	}
-
-	errScanner := bufio.NewScanner(stderr)
-	for errScanner.Scan() {
-		callback("Error: " + errScanner.Text())
 	}
 
 	_ = cmd.Wait()

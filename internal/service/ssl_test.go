@@ -104,4 +104,20 @@ func TestGetSSLInfo_Versions(t *testing.T) {
 	defer ts2.Close()
 	u2, _ := url.Parse(ts2.URL)
 	_ = GetSSLInfo(context.Background(), u2.Host)
+
+	// Test TLS 1.0 specifically (if supported by env)
+	ts3 := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	ts3.TLS = &tls.Config{MinVersion: tls.VersionTLS10, MaxVersion: tls.VersionTLS10}
+	ts3.StartTLS()
+	defer ts3.Close()
+	u3, _ := url.Parse(ts3.URL)
+	_ = GetSSLInfo(context.Background(), u3.Host)
+
+	// Test TLS 1.1 specifically (if supported by env)
+	ts4 := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	ts4.TLS = &tls.Config{MinVersion: tls.VersionTLS11, MaxVersion: tls.VersionTLS11}
+	ts4.StartTLS()
+	defer ts4.Close()
+	u4, _ := url.Parse(ts4.URL)
+	_ = GetSSLInfo(context.Background(), u4.Host)
 }

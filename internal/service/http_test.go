@@ -11,6 +11,7 @@ import (
 
 func init() {
 	utils.TestInitLogger()
+	utils.AllowPrivateIPs = true
 }
 
 func TestGetHTTPInfo(t *testing.T) {
@@ -60,7 +61,6 @@ func TestGetHTTPInfo_HTTPS(t *testing.T) {
 }
 
 func TestGetHTTPInfo_SecurityHeaders(t *testing.T) {
-	t.Parallel()
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Strict-Transport-Security", "max-age=31536000")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'")
@@ -116,6 +116,20 @@ func TestGetHTTPInfo_BadRequestHTTPSRetry(t *testing.T) {
 		t.Logf("HTTPS retry test info: %v", info.Error)
 	} else if info.Status != "200 OK" {
 		t.Errorf("Expected 200 OK after HTTPS retry, got %s", info.Status)
+	}
+}
+
+func TestGetHTTPInfo_BadRequestRetry(t *testing.T) {
+	// Mock a server that returns 400 for HTTP but we want to simulate the non-nil resp branch
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	info := GetHTTPInfo(context.Background(), host)
+	if info.Error == "" {
+		t.Log("GetHTTPInfo succeeded unexpectedly or hit the retry branch as intended")
 	}
 }
 

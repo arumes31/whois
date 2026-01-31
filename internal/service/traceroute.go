@@ -10,6 +10,10 @@ import (
 	"whois/internal/utils"
 )
 
+var CommandRunner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return exec.CommandContext(ctx, name, args...)
+}
+
 func Traceroute(ctx context.Context, target string, callback func(string)) {
 	if !utils.IsValidTarget(target) {
 		callback("Error: invalid target for traceroute")
@@ -18,10 +22,10 @@ func Traceroute(ctx context.Context, target string, callback func(string)) {
 
 	var cmd *exec.Cmd
 	if runtime.GOOS == "windows" {
-		cmd = exec.CommandContext(ctx, "tracert", "-d", "-h", "20", target)
+		cmd = CommandRunner(ctx, "tracert", "-d", "-h", "20", target)
 	} else {
 		// Use -m 20 to limit hops and -q 1 for speed (one probe per hop)
-		cmd = exec.CommandContext(ctx, "traceroute", "-n", "-m", "20", "-q", "1", target)
+		cmd = CommandRunner(ctx, "traceroute", "-n", "-m", "20", "-q", "1", target)
 	}
 
 	stdout, _ := cmd.StdoutPipe()

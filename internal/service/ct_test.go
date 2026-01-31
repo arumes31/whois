@@ -6,7 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"whois/internal/utils"
 )
+
+func init() {
+	utils.AllowPrivateIPs = true
+}
 
 func TestFetchCTSubdomains(t *testing.T) {
 	// Mock Certspotter response
@@ -17,8 +22,10 @@ func TestFetchCTSubdomains(t *testing.T) {
 	defer ts.Close()
 
 	originalCert := CertspotterURL
-	CertspotterURL = ts.URL + "?domain=%s"
-	defer func() { CertspotterURL = originalCert }()
+	CertspotterURL = ts.URL
+	defer func() {
+		CertspotterURL = originalCert
+	}()
 
 	subs, err := FetchCTSubdomains(context.Background(), "example.com")
 	if err != nil {
@@ -45,8 +52,8 @@ func TestFetchCTSubdomains_Fallback(t *testing.T) {
 
 	originalCert := CertspotterURL
 	originalCRT := CRTURL
-	CertspotterURL = cs.URL + "?domain=%s"
-	CRTURL = cr.URL + "?q=%s"
+	CertspotterURL = cs.URL
+	CRTURL = cr.URL
 	defer func() {
 		CertspotterURL = originalCert
 		CRTURL = originalCRT
@@ -72,9 +79,9 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 		originalCertspotter := CertspotterURL
 		originalCrtSh := CRTURL
 		originalSubCenter := SubdomainCenterURL
-		CertspotterURL = ts.URL + "/%s"
-		CRTURL = ts.URL + "/%s"
-		SubdomainCenterURL = ts.URL + "/%s"
+		CertspotterURL = ts.URL
+		CRTURL = ts.URL
+		SubdomainCenterURL = ts.URL
 		defer func() {
 			CertspotterURL = originalCertspotter
 			CRTURL = originalCrtSh
@@ -104,9 +111,9 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 		originalCertspotter := CertspotterURL
 		originalCrtSh := CRTURL
 		originalSubCenter := SubdomainCenterURL
-		CertspotterURL = tsFail.URL + "/%s"
-		CRTURL = tsFail.URL + "/%s"
-		SubdomainCenterURL = tsSub.URL + "/%s"
+		CertspotterURL = tsFail.URL
+		CRTURL = tsFail.URL
+		SubdomainCenterURL = tsSub.URL
 		defer func() {
 			CertspotterURL = originalCertspotter
 			CRTURL = originalCrtSh
@@ -130,8 +137,10 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 		defer ts.Close()
 
 		originalCertspotter := CertspotterURL
-		CertspotterURL = ts.URL + "/%s"
-		defer func() { CertspotterURL = originalCertspotter }()
+		CertspotterURL = ts.URL
+		defer func() {
+			CertspotterURL = originalCertspotter
+		}()
 
 		_, _ = fetchCertspotter(context.Background(), "google.com")
 	})
@@ -144,8 +153,10 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 		defer ts.Close()
 
 		originalCrtSh := CRTURL
-		CRTURL = ts.URL + "/%s"
-		defer func() { CRTURL = originalCrtSh }()
+		CRTURL = ts.URL
+		defer func() {
+			CRTURL = originalCrtSh
+		}()
 
 		_, err := fetchCrtSh(context.Background(), "google.com")
 		if err == nil {
@@ -154,19 +165,81 @@ func TestFetchCTSubdomains_Errors(t *testing.T) {
 	})
 
 	t.Run("Invalid JSON from crt.sh", func(t *testing.T) {
+
 		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 			w.WriteHeader(http.StatusOK)
+
 			_, _ = w.Write([]byte(`invalid json`))
+
 		}))
+
 		defer ts.Close()
 
 		originalCrtSh := CRTURL
-		CRTURL = ts.URL + "/%s"
+
+		CRTURL = ts.URL
+
 		defer func() { CRTURL = originalCrtSh }()
 
 		_, err := fetchCrtSh(context.Background(), "google.com")
+
 		if err == nil {
+
 			t.Error("Expected error for invalid JSON from crt.sh")
+
 		}
+
 	})
+
+	t.Run("URL Parse Errors", func(t *testing.T) {
+
+		oldCert := CertspotterURL
+
+		oldCRT := CRTURL
+
+		oldSub := SubdomainCenterURL
+
+		defer func() {
+
+			CertspotterURL = oldCert
+
+			CRTURL = oldCRT
+
+			SubdomainCenterURL = oldSub
+
+		}()
+
+		CertspotterURL = "::invalid::"
+
+		_, err := fetchCertspotter(context.Background(), "test.com")
+
+		if err == nil {
+
+			t.Error("Expected error for invalid CertspotterURL")
+
+		}
+
+		CRTURL = "::invalid::"
+
+		_, err = fetchCrtSh(context.Background(), "test.com")
+
+		if err == nil {
+
+			t.Error("Expected error for invalid CRTURL")
+
+		}
+
+		SubdomainCenterURL = "::invalid::"
+
+		_, err = fetchSubdomainCenter(context.Background(), "test.com")
+
+		if err == nil {
+
+			t.Error("Expected error for invalid SubdomainCenterURL")
+
+		}
+
+	})
+
 }

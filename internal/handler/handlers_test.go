@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -55,6 +58,25 @@ func setupMiniredisStorage(t *testing.T) *storage.Storage {
 	t.Cleanup(mr.Close)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	return &storage.Storage{Client: client}
+}
+
+type mockGeoTransport struct{}
+
+func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	content := []byte("fake mmdb")
+	header := &tar.Header{Name: "GeoLite2-City.mmdb", Size: int64(len(content))}
+	_ = tw.WriteHeader(header)
+	_, _ = tw.Write(content)
+	_ = tw.Close()
+	_ = gw.Close()
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(buf.Bytes())),
+	}, nil
 }
 
 func TestHandlers(t *testing.T) {
@@ -408,6 +430,51 @@ func TestHandlers(t *testing.T) {
 		h.queryItem(context.Background(), "fail-ct.com", false, false, true, false, false, false)
 	})
 
+	t.Run("Scan Empty Target", func(t *testing.T) {
+		f := url.Values{}
+		f.Add("target", "")
+		f.Add("ports", "80")
+		req := httptest.NewRequest(http.MethodPost, "/scan", strings.NewReader(f.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		req.RemoteAddr = "1.2.3.4:1234"
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		_ = h.Scan(c)
+	})
+
+	t.Run("DNSLookup HTMX UX No Records", func(t *testing.T) {
+		f := url.Values{}
+		f.Add("domain", "nonexistent.test")
+		f.Add("type", "AAAA")
+		req := httptest.NewRequest(http.MethodPost, "/dns_lookup", strings.NewReader(f.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec := httptest.NewRecorder()
+		_ = h.DNSLookup(e.NewContext(req, rec))
+		if !strings.Contains(rec.Body.String(), "No AAAA records found") {
+			t.Error("Expected warning for no records")
+		}
+	})
+
+	t.Run("UpdateGeoDB Success UX", func(t *testing.T) {
+		oldClient := service.GeoHTTPClient
+		defer func() { service.GeoHTTPClient = oldClient }()
+		service.GeoHTTPClient = &http.Client{
+			Transport: &mockGeoTransport{},
+		}
+
+		service.InitializeGeoDB("test", "test")
+
+		req := httptest.NewRequest(http.MethodPost, "/config/update-geo", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		if err := h.UpdateGeoDB(c); err != nil {
+			t.Fatalf("UpdateGeoDB handler returned error: %v", err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200, got %d. Body: %s", rec.Code, rec.Body.String())
+		}
+	})
+
 	t.Run("UpdateGeoDB Error Path", func(t *testing.T) {
 		// Set empty key to trigger ManualUpdateGeoDB error
 		service.InitializeGeoDB("", "")
@@ -415,5 +482,145 @@ func TestHandlers(t *testing.T) {
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 		_ = h.UpdateGeoDB(c)
+	})
+
+	t.Run("Robots", func(t *testing.T) {
+		h.AppConfig.SEOEnabled = false
+		req := httptest.NewRequest(http.MethodGet, "/robots.txt", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		_ = h.Robots(c)
+		if !strings.Contains(rec.Body.String(), "Disallow: /") {
+			t.Error("Expected Disallow: / when SEO disabled")
+		}
+
+		h.AppConfig.SEOEnabled = true
+		rec = httptest.NewRecorder()
+		c = e.NewContext(req, rec)
+		_ = h.Robots(c)
+		if !strings.Contains(rec.Body.String(), "Allow: /") {
+			t.Error("Expected Allow: / when SEO enabled")
+		}
+	})
+
+	t.Run("BulkUpload Errors", func(t *testing.T) {
+		// Invalid file type
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("file", "test.exe")
+		_, _ = part.Write([]byte("google.com"))
+		_ = writer.Close()
+		req := httptest.NewRequest(http.MethodPost, "/bulk_upload", body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		_ = h.BulkUpload(e.NewContext(req, rec))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400 for .exe file, got %d", rec.Code)
+		}
+	})
+
+	t.Run("BulkUpload CSV Invalid", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("file", "targets.csv")
+		_, _ = part.Write([]byte("unclosed \"quote"))
+		_ = writer.Close()
+		req := httptest.NewRequest(http.MethodPost, "/bulk_upload", body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		_ = h.BulkUpload(e.NewContext(req, rec))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400 for invalid CSV, got %d", rec.Code)
+		}
+	})
+
+	t.Run("BulkUpload TXT", func(t *testing.T) {
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		part, _ := writer.CreateFormFile("file", "targets.txt")
+		_, _ = part.Write([]byte("google.com,8.8.8.8\nexample.com"))
+		_ = writer.Close()
+		req := httptest.NewRequest(http.MethodPost, "/bulk_upload", body)
+		req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		_ = h.BulkUpload(e.NewContext(req, rec))
+		if rec.Code != http.StatusOK {
+			t.Errorf("Expected 200 for TXT, got %d", rec.Code)
+		}
+	})
+
+	t.Run("MacLookup Cache Hit", func(t *testing.T) {
+		ctx := context.Background()
+		mac := "00:AA:BB:CC:DD:EE"
+		_ = store.SetCache(ctx, "mac:"+mac, "Cached Vendor", time.Hour)
+		req := httptest.NewRequest(http.MethodPost, "/mac_lookup?mac="+mac, nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		_ = h.MacLookup(c)
+		if !strings.Contains(rec.Body.String(), "Cached Vendor") {
+			t.Error("Expected cached vendor in response")
+		}
+	})
+
+	t.Run("Index POST JSON Export", func(t *testing.T) {
+		f := url.Values{}
+		f.Add("ips_and_domains", "google.com")
+		f.Add("export", "json")
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(f.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		rec := httptest.NewRecorder()
+		_ = h.Index(e.NewContext(req, rec))
+		if !strings.Contains(rec.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("Expected application/json, got %s", rec.Header().Get("Content-Type"))
+		}
+	})
+
+	t.Run("queryItem CT Cache Hit", func(t *testing.T) {
+		ctx := context.Background()
+		ctData := map[string]interface{}{"sub.test.com": map[string]interface{}{}}
+		_ = store.SetCache(ctx, "ct:test.com", ctData, time.Hour)
+		res := h.queryItem(ctx, "test.com", false, false, true, false, false, false)
+		if res.CT == nil {
+			t.Error("Expected CT results from cache")
+		}
+	})
+
+	t.Run("Index POST Export CSV Full", func(t *testing.T) {
+		results := map[string]model.QueryResult{
+			"google.com": {
+				Whois: service.WhoisInfo{Raw: "raw info", Registrar: "Google"},
+				DNS:   map[string]interface{}{"A": []string{"1.2.3.4"}},
+				CT:    map[string]interface{}{"sub.google.com": map[string]interface{}{}},
+			},
+			"only-string": {
+				Whois: "raw string",
+			},
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/?export=csv", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		if err := h.exportCSV(c, results); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Header().Get("Content-Type") != "text/csv" {
+			t.Errorf("Expected text/csv, got %s", rec.Header().Get("Content-Type"))
+		}
+	})
+
+	t.Run("queryItem All Enabled", func(t *testing.T) {
+		ctx := context.Background()
+		h.queryItem(ctx, "google.com", true, true, true, true, true, true)
+		h.queryItem(ctx, "8.8.8.8", true, true, true, true, true, true)
+	})
+
+	t.Run("BulkUpload Empty/Invalid", func(t *testing.T) {
+		// No file
+		req := httptest.NewRequest(http.MethodPost, "/bulk_upload", nil)
+		rec := httptest.NewRecorder()
+		_ = h.BulkUpload(e.NewContext(req, rec))
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("Expected 400 for no file, got %d", rec.Code)
+		}
 	})
 }

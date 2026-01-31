@@ -190,6 +190,44 @@ func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
 	_, _ = svc.Trace(context.Background(), "example.com")
 }
 
+func TestDNSService_Trace_ReferralNoGlue_Detailed(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		if r.Question[0].Name == "example.com." {
+			ns := &dns.NS{
+				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 3600},
+				Ns:  "ns1.example.com.",
+			}
+			m.Ns = append(m.Ns, ns)
+			// NO glue in m.Extra
+		}
+		_ = w.WriteMsg(m)
+	})
+
+	server := &dns.Server{Addr: "127.0.0.1:15366", Net: "udp", Handler: handler}
+	go func() { _ = server.ListenAndServe() }()
+	defer func() { _ = server.Shutdown() }()
+	time.Sleep(50 * time.Millisecond)
+
+	oldRoots := RootServers
+	RootServers = []string{"127.0.0.1:15366"}
+	defer func() { RootServers = oldRoots }()
+
+	svc := NewDNSService("", "")
+	res, _ := svc.Trace(context.Background(), "example.com")
+	found := false
+	for _, line := range res {
+		if strings.Contains(line, "no glue, resolving") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected 'no glue, resolving' in trace results")
+	}
+}
+
 func TestDNSService_DoH(t *testing.T) {
 	// Mock DoH Server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -236,6 +274,152 @@ func TestDNSService_DoH(t *testing.T) {
 
 	if len(res) == 0 || res[0] != "127.0.0.1" {
 		t.Errorf("Expected 127.0.0.1, got %v", res)
+	}
+
+	// Test DoH with Hostname and Bootstrap
+	t.Run("DoH with Hostname and Bootstrap", func(t *testing.T) {
+		tsDoh := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/dns-message")
+			// Return a simple A response for any query
+			reply := new(dns.Msg)
+			reply.SetReply(new(dns.Msg)) // Simplified, won't match ID but good for testing transport
+			reply.Answer = append(reply.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: "example.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   net.ParseIP("1.2.3.4"),
+			})
+			resp, _ := reply.Pack()
+			_, _ = w.Write(resp)
+		}))
+		defer tsDoh.Close()
+
+		host, port, _ := net.SplitHostPort(strings.TrimPrefix(tsDoh.URL, "http://"))
+
+		// Mock bootstrap DNS server
+		handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+			m := new(dns.Msg)
+			m.SetReply(r)
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   net.ParseIP(host),
+			})
+			_ = w.WriteMsg(m)
+		})
+		bs := &dns.Server{Addr: "127.0.0.1:15360", Net: "udp", Handler: handler}
+		go func() { _ = bs.ListenAndServe() }()
+		defer func() { _ = bs.Shutdown() }()
+		time.Sleep(100 * time.Millisecond)
+
+		s := NewDNSService("http://doh.local:"+port, "127.0.0.1:15360")
+		// Trigger a query. The transport should call DialContext, resolve doh.local, and connect.
+		_, _ = s.query(context.Background(), "example.com", dns.TypeA, false)
+	})
+
+	// Test DoH error status
+	tsErr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer tsErr.Close()
+	svcErr := NewDNSService(tsErr.URL, "")
+	_, err = svcErr.query(context.Background(), "test.com", dns.TypeA, false)
+	if err == nil {
+		t.Error("Expected error for DoH 403 status")
+	}
+}
+
+func TestDNSService_Query_Truncated(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		if w.RemoteAddr().Network() == "udp" {
+			m.Truncated = true
+			_ = w.WriteMsg(m)
+			return
+		}
+		// In TCP, give real answer
+		m.Answer = append(m.Answer, &dns.A{
+			Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+			A:   net.ParseIP("1.2.3.4"),
+		})
+		_ = w.WriteMsg(m)
+	})
+
+	server := &dns.Server{Addr: "127.0.0.1:15370", Net: "udp", Handler: handler}
+	go func() { _ = server.ListenAndServe() }()
+	defer func() { _ = server.Shutdown() }()
+
+	serverTCP := &dns.Server{Addr: "127.0.0.1:15370", Net: "tcp", Handler: handler}
+	go func() { _ = serverTCP.ListenAndServe() }()
+	defer func() { _ = serverTCP.Shutdown() }()
+
+	time.Sleep(100 * time.Millisecond)
+
+	s := NewDNSService("127.0.0.1:15370", "")
+	res, err := s.query(context.Background(), "example.com", dns.TypeA, false)
+	if err != nil {
+		t.Fatalf("Truncated query failed: %v", err)
+	}
+	if len(res) == 0 || res[0] != "1.2.3.4" {
+		t.Errorf("Expected 1.2.3.4, got %v", res)
+	}
+}
+
+func TestNewDNSService_Config(t *testing.T) {
+	t.Run("Empty Config", func(t *testing.T) {
+		s := NewDNSService("", "")
+		if len(s.Resolvers) != 2 {
+			t.Errorf("Expected 2 default resolvers, got %d", len(s.Resolvers))
+		}
+	})
+
+	t.Run("Only Bootstrap", func(t *testing.T) {
+		s := NewDNSService("", "1.1.1.1, 9.9.9.9")
+		if len(s.Resolvers) != 2 || s.Resolvers[0] != "1.1.1.1" {
+			t.Errorf("Expected bootstrap resolvers as fallback, got %v", s.Resolvers)
+		}
+	})
+
+	t.Run("Full Config", func(t *testing.T) {
+		s := NewDNSService("8.8.8.8, 8.8.4.4", "1.1.1.1")
+		if len(s.Resolvers) != 2 || s.Resolvers[0] != "8.8.8.8" {
+			t.Errorf("Expected configured resolvers, got %v", s.Resolvers)
+		}
+		if len(s.Bootstrap) != 1 {
+			t.Errorf("Expected 1 bootstrap resolver, got %d", len(s.Bootstrap))
+		}
+	})
+}
+
+func TestDNSService_Trace_NoNS(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		// Return empty reply (no answer, no ns)
+		_ = w.WriteMsg(m)
+	})
+
+	server := &dns.Server{Addr: "127.0.0.1:15365", Net: "udp", Handler: handler}
+	go func() { _ = server.ListenAndServe() }()
+	defer func() { _ = server.Shutdown() }()
+	time.Sleep(50 * time.Millisecond)
+
+	oldRoots := RootServers
+	RootServers = []string{"127.0.0.1:15365"}
+	defer func() { RootServers = oldRoots }()
+
+	svc := NewDNSService("", "")
+	res, err := svc.Trace(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("Trace failed: %v", err)
+	}
+	found := false
+	for _, line := range res {
+		if strings.Contains(line, "No NS records found") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("Expected 'No NS records found' in trace results")
 	}
 }
 

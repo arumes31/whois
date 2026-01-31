@@ -48,23 +48,54 @@ func TestIsIP(t *testing.T) {
 }
 
 func TestIsValidTarget(t *testing.T) {
+	tests := []struct {
+		input        string
+		allowPrivate bool
+		expected     bool
+	}{
+		{"google.com", false, true},
+		{"8.8.8.8", false, true},
+		{"sub-domain.example.co.uk", false, true},
+		{"invalid_chars!", false, false},
+		{"localhost", false, false},
+		{"127.0.0.1", true, true},
+		{"127.0.0.1", false, false},
+		{"10.0.0.1", false, false},
+		{"192.168.1.1", false, false},
+		{"172.16.0.1", false, false},
+		{"169.254.0.1", false, false},
+		{"224.0.0.1", false, false},
+		{"0.0.0.0", false, false},
+		{strings.Repeat("a", 256) + ".com", false, false},
+		{"google.com:443", false, true},
+		{"1.1.1.1:80", false, true},
+		{"no-dot", false, false},
+	}
+
+	for _, tt := range tests {
+		AllowPrivateIPs = tt.allowPrivate
+		if res := IsValidTarget(tt.input); res != tt.expected {
+			t.Errorf("IsValidTarget(%s, allowPrivate=%v) = %v; want %v", tt.input, tt.allowPrivate, res, tt.expected)
+		}
+	}
+}
+
+func TestIsValidMAC(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		input    string
 		expected bool
 	}{
-		{"google.com", true},
-		{"8.8.8.8", true},
-		{"sub-domain.example.co.uk", true},
-		{"invalid_chars!", false},
-		{"localhost", false},                       // Not contains "."
-		{"127.0.0.1", true},                        // Loopback allowed for local testing
-		{strings.Repeat("a", 256) + ".com", false}, // Too long
+		{"00:11:22:33:44:55", true},
+		{"00-11-22-33-44-55", true},
+		{"0011.2233.4455", true},
+		{"invalid mac", false},
+		{"", false},
 	}
 
 	for _, tt := range tests {
-		if res := IsValidTarget(tt.input); res != tt.expected {
-			t.Errorf("IsValidTarget(%s) = %v; want %v", tt.input, res, tt.expected)
+		if res := IsValidMAC(tt.input); res != tt.expected {
+			t.Errorf("IsValidMAC(%s) = %v; want %v", tt.input, res, tt.expected)
 		}
 	}
 }
