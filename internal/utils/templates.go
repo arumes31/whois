@@ -40,7 +40,13 @@ func IsValidTarget(target string) bool {
 		// Block private, loopback, multicast, link-local and unspecified to prevent SSRF
 		return !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsMulticast() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
 	}
-	if len(host) > 255 {
+	if len(host) > 255 || len(host) == 0 {
+		return false
+	}
+	if strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.HasPrefix(host, "-") || strings.HasSuffix(host, "-") {
+		return false
+	}
+	if strings.Contains(host, "..") {
 		return false
 	}
 	for _, ch := range host {

@@ -20,6 +20,8 @@ func TestNewServer(t *testing.T) {
 
 	utils.InitLogger()
 	cfg, _ := config.LoadConfig()
+	// Use invalid redis port to fail fast
+	cfg.RedisPort = "1"
 
 	e := NewServer(cfg)
 	if e == nil {

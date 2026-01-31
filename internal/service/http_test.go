@@ -83,9 +83,9 @@ func TestGetHTTPInfo_SecurityHeaders(t *testing.T) {
 }
 
 func TestGetHTTPInfo_Fail(t *testing.T) {
-	info := GetHTTPInfo(context.Background(), "invalid-host-name-that-does-not-exist.test")
+	info := GetHTTPInfo(context.Background(), "localhost:1")
 	if info.Error == "" {
-		t.Error("Expected error for invalid host, got none")
+		t.Error("Expected error for closed port, got none")
 	}
 }
 

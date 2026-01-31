@@ -18,9 +18,50 @@ func init() {
 	utils.TestInitLogger()
 }
 
+func startMockDNSServer(t *testing.T, handler dns.Handler, network string) string {
+	if network == "udp" {
+		pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("failed to listen on udp: %v", err)
+		}
+		server := &dns.Server{PacketConn: pc, Handler: handler}
+		go func() { _ = server.ActivateAndServe() }()
+		t.Cleanup(func() { _ = server.Shutdown() })
+		return pc.LocalAddr().String()
+	}
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen on tcp: %v", err)
+	}
+	server := &dns.Server{Listener: l, Handler: handler}
+	go func() { _ = server.ActivateAndServe() }()
+	t.Cleanup(func() { _ = server.Shutdown() })
+	return l.Addr().String()
+}
+
 func TestDNSService_Lookup(t *testing.T) {
-	t.Parallel()
-	s := NewDNSService("", "")
+	// Mock DNS server
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		m.Authoritative = true
+		if r.Question[0].Qtype == dns.TypeA {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   net.ParseIP("1.2.3.4"),
+			})
+		}
+		if r.Question[0].Qtype == dns.TypePTR {
+			m.Answer = append(m.Answer, &dns.PTR{
+				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypePTR, Class: dns.ClassINET, Ttl: 300},
+				Ptr: "google.com.",
+			})
+		}
+		_ = w.WriteMsg(m)
+	})
+
+	addr := startMockDNSServer(t, handler, "udp")
+	s := NewDNSService(addr, "")
 
 	tests := []struct {
 		name     string
@@ -28,10 +69,8 @@ func TestDNSService_Lookup(t *testing.T) {
 		isIP     bool
 		expected []string
 	}{
-		{"Google A", "google.com", false, []string{"A"}},
-		{"Google MX", "google.com", false, []string{"MX"}},
-		{"Google TXT", "google.com", false, []string{"TXT"}},
-		{"Google DNS PTR", "8.8.8.8", true, []string{"PTR"}},
+		{"Mock A", "example.com", false, []string{"A"}},
+		{"Mock PTR", "8.8.8.8", true, []string{"PTR"}},
 	}
 
 	for _, tt := range tests {
@@ -42,11 +81,7 @@ func TestDNSService_Lookup(t *testing.T) {
 			}
 			for _, exp := range tt.expected {
 				if _, ok := res[exp]; !ok {
-					if exp == "A" || exp == "PTR" {
-						t.Errorf("Expected %s records for %s", exp, tt.target)
-					} else {
-						t.Logf("Optional %s records not found for %s (might be blocked/throttled)", exp, tt.target)
-					}
+					t.Errorf("Expected %s records for %s", exp, tt.target)
 				}
 			}
 		})
@@ -60,20 +95,37 @@ func TestDNSService_Lookup(t *testing.T) {
 }
 
 func TestDNSService_DiscoverSubdomains(t *testing.T) {
-	t.Parallel()
-	s := NewDNSService("", "")
-	res := s.DiscoverSubdomains(context.Background(), "google.com", nil)
+	// Mock DNS server
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		m.Authoritative = true
+		if strings.HasPrefix(r.Question[0].Name, "www.") {
+			m.Answer = append(m.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+				A:   net.ParseIP("1.2.3.4"),
+			})
+		}
+		_ = w.WriteMsg(m)
+	})
+
+	addr := startMockDNSServer(t, handler, "udp")
+	s := NewDNSService(addr, "")
+	res := s.DiscoverSubdomains(context.Background(), "example.com", []string{"www"})
 
 	if len(res) == 0 {
-		t.Log("No well-known subdomains found for google.com (this might happen depending on DNS)")
-	} else {
-		t.Logf("Found %d well-known subdomains", len(res))
+		t.Error("Expected to find www subdomain")
 	}
 }
 
 func TestDNSService_LookupStream(t *testing.T) {
-	t.Parallel()
-	s := NewDNSService("8.8.8.8:53", "")
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		_ = w.WriteMsg(m)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	s := NewDNSService(addr, "")
 
 	count := 0
 	err := s.LookupStream(context.Background(), "google.com", false, func(rtype string, data interface{}) {
@@ -91,8 +143,13 @@ func TestDNSService_LookupStream(t *testing.T) {
 }
 
 func TestDNSService_DiscoverSubdomainsStream(t *testing.T) {
-	t.Parallel()
-	s := NewDNSService("8.8.8.8:53", "")
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
+		m := new(dns.Msg)
+		m.SetReply(r)
+		_ = w.WriteMsg(m)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	s := NewDNSService(addr, "")
 
 	custom := []string{"www"}
 	err := s.DiscoverSubdomainsStream(context.Background(), "google.com", custom, func(fqdn string, res map[string][]string) {
@@ -145,24 +202,16 @@ func TestDNSService_Trace_Success(t *testing.T) {
 			m.Extra = append(m.Extra, extra)
 		}
 
-		// If we are "ns1.example.com", give an answer
-		// In our simplified Trace, we just query root servers and then follow referrals.
-		// Since we can't easily mock the WHOLE internet root, we just test the referral following logic.
-
 		_ = w.WriteMsg(m)
 	})
 
-	server := &dns.Server{Addr: "127.0.0.1:15353", Net: "udp", Handler: handler}
-	go func() {
-		_ = server.ListenAndServe()
-	}()
-	defer func() { _ = server.Shutdown() }()
-
-	// Wait for server
-	time.Sleep(100 * time.Millisecond)
+	addr := startMockDNSServer(t, handler, "udp")
+	oldRoots := RootServers
+	RootServers = []string{addr}
+	defer func() { RootServers = oldRoots }()
 
 	s := NewDNSService("", "")
-	_, _ = s.Trace(context.Background(), "google.com")
+	_, _ = s.Trace(context.Background(), "example.com")
 }
 
 func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
@@ -181,10 +230,10 @@ func TestDNSService_Trace_ReferralNoGlue(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	server := &dns.Server{Addr: "127.0.0.1:15355", Net: "udp", Handler: handler}
-	go func() { _ = server.ListenAndServe() }()
-	defer func() { _ = server.Shutdown() }()
-	time.Sleep(50 * time.Millisecond)
+	addr := startMockDNSServer(t, handler, "udp")
+	oldRoots := RootServers
+	RootServers = []string{addr}
+	defer func() { RootServers = oldRoots }()
 
 	svc := NewDNSService("", "")
 	_, _ = svc.Trace(context.Background(), "example.com")
@@ -304,12 +353,10 @@ func TestDNSService_DoH(t *testing.T) {
 			})
 			_ = w.WriteMsg(m)
 		})
-		bs := &dns.Server{Addr: "127.0.0.1:15360", Net: "udp", Handler: handler}
-		go func() { _ = bs.ListenAndServe() }()
-		defer func() { _ = bs.Shutdown() }()
-		time.Sleep(100 * time.Millisecond)
+		
+		bsAddr := startMockDNSServer(t, handler, "udp")
 
-		s := NewDNSService("http://doh.local:"+port, "127.0.0.1:15360")
+		s := NewDNSService("http://doh.local:"+port, bsAddr)
 		// Trigger a query. The transport should call DialContext, resolve doh.local, and connect.
 		_, _ = s.query(context.Background(), "example.com", dns.TypeA, false)
 	})
@@ -343,17 +390,23 @@ func TestDNSService_Query_Truncated(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	server := &dns.Server{Addr: "127.0.0.1:15370", Net: "udp", Handler: handler}
+	// Use fixed port but randomized for this test specifically if needed, 
+	// but here we can just use the same port for both UDP and TCP on localhost.
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	tcpAddr := l.Addr().String()
+	_ = l.Close() // Close so dns.Server can bind
+
+	server := &dns.Server{Addr: tcpAddr, Net: "udp", Handler: handler}
 	go func() { _ = server.ListenAndServe() }()
 	defer func() { _ = server.Shutdown() }()
 
-	serverTCP := &dns.Server{Addr: "127.0.0.1:15370", Net: "tcp", Handler: handler}
+	serverTCP := &dns.Server{Addr: tcpAddr, Net: "tcp", Handler: handler}
 	go func() { _ = serverTCP.ListenAndServe() }()
 	defer func() { _ = serverTCP.Shutdown() }()
 
 	time.Sleep(100 * time.Millisecond)
 
-	s := NewDNSService("127.0.0.1:15370", "")
+	s := NewDNSService(tcpAddr, "")
 	res, err := s.query(context.Background(), "example.com", dns.TypeA, false)
 	if err != nil {
 		t.Fatalf("Truncated query failed: %v", err)
@@ -397,13 +450,9 @@ func TestDNSService_Trace_NoNS(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	server := &dns.Server{Addr: "127.0.0.1:15365", Net: "udp", Handler: handler}
-	go func() { _ = server.ListenAndServe() }()
-	defer func() { _ = server.Shutdown() }()
-	time.Sleep(50 * time.Millisecond)
-
+	addr := startMockDNSServer(t, handler, "udp")
 	oldRoots := RootServers
-	RootServers = []string{"127.0.0.1:15365"}
+	RootServers = []string{addr}
 	defer func() { RootServers = oldRoots }()
 
 	svc := NewDNSService("", "")

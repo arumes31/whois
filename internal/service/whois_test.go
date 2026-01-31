@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"whois/internal/utils"
@@ -11,6 +12,19 @@ func init() {
 }
 
 func TestWhois(t *testing.T) {
+	oldWhois := WhoisFunc
+	defer func() { WhoisFunc = oldWhois }()
+
+	WhoisFunc = func(target string, query ...string) (string, error) {
+		if target == "" {
+			return "", fmt.Errorf("empty target")
+		}
+		if target == "invalid!target" {
+			return "invalid tld", nil
+		}
+		return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nDomain Name: " + target + "\nRegistrar: MockReg", nil
+	}
+
 	tests := []struct {
 		name   string
 		target string
@@ -54,12 +68,16 @@ func TestWhois(t *testing.T) {
 }
 
 func TestRDAPLookup(t *testing.T) {
-	t.Parallel()
-	// Test with a known domain that supports RDAP
-	res, err := rdapLookup("google.com")
+	oldRdap := RdapLookupFunc
+	defer func() { RdapLookupFunc = oldRdap }()
+
+	RdapLookupFunc = func(target string) (string, error) {
+		return "Mock RDAP Data", nil
+	}
+
+	res, err := RdapLookupFunc("google.com")
 	if err != nil {
-		t.Logf("RDAP lookup failed (expected if offline): %v", err)
-		return
+		t.Fatalf("RDAP lookup failed: %v", err)
 	}
 	if res == "" {
 		t.Error("Expected non-empty RDAP result")

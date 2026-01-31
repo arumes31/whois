@@ -30,6 +30,11 @@ import (
 
 func init() {
 	utils.TestInitLogger()
+	// Mock expensive services globally for handler tests
+	service.WhoisFunc = func(target string, query ...string) (string, error) {
+		return "Domain Name: " + target + "\nRegistrar: MockReg", nil
+	}
+	service.GeoAPIURL = "http://localhost:1/"
 }
 
 func setupTestEcho() (*echo.Echo, *utils.TemplateRegistry) {

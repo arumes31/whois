@@ -233,6 +233,8 @@ func extractTarGz(r io.Reader) error {
 	return fmt.Errorf("mmdb file not found in archive")
 }
 
+var GeoAPIURL = "http://ip-api.com/json/"
+
 func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 	geoMu.RLock()
 	reader := geoReader
@@ -258,7 +260,7 @@ func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 
 	// Fallback to API
 	client := &http.Client{Timeout: 5 * time.Second}
-	u, err := url.Parse("http://ip-api.com/json/")
+	u, err := url.Parse(GeoAPIURL)
 	if err != nil {
 		return nil, err
 	}

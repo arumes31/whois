@@ -57,10 +57,10 @@ func TestGetSSLInfo_Fail(t *testing.T) {
 
 func TestGetSSLInfo_NoPort(t *testing.T) {
 	// Should append :443 and try to connect
-	// We use a non-existent IP to trigger connection error but verify :443 was appended
-	info := GetSSLInfo(context.Background(), "192.0.2.1") // Documentation-only IP
+	// We use a port that should fail immediately
+	info := GetSSLInfo(context.Background(), "127.0.0.1:1")
 	if info.Error == "" {
-		t.Error("Expected error for non-existent IP")
+		t.Error("Expected error for closed port")
 	}
 }
 

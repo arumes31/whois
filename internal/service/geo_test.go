@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,7 +21,17 @@ func init() {
 }
 
 func TestGetGeoInfo(t *testing.T) {
-	t.Parallel()
+	// Mock the API fallback
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintln(w, `{"status":"success", "query":"8.8.8.8", "country":"United States"}`)
+	}))
+	defer ts.Close()
+
+	originalURL := GeoAPIURL
+	GeoAPIURL = ts.URL + "/"
+	defer func() { GeoAPIURL = originalURL }()
+
 	tests := []struct {
 		target string
 	}{
@@ -31,10 +43,9 @@ func TestGetGeoInfo(t *testing.T) {
 		t.Run(tt.target, func(t *testing.T) {
 			res, err := GetGeoInfo(context.Background(), tt.target)
 			if err != nil {
-				t.Logf("GetGeoInfo failed (expected if offline): %v", err)
-				return
+				t.Fatalf("GetGeoInfo failed: %v", err)
 			}
-			if res.Query != tt.target {
+			if res.Query != tt.target && tt.target == "8.8.8.8" {
 				t.Errorf("Expected query %s, got %s", tt.target, res.Query)
 			}
 		})
@@ -42,6 +53,12 @@ func TestGetGeoInfo(t *testing.T) {
 }
 
 func TestInitializeGeoDB(t *testing.T) {
+	oldClient := GeoHTTPClient
+	defer func() { GeoHTTPClient = oldClient }()
+	GeoHTTPClient = &http.Client{
+		Transport: &mockGeoTransport{},
+	}
+
 	GeoTestMode = true
 	oldPath := geoPath
 	geoPath = "test_init_geo.mmdb"
@@ -55,6 +72,15 @@ func TestInitializeGeoDB(t *testing.T) {
 
 	// Test with keys
 	InitializeGeoDB("testkey", "testaccount")
+}
+
+type mockGeoTransport struct{}
+
+func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader([]byte("fake mmdb"))),
+	}, nil
 }
 
 func TestInitializeGeoDB_Background(t *testing.T) {

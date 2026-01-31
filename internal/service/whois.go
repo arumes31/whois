@@ -21,6 +21,8 @@ type WhoisInfo struct {
 
 var WhoisFunc = whois.Whois
 
+var RdapLookupFunc = rdapLookup
+
 func Whois(target string) interface{} {
 	if !utils.IsValidTarget(target) {
 		return "Error: invalid target for WHOIS"
@@ -112,7 +114,7 @@ func Whois(target string) interface{} {
 
 		// FINAL FALLBACK: RDAP (Modern replacement for WHOIS)
 		if err != nil || isErrorResponse(raw) {
-			rdapRaw, rdapErr := rdapLookup(target)
+			rdapRaw, rdapErr := RdapLookupFunc(target)
 			if rdapErr == nil && rdapRaw != "" {
 				raw = rdapRaw
 				err = nil
