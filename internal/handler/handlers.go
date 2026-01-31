@@ -80,12 +80,22 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 				utils.Field("request_host", r.Host),
 				utils.Field("request_hostname", requestHost),
 				utils.Field("forwarded_host", forwardedHost),
+				utils.Field("trust_proxy", cfg.TrustProxy),
 				utils.Field("allowed_domain", cfg.AllowedDomain),
 			)
 
 			// Allow if hosts match exactly
 			if originHost == requestHost || (forwardedHost != "" && originHost == forwardedHost) {
 				return true
+			}
+
+			// If no explicit AllowedDomain is set, and we trust the proxy,
+			// we can be slightly more permissive by trusting the forwarded host
+			// as long as it matches the origin.
+			if cfg.AllowedDomain == "" && cfg.TrustProxy && forwardedHost != "" {
+				if originHost == forwardedHost {
+					return true
+				}
 			}
 
 			// Fallback: Allow localhost/127.0.0.1 for development
