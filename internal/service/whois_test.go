@@ -1,6 +1,8 @@
 package service
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 	"whois/internal/utils"
 )
@@ -10,6 +12,19 @@ func init() {
 }
 
 func TestWhois(t *testing.T) {
+	oldWhois := WhoisFunc
+	defer func() { WhoisFunc = oldWhois }()
+
+	WhoisFunc = func(target string, query ...string) (string, error) {
+		if target == "" {
+			return "", fmt.Errorf("empty target")
+		}
+		if target == "invalid!target" {
+			return "invalid tld", nil
+		}
+		return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nDomain Name: " + target + "\nRegistrar: MockReg", nil
+	}
+
 	tests := []struct {
 		name   string
 		target string
@@ -50,4 +65,91 @@ func TestWhois(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRDAPLookup(t *testing.T) {
+	oldRdap := RdapLookupFunc
+	defer func() { RdapLookupFunc = oldRdap }()
+
+	RdapLookupFunc = func(target string) (string, error) {
+		return "Mock RDAP Data", nil
+	}
+
+	res, err := RdapLookupFunc("google.com")
+	if err != nil {
+		t.Fatalf("RDAP lookup failed: %v", err)
+	}
+	if res == "" {
+		t.Error("Expected non-empty RDAP result")
+	}
+}
+
+func TestWhois_Mocked(t *testing.T) {
+	oldWhois := WhoisFunc
+	defer func() { WhoisFunc = oldWhois }()
+
+	t.Run("Error Response Fallback", func(t *testing.T) {
+		WhoisFunc = func(target string, query ...string) (string, error) {
+			if len(query) == 0 {
+				return "TLD is not supported", nil
+			}
+			return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nDomain Name: google.info\nRegistrar: InfoReg", nil
+		}
+		res := Whois("google.info")
+		info, ok := res.(WhoisInfo)
+		if !ok || info.Registrar != "InfoReg" {
+			t.Errorf("Expected fallback to succeed, got %v", res)
+		}
+	})
+
+	t.Run("IANA Referral", func(t *testing.T) {
+		WhoisFunc = func(target string, query ...string) (string, error) {
+			if len(query) == 0 {
+				return "No whois server found", nil
+			}
+			if query[0] == "whois.iana.org" {
+				return "whois: whois.nic.test\nrefer: whois.nic.test", nil
+			}
+			if query[0] == "whois.nic.test" {
+				return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nDomain Name: test.com\nRegistrar: TestReg", nil
+			}
+			return "error", nil
+		}
+		res := Whois("test.com")
+		info, ok := res.(WhoisInfo)
+		if !ok || info.Registrar != "TestReg" {
+			t.Errorf("Expected IANA referral to succeed, got %v", res)
+		}
+	})
+
+	t.Run("Registrar Referral", func(t *testing.T) {
+		WhoisFunc = func(target string, query ...string) (string, error) {
+			if len(query) == 0 {
+				return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nRegistrar WHOIS Server: whois.reg.test\nDomain Name: test.com", nil
+			}
+			if query[0] == "whois.reg.test" {
+				return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nDomain Name: test.com\nRegistrar: RegReg", nil
+			}
+			return "error", nil
+		}
+		res := Whois("test.com")
+		info, ok := res.(WhoisInfo)
+		if !ok || info.Registrar != "RegReg" {
+			t.Errorf("Expected registrar referral to succeed, got %v", res)
+		}
+	})
+
+	t.Run("Filtering and Empty Lines", func(t *testing.T) {
+		WhoisFunc = func(target string, query ...string) (string, error) {
+			return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\n%\n#\n\nLine 1\n\nLine 2\n", nil
+		}
+		res := Whois("test.com")
+		info, _ := res.(WhoisInfo)
+		if strings.Contains(info.Raw, "%") || strings.Contains(info.Raw, "#") {
+			t.Error("Expected comments to be filtered")
+		}
+		if !strings.Contains(info.Raw, "Line 1") {
+			t.Error("Expected Line 1 to be present")
+		}
+	})
 }

@@ -12,9 +12,9 @@ import (
 )
 
 var (
-	CRTURL             = "https://crt.sh/?q=%s&output=json"
-	CertspotterURL     = "https://api.certspotter.com/v1/issuances?domain=%s&include_subdomains=true&expand=dns_names"
-	SubdomainCenterURL = "https://api.subdomain.center/?domain=%s"
+	CRTURL             = "https://crt.sh/"
+	CertspotterURL     = "https://api.certspotter.com/v1/issuances"
+	SubdomainCenterURL = "https://api.subdomain.center/"
 )
 
 func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface{}, error) {
@@ -23,10 +23,9 @@ func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface
 	}
 
 	var allErrors []string
-	escapedDomain := url.QueryEscape(domain)
 
 	// 1. Try Certspotter (usually fastest and most reliable)
-	results, err := fetchCertspotter(ctx, escapedDomain)
+	results, err := fetchCertspotter(ctx, domain)
 	if err == nil && len(results) > 0 {
 		return results, nil
 	}
@@ -35,7 +34,7 @@ func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface
 	}
 
 	// 2. Fallback to crt.sh
-	results, err = fetchCrtSh(ctx, escapedDomain)
+	results, err = fetchCrtSh(ctx, domain)
 	if err == nil && len(results) > 0 {
 		return results, nil
 	}
@@ -44,7 +43,7 @@ func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface
 	}
 
 	// 3. Fallback to Subdomain Center
-	results, err = fetchSubdomainCenter(ctx, escapedDomain)
+	results, err = fetchSubdomainCenter(ctx, domain)
 	if err == nil && len(results) > 0 {
 		return results, nil
 	}
@@ -59,11 +58,18 @@ func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface
 	return nil, fmt.Errorf("No subdomains found from any source")
 }
 
-func fetchSubdomainCenter(ctx context.Context, escapedDomain string) (map[string]interface{}, error) {
-	url := fmt.Sprintf(SubdomainCenterURL, escapedDomain)
+func fetchSubdomainCenter(ctx context.Context, domain string) (map[string]interface{}, error) {
+	u, err := url.Parse(SubdomainCenterURL)
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("domain", domain)
+	u.RawQuery = q.Encode()
+
 	client := &http.Client{Timeout: 15 * time.Second}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -87,18 +93,27 @@ func fetchSubdomainCenter(ctx context.Context, escapedDomain string) (map[string
 	for _, sub := range data {
 		sub = strings.TrimSpace(sub)
 		sub = strings.TrimPrefix(sub, "*.")
-		if sub != "" && sub != escapedDomain && strings.HasSuffix(sub, "."+escapedDomain) {
+		if sub != "" && sub != domain && strings.HasSuffix(sub, "."+domain) {
 			subdomains[sub] = map[string]interface{}{}
 		}
 	}
 	return subdomains, nil
 }
 
-func fetchCertspotter(ctx context.Context, escapedDomain string) (map[string]interface{}, error) {
-	url := fmt.Sprintf(CertspotterURL, escapedDomain)
+func fetchCertspotter(ctx context.Context, domain string) (map[string]interface{}, error) {
+	u, err := url.Parse(CertspotterURL)
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("domain", domain)
+	q.Set("include_subdomains", "true")
+	q.Set("expand", "dns_names")
+	u.RawQuery = q.Encode()
+
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +139,7 @@ func fetchCertspotter(ctx context.Context, escapedDomain string) (map[string]int
 	for _, entry := range data {
 		for _, name := range entry.DNSNames {
 			name = strings.TrimPrefix(name, "*.")
-			if name != escapedDomain && strings.HasSuffix(name, "."+escapedDomain) {
+			if name != domain && strings.HasSuffix(name, "."+domain) {
 				subdomains[name] = map[string]interface{}{}
 			}
 		}
@@ -132,11 +147,19 @@ func fetchCertspotter(ctx context.Context, escapedDomain string) (map[string]int
 	return subdomains, nil
 }
 
-func fetchCrtSh(ctx context.Context, escapedDomain string) (map[string]interface{}, error) {
-	url := fmt.Sprintf(CRTURL, escapedDomain)
+func fetchCrtSh(ctx context.Context, domain string) (map[string]interface{}, error) {
+	u, err := url.Parse(CRTURL)
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	q.Set("q", domain)
+	q.Set("output", "json")
+	u.RawQuery = q.Encode()
+
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +186,7 @@ func fetchCrtSh(ctx context.Context, escapedDomain string) (map[string]interface
 		for _, sub := range strings.Split(entry.NameValue, "\n") {
 			sub = strings.TrimSpace(sub)
 			sub = strings.TrimPrefix(sub, "*.")
-			if sub != "" && sub != escapedDomain && strings.HasSuffix(sub, "."+escapedDomain) {
+			if sub != "" && sub != domain && strings.HasSuffix(sub, "."+domain) {
 				subdomains[sub] = map[string]interface{}{}
 			}
 		}

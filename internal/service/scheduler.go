@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 	"whois/internal/storage"
 	"whois/internal/utils"
 
@@ -33,27 +34,29 @@ func (s *Scheduler) Start() {
 		DownloadBackground()
 	})
 
-	// Monitoring refresh every 5 minutes (to reschedule if items changed)
-	// Simplified: just run all monitored items once a day or spread them.
-	// For now, let's just add a job that runs through monitored items.
-	_, _ = s.Cron.AddFunc("0 2 * * *", func() { // Every day at 2 AM
-		items, err := s.Storage.GetMonitoredItems(context.Background())
-		if err != nil {
-			utils.Log.Error("scheduler error getting items", utils.Field("error", err.Error()))
-			return
-		}
-		for _, item := range items {
-			go s.Monitor.RunCheck(context.Background(), item)
-		}
-	})
+	// Monitoring refresh every day at 2 AM
+	_, _ = s.Cron.AddFunc("0 2 * * *", s.RunMonitorJob)
 
 	s.Cron.Start()
 	utils.Log.Info("scheduler started")
 }
 
+func (s *Scheduler) RunMonitorJob() {
+	items, err := s.Storage.GetMonitoredItems(context.Background())
+	if err != nil {
+		utils.Log.Error("scheduler error getting items", utils.Field("error", err.Error()))
+		return
+	}
+	for _, item := range items {
+		go s.Monitor.RunCheck(context.Background(), item)
+	}
+}
+
+var BackgroundHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
 func DownloadBackground() {
 	utils.Log.Info("downloading background image...")
-	resp, err := http.Get("https://picsum.photos/1920/1080?grayscale")
+	resp, err := BackgroundHTTPClient.Get("https://picsum.photos/1920/1080?grayscale")
 	if err != nil {
 		utils.Log.Error("failed to download background", utils.Field("error", err.Error()))
 		return

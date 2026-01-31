@@ -5,19 +5,33 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 	"whois/internal/utils"
 )
 
 func init() {
 	utils.TestInitLogger()
+	utils.AllowPrivateIPs = true
 }
 
 func TestGetGeoInfo(t *testing.T) {
-	t.Parallel()
+	// Mock the API fallback
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintln(w, `{"status":"success", "query":"8.8.8.8", "country":"United States"}`)
+	}))
+	defer ts.Close()
+
+	originalURL := GeoAPIURL
+	GeoAPIURL = ts.URL + "/"
+	defer func() { GeoAPIURL = originalURL }()
+
 	tests := []struct {
 		target string
 	}{
@@ -29,10 +43,9 @@ func TestGetGeoInfo(t *testing.T) {
 		t.Run(tt.target, func(t *testing.T) {
 			res, err := GetGeoInfo(context.Background(), tt.target)
 			if err != nil {
-				t.Logf("GetGeoInfo failed (expected if offline): %v", err)
-				return
+				t.Fatalf("GetGeoInfo failed: %v", err)
 			}
-			if res.Query != tt.target {
+			if res.Query != tt.target && tt.target == "8.8.8.8" {
 				t.Errorf("Expected query %s, got %s", tt.target, res.Query)
 			}
 		})
@@ -40,6 +53,12 @@ func TestGetGeoInfo(t *testing.T) {
 }
 
 func TestInitializeGeoDB(t *testing.T) {
+	oldClient := GeoHTTPClient
+	defer func() { GeoHTTPClient = oldClient }()
+	GeoHTTPClient = &http.Client{
+		Transport: &mockGeoTransport{},
+	}
+
 	GeoTestMode = true
 	oldPath := geoPath
 	geoPath = "test_init_geo.mmdb"
@@ -53,6 +72,66 @@ func TestInitializeGeoDB(t *testing.T) {
 
 	// Test with keys
 	InitializeGeoDB("testkey", "testaccount")
+}
+
+type mockGeoTransport struct{}
+
+func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader([]byte("fake mmdb"))),
+	}, nil
+}
+
+func TestInitializeGeoDB_Background(t *testing.T) {
+	GeoTestMode = false
+	oldInterval := GeoUpdateInterval
+	GeoUpdateInterval = 10 * time.Millisecond
+
+	// Mock update server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("fake mmdb"))
+	}))
+	defer ts.Close()
+
+	// Set mod time to > 72h ago
+	_ = os.WriteFile(geoPath, []byte("old"), 0644)
+	oldTime := time.Now().Add(-100 * time.Hour)
+	_ = os.Chtimes(geoPath, oldTime, oldTime)
+
+	defer func() {
+		GeoTestMode = true
+		GeoUpdateInterval = oldInterval
+		_ = os.Remove(geoPath)
+	}()
+
+	InitializeGeoDB("test", "test")
+	time.Sleep(50 * time.Millisecond) // Let it tick
+}
+
+func TestCloseGeoDB(t *testing.T) {
+	CloseGeoDB()
+}
+
+func TestGetGeoInfo_ReaderError(t *testing.T) {
+	// Create a dummy reader that fails
+	_ = os.WriteFile("dummy.mmdb", []byte("invalid"), 0644)
+	defer func() { _ = os.Remove("dummy.mmdb") }()
+
+	geoMu.Lock()
+	oldPath := geoPath
+	geoPath = "dummy.mmdb"
+	geoMu.Unlock()
+
+	ReloadGeoDB()
+
+	// This should fallback to API since reader is nil on reload error
+	_, _ = GetGeoInfo(context.Background(), "8.8.8.8")
+
+	geoMu.Lock()
+	geoPath = oldPath
+	geoMu.Unlock()
 }
 
 func TestGetGeoInfo_ErrorPaths(t *testing.T) {
@@ -113,6 +192,59 @@ func TestDownloadGeoDB_Errors(t *testing.T) {
 	err = DownloadGeoDB("http://invalid-url-that-does-not-exist-12345.com")
 	if err == nil {
 		t.Error("Expected error for invalid URL")
+	}
+}
+
+func TestDownloadGeoDB_BasicAuth(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "user" || password != "pass" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	geoAccountID = "user"
+	geoLicenseKey = "pass"
+	defer func() {
+		geoAccountID = ""
+		geoLicenseKey = ""
+	}()
+
+	err := DownloadGeoDB(ts.URL)
+	if err != nil {
+		t.Fatalf("DownloadGeoDB with basic auth failed: %v", err)
+	}
+}
+
+func TestExtractTarGz_Success(t *testing.T) {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	content := []byte("fake mmdb content")
+	header := &tar.Header{
+		Name: "GeoLite2-City.mmdb",
+		Size: int64(len(content)),
+	}
+	_ = tw.WriteHeader(header)
+	_, _ = tw.Write(content)
+	_ = tw.Close()
+	_ = gw.Close()
+
+	oldPath := geoPath
+	geoPath = "test_extract_success.mmdb"
+	defer func() {
+		geoPath = oldPath
+		_ = os.Remove("test_extract_success.mmdb")
+	}()
+
+	err := extractTarGz(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("extractTarGz failed: %v", err)
 	}
 }
 

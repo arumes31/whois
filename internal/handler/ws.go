@@ -4,19 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"whois/internal/service"
+	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 )
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
 
 type WSMessage struct {
 	Type    string      `json:"type"`
@@ -26,8 +22,36 @@ type WSMessage struct {
 }
 
 func (h *Handler) HandleWS(c echo.Context) error {
-	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	// Exhaustive debug logging for handshake
+	headers := make(map[string]string)
+	for k, v := range c.Request().Header {
+		headers[k] = strings.Join(v, ", ")
+	}
+
+	utils.Log.Info("websocket handshake start",
+		utils.Field("headers", headers),
+		utils.Field("host", c.Request().Host),
+		utils.Field("remote_addr", c.Request().RemoteAddr),
+		utils.Field("proto", c.Request().Proto),
+		utils.Field("uri", c.Request().RequestURI),
+	)
+
+	// Manual check for common proxy issues
+	if !strings.EqualFold(c.Request().Header.Get("Upgrade"), "websocket") {
+		utils.Log.Warn("websocket upgrade header missing or invalid",
+			utils.Field("upgrade", c.Request().Header.Get("Upgrade")))
+	}
+	if !strings.Contains(strings.ToLower(c.Request().Header.Get("Connection")), "upgrade") {
+		utils.Log.Warn("websocket connection header does not contain upgrade",
+			utils.Field("connection", c.Request().Header.Get("Connection")))
+	}
+
+	ws, err := h.Upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
+		utils.Log.Error("websocket upgrade failed",
+			utils.Field("error", err.Error()),
+			utils.Field("headers", headers),
+		)
 		return err
 	}
 	defer func() {

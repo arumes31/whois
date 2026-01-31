@@ -163,6 +163,23 @@ func TestStorage_DNSHistory(t *testing.T) {
 	}
 }
 
+func TestStorage_GetDNSHistory_UnmarshalError(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	target := "error.com"
+
+	// Push invalid JSON
+	_ = s.Client.RPush(ctx, "dns_history:"+target, "invalid-json").Err()
+
+	entries, err := s.GetDNSHistory(ctx, target)
+	if err != nil {
+		t.Fatalf("GetDNSHistory failed: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("Expected 0 entries due to unmarshal error, got %d", len(entries))
+	}
+}
+
 func TestStorage_Errors(t *testing.T) {
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -245,5 +262,76 @@ func TestNewStorage(t *testing.T) {
 	s := NewStorage("localhost", "6379")
 	if s.Client == nil {
 		t.Error("Storage client should not be nil")
+	}
+}
+
+func TestNormalizeData(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    interface{}
+		expected interface{}
+	}{
+		{
+			name:     "Primitive string",
+			input:    "hello",
+			expected: "hello",
+		},
+		{
+			name: "Map with empty/nil fields",
+			input: map[string]interface{}{
+				"keep":  "value",
+				"nil":   nil,
+				"empty": "",
+				"slice": []interface{}{},
+				"map":   map[string]interface{}{},
+			},
+			expected: map[string]interface{}{
+				"keep": "value",
+			},
+		},
+		{
+			name:     "Empty map becomes nil",
+			input:    map[string]interface{}{"empty": ""},
+			expected: nil,
+		},
+		{
+			name: "Slice with duplicates and nil",
+			input: []interface{}{
+				"b", "a", "b", nil, "c", "a",
+			},
+			expected: []interface{}{
+				"a", "b", "c",
+			},
+		},
+		{
+			name:     "Empty slice becomes nil",
+			input:    []interface{}{nil},
+			expected: nil,
+		},
+		{
+			name: "Nested normalization",
+			input: map[string]interface{}{
+				"nested": []interface{}{
+					map[string]interface{}{"z": 1, "y": 2},
+					map[string]interface{}{"y": 2, "z": 1},
+				},
+			},
+			expected: map[string]interface{}{
+				"nested": []interface{}{
+					map[string]interface{}{"y": 2, "z": 1},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := normalizeData(tt.input)
+			gotJSON, _ := json.Marshal(got)
+			wantJSON, _ := json.Marshal(tt.expected)
+			if string(gotJSON) != string(wantJSON) {
+				t.Errorf("normalizeData() = %s, want %s", string(gotJSON), string(wantJSON))
+			}
+		})
 	}
 }

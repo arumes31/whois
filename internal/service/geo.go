@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -19,12 +20,13 @@ import (
 )
 
 var (
-	geoReader     *geoip2.Reader
-	geoMu         sync.RWMutex
-	geoPath       = "data/GeoLite2-City.mmdb"
-	geoAccountID  string
-	geoLicenseKey string
-	GeoTestMode   = false
+	geoReader         *geoip2.Reader
+	geoMu             sync.RWMutex
+	geoPath           = "data/GeoLite2-City.mmdb"
+	geoAccountID      string
+	geoLicenseKey     string
+	GeoTestMode       = false
+	GeoUpdateInterval = 6 * time.Hour
 )
 
 type GeoInfo struct {
@@ -94,7 +96,7 @@ func InitializeGeoDB(licenseKey, accountID string) {
 
 	// Start background watcher for 72h updates
 	go func() {
-		ticker := time.NewTicker(6 * time.Hour) // Check every 6h instead of 1h to be more efficient
+		ticker := time.NewTicker(GeoUpdateInterval)
 		for range ticker.C {
 			if updateURL == "" {
 				continue
@@ -115,11 +117,22 @@ func ManualUpdateGeoDB() error {
 		return fmt.Errorf("MAXMIND_LICENSE_KEY is not set")
 	}
 	url := fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", geoLicenseKey)
+
+	// Close the reader before downloading to avoid file locking on Windows
+	CloseGeoDB()
+
 	err := DownloadGeoDB(url)
-	if err == nil {
-		ReloadGeoDB()
-	}
+	ReloadGeoDB()
 	return err
+}
+
+func CloseGeoDB() {
+	geoMu.Lock()
+	defer geoMu.Unlock()
+	if geoReader != nil {
+		_ = geoReader.Close()
+		geoReader = nil
+	}
 }
 
 func ReloadGeoDB() {
@@ -134,11 +147,15 @@ func ReloadGeoDB() {
 	if err == nil {
 		geoReader = reader
 		utils.Log.Info("GeoIP database loaded successfully.")
+	} else {
+		geoReader = nil
 	}
 }
 
+var GeoHTTPClient = &http.Client{Timeout: 5 * time.Minute}
+
 func DownloadGeoDB(url string) error {
-	client := &http.Client{Timeout: 5 * time.Minute}
+	client := GeoHTTPClient
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -216,6 +233,8 @@ func extractTarGz(r io.Reader) error {
 	return fmt.Errorf("mmdb file not found in archive")
 }
 
+var GeoAPIURL = "http://ip-api.com/json/"
+
 func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 	geoMu.RLock()
 	reader := geoReader
@@ -241,9 +260,16 @@ func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 
 	// Fallback to API
 	client := &http.Client{Timeout: 5 * time.Second}
-	url := fmt.Sprintf("http://ip-api.com/json/%s?fields=status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query", target)
+	u, err := url.Parse(GeoAPIURL)
+	if err != nil {
+		return nil, err
+	}
+	u.Path += url.PathEscape(target)
+	q := u.Query()
+	q.Set("fields", "status,message,country,countryCode,regionName,city,zip,lat,lon,timezone,isp,org,as,query")
+	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return nil, err
 	}

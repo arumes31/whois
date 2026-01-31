@@ -13,6 +13,7 @@
         </div>
         <div>
           <form method="post">
+            <input type="hidden" name="_csrf" value="{{ .csrf }}">
             <div class="mb-3">
               <input 
                 type="text" 
@@ -63,6 +64,7 @@
                 <li class="list-group-item bg-transparent d-flex justify-content-between align-items-center border-secondary opacity-75">
                   <code class="text-info">{{ . }}</code>
                   <form method="post" class="d-inline">
+                    <input type="hidden" name="_csrf" value="{{ $.csrf }}">
                     <input type="hidden" name="item" value="{{ . }}">
                     <button type="submit" name="action" value="remove" class="btn btn-sm btn-outline-danger px-3">REMOVE</button>
                   </form>

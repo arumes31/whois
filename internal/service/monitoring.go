@@ -9,9 +9,13 @@ import (
 	"whois/internal/utils"
 )
 
+type DNSInterface interface {
+	Lookup(ctx context.Context, target string, isIP bool) (map[string]interface{}, error)
+}
+
 type MonitorService struct {
 	Storage *storage.Storage
-	DNS     *DNSService
+	DNS     DNSInterface
 }
 
 func NewMonitorService(s *storage.Storage, resolvers string, bootstrap string) *MonitorService {
@@ -22,6 +26,10 @@ func NewMonitorService(s *storage.Storage, resolvers string, bootstrap string) *
 }
 
 func (m *MonitorService) RunCheck(ctx context.Context, item string) {
+	if !utils.IsValidTarget(item) {
+		utils.Log.Warn("invalid target for scheduled check", utils.Field("item", item))
+		return
+	}
 	utils.Log.Info("running scheduled check", utils.Field("item", item))
 
 	isIP := net.ParseIP(item) != nil

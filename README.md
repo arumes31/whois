@@ -61,6 +61,22 @@ docker compose up -d
 ```
 Access the dashboard at `http://localhost:14400`.
 
+### Reverse Proxy Configuration (Nginx)
+If you are running behind Nginx, you **must** ensure WebSocket headers are forwarded correctly:
+```nginx
+location /ws {
+    proxy_pass http://localhost:14400;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+}
+```
+
 ### Environment Configuration
 
 #### 🛡️ Core & Security
@@ -69,6 +85,8 @@ Access the dashboard at `http://localhost:14400`.
 | `SECRET_KEY` | **Required**. Key for session encryption and CSRF protection | - |
 | `SEO_ENABLED` | Enable SEO optimizations and dynamic metadata | `false` |
 | `SEO_DOMAIN` | Canonical domain for SEO indexing | - |
+| `ALLOWED_DOMAIN` | Base domain allowed for WebSocket connections | - |
+| `WS_SKIP_ORIGIN_CHECK` | Completely disable WebSocket origin validation | `false` |
 | `CONFIG_USER` | Administrator username for restricted tools | `admin` |
 | `CONFIG_PASS` | Administrator passcode for restricted tools | `admin` |
 | `TRUSTED_IPS` | CSV of IPs allowed to access `/metrics` | `127.0.0.1,::1,...` |

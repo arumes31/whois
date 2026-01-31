@@ -19,13 +19,17 @@ type WhoisInfo struct {
 	Created   string `json:"created,omitempty"`
 }
 
+var WhoisFunc = whois.Whois
+
+var RdapLookupFunc = rdapLookup
+
 func Whois(target string) interface{} {
 	if !utils.IsValidTarget(target) {
 		return "Error: invalid target for WHOIS"
 	}
 
 	// Try primary lookup
-	raw, err := whois.Whois(target)
+	raw, err := WhoisFunc(target)
 
 	// Determine TLD
 	tld := ""
@@ -74,7 +78,7 @@ func Whois(target string) interface{} {
 			r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
 
 			for _, s := range shuffled {
-				rRaw, rErr := whois.Whois(target, s)
+				rRaw, rErr := WhoisFunc(target, s)
 				if rErr == nil && !isErrorResponse(rRaw) {
 					raw = rRaw
 					err = nil
@@ -85,7 +89,7 @@ func Whois(target string) interface{} {
 
 		// Still no good result? Try recursive IANA lookup
 		if err != nil || isErrorResponse(raw) {
-			ianaRaw, ianaErr := whois.Whois(target, "whois.iana.org")
+			ianaRaw, ianaErr := WhoisFunc(target, "whois.iana.org")
 			if ianaErr == nil {
 				lines := strings.Split(ianaRaw, "\n")
 				for _, line := range lines {
@@ -95,7 +99,7 @@ func Whois(target string) interface{} {
 						if len(rParts) > 1 {
 							server := strings.TrimSpace(rParts[1])
 							if server != "" {
-								ianaResultRaw, ianaResultErr := whois.Whois(target, server)
+								ianaResultRaw, ianaResultErr := WhoisFunc(target, server)
 								if ianaResultErr == nil && !isErrorResponse(ianaResultRaw) {
 									raw = ianaResultRaw
 									err = nil
@@ -110,7 +114,7 @@ func Whois(target string) interface{} {
 
 		// FINAL FALLBACK: RDAP (Modern replacement for WHOIS)
 		if err != nil || isErrorResponse(raw) {
-			rdapRaw, rdapErr := rdapLookup(target)
+			rdapRaw, rdapErr := RdapLookupFunc(target)
 			if rdapErr == nil && rdapRaw != "" {
 				raw = rdapRaw
 				err = nil
@@ -131,7 +135,7 @@ func Whois(target string) interface{} {
 				if len(parts) > 1 {
 					refServer := strings.TrimSpace(parts[1])
 					if refServer != "" {
-						refRaw, refErr := whois.Whois(target, refServer)
+						refRaw, refErr := WhoisFunc(target, refServer)
 						if refErr == nil && len(refRaw) > len(raw)/2 {
 							raw = refRaw
 						}

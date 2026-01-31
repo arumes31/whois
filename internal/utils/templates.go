@@ -24,6 +24,8 @@ func IsIP(val interface{}) bool {
 	return false
 }
 
+var AllowPrivateIPs = false
+
 func IsValidTarget(target string) bool {
 	// Support port numbers (e.g. 127.0.0.1:12345 or google.com:443)
 	host := target
@@ -32,10 +34,19 @@ func IsValidTarget(target string) bool {
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		// Only block unspecified and multicast. Allow loopback for testing.
-		return !ip.IsMulticast() && !ip.IsUnspecified()
+		if AllowPrivateIPs {
+			return !ip.IsMulticast() && !ip.IsUnspecified()
+		}
+		// Block private, loopback, multicast, link-local and unspecified to prevent SSRF
+		return !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsMulticast() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
 	}
-	if len(host) > 255 {
+	if len(host) > 255 || len(host) == 0 {
+		return false
+	}
+	if strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.HasPrefix(host, "-") || strings.HasSuffix(host, "-") {
+		return false
+	}
+	if strings.Contains(host, "..") {
 		return false
 	}
 	for _, ch := range host {

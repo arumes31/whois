@@ -70,6 +70,14 @@
 
     document.addEventListener('DOMContentLoaded', checkDisclosure);
 
+    // HTMX CSRF configuration
+    document.body.addEventListener('htmx:configRequest', (event) => {
+        const token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        if (token) {
+            event.detail.headers['X-CSRF-Token'] = token;
+        }
+    });
+
     function openTool(type) {
         const modalEl = document.getElementById('toolModal');
         const modal = new bootstrap.Modal(modalEl);

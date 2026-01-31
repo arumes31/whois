@@ -10,6 +10,7 @@
         </div>
         <div class="card-body">
           <form method="post">
+            <input type="hidden" name="_csrf" value="{{ .csrf }}">
             <input type="hidden" name="next" value="{{ .next }}">
             {{ if .error }}
                 <div class="alert alert-danger py-2 small">{{ .error }}</div>

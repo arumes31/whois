@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -20,6 +22,7 @@ import (
 	"whois/internal/storage"
 	"whois/internal/utils"
 
+	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
@@ -28,15 +31,107 @@ type Handler struct {
 	Storage   *storage.Storage
 	DNS       *service.DNSService
 	AppConfig *config.Config
+	Upgrader  websocket.Upgrader
 	wsMu      sync.Mutex
 }
 
 func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
-	return &Handler{
+	h := &Handler{
 		Storage:   storage,
 		DNS:       service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS),
 		AppConfig: cfg,
 	}
+
+	h.Upgrader = websocket.Upgrader{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		CheckOrigin: func(r *http.Request) bool {
+			if cfg.SkipOriginCheck {
+				return true
+			}
+
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				return true
+			}
+			u, err := url.Parse(origin)
+			if err != nil {
+				return false
+			}
+
+			// Robust host comparison: strip ports if present
+			originHost := u.Hostname()
+			requestHost := r.Host
+			if host, _, err := net.SplitHostPort(requestHost); err == nil {
+				requestHost = host
+			}
+
+			// Also check X-Forwarded-Host if present (common behind reverse proxies)
+			forwardedHost := r.Header.Get("X-Forwarded-Host")
+			if forwardedHost != "" {
+				if host, _, err := net.SplitHostPort(forwardedHost); err == nil {
+					forwardedHost = host
+				}
+			}
+
+			// Cloudflare support: detect CF headers
+			cfIP := r.Header.Get("CF-Connecting-IP")
+			cfRay := r.Header.Get("CF-Ray")
+
+			utils.Log.Info("websocket origin check",
+				utils.Field("origin", origin),
+				utils.Field("origin_hostname", originHost),
+				utils.Field("request_host", r.Host),
+				utils.Field("request_hostname", requestHost),
+				utils.Field("forwarded_host", forwardedHost),
+				utils.Field("cf_ip", cfIP),
+				utils.Field("cf_ray", cfRay),
+				utils.Field("use_cloudflare", cfg.UseCloudflare),
+				utils.Field("allowed_domain", cfg.AllowedDomain),
+			)
+
+			// Allow if hosts match exactly
+			if originHost == requestHost || (forwardedHost != "" && originHost == forwardedHost) {
+				return true
+			}
+
+			// If Cloudflare is enabled and headers are present, trust the origin
+			// if it matches the host or is a subdomain of the allowed domain.
+			if cfg.UseCloudflare && cfIP != "" {
+				if originHost == requestHost || originHost == forwardedHost {
+					return true
+				}
+			}
+
+			// Fallback: Allow localhost/127.0.0.1 for development
+			if requestHost == "localhost" || requestHost == "127.0.0.1" || originHost == "localhost" || originHost == "127.0.0.1" {
+				return true
+			}
+
+			// If we are on a subdomain of the allowed domain
+			if cfg.AllowedDomain != "" {
+				if strings.HasSuffix(originHost, "."+cfg.AllowedDomain) || originHost == cfg.AllowedDomain {
+					return true
+				}
+			}
+
+			utils.Log.Warn("websocket origin rejected",
+				utils.Field("origin", origin),
+				utils.Field("request_host", r.Host),
+				utils.Field("allowed_domain", cfg.AllowedDomain),
+			)
+			return false
+		},
+		Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
+			utils.Log.Error("websocket upgrade error",
+				utils.Field("status", status),
+				utils.Field("reason", reason.Error()),
+				utils.Field("uri", r.URL.Path),
+			)
+		},
+	}
+
+	return h
 }
 
 // === Middleware ===
@@ -44,7 +139,7 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		sess, _ := c.Cookie("session_id")
 		expected := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
-		if sess == nil || sess.Value == "" || sess.Value != expected {
+		if sess == nil || sess.Value == "" || subtle.ConstantTimeCompare([]byte(sess.Value), []byte(expected)) != 1 {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
 		return next(c)
@@ -115,6 +210,7 @@ func (h *Handler) Index(c echo.Context) error {
 			"stats":         stats,
 			"config":        h.AppConfig,
 			"current_path":  c.Request().URL.Path,
+			"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
 		})
 	}
 
@@ -124,6 +220,7 @@ func (h *Handler) Index(c echo.Context) error {
 		"stats":        stats,
 		"config":       h.AppConfig,
 		"current_path": c.Request().URL.Path,
+		"csrf":         c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
 
@@ -318,6 +415,7 @@ func (h *Handler) Scanner(c echo.Context) error {
 	return c.Render(http.StatusOK, "scanner.html", map[string]interface{}{
 		"real_ip": realIP,
 		"config":  h.AppConfig,
+		"csrf":    c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
 
@@ -413,7 +511,9 @@ func (h *Handler) Login(c echo.Context) error {
 		envUser := os.Getenv("CONFIG_USER")
 		envPass := os.Getenv("CONFIG_PASS")
 
-		if user != "" && user == envUser && pass == envPass {
+		if user != "" && envUser != "" && pass != "" && envPass != "" &&
+			subtle.ConstantTimeCompare([]byte(user), []byte(envUser)) == 1 &&
+			subtle.ConstantTimeCompare([]byte(pass), []byte(envPass)) == 1 {
 			// Generate a simple secure token (In production, use JWT or Redis-backed sessions)
 			// For this hardening, we'll use a hash of the credentials + secret
 			token := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
@@ -452,6 +552,7 @@ func (h *Handler) Config(c echo.Context) error {
 	return c.Render(http.StatusOK, "config.html", map[string]interface{}{
 		"monitored": items,
 		"real_ip":   realIP,
+		"csrf":      c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
 

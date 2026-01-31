@@ -8,15 +8,16 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 	"whois/internal/utils"
 )
 
 func init() {
 	utils.TestInitLogger()
+	utils.AllowPrivateIPs = true
 }
 
 func TestLookupMacVendor(t *testing.T) {
-	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "AA1122") || strings.Contains(r.URL.Path, "AA:11:22") {
 			_, _ = fmt.Fprint(w, "API Test Vendor")
@@ -27,8 +28,10 @@ func TestLookupMacVendor(t *testing.T) {
 	defer server.Close()
 
 	originalURL := MacVendorsURL
-	MacVendorsURL = server.URL + "/%s"
-	defer func() { MacVendorsURL = originalURL }()
+	MacVendorsURL = server.URL + "/"
+	defer func() {
+		MacVendorsURL = originalURL
+	}()
 
 	// Use AA:11:22 which is NOT in the fake local file created by TestLocalOUILookup_Success
 	vendor, err := LookupMacVendor(context.Background(), "AA:11:22:33:44:55")
@@ -57,6 +60,36 @@ func TestMACService(t *testing.T) {
 			_ = os.Remove("test_init_oui_unique.txt")
 		}()
 		InitializeMACService()
+	})
+
+	t.Run("InitializeMACService_Background", func(t *testing.T) {
+		oldPath := OUIPath
+		OUIPath = "test_bg_oui.txt"
+		_ = os.WriteFile(OUIPath, []byte("old"), 0644)
+		// Set mod time to > 72h ago
+		oldTime := time.Now().Add(-100 * time.Hour)
+		_ = os.Chtimes(OUIPath, oldTime, oldTime)
+
+		oldInterval := UpdateInterval
+		UpdateInterval = 10 * time.Millisecond
+		oldURL := OUIURL
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("new"))
+		}))
+		OUIURL = ts.URL
+		TestMode = false
+
+		defer func() {
+			UpdateInterval = oldInterval
+			OUIURL = oldURL
+			TestMode = true
+			ts.Close()
+			_ = os.Remove("test_bg_oui.txt")
+			OUIPath = oldPath
+		}()
+
+		InitializeMACService()
+		time.Sleep(50 * time.Millisecond) // Let it tick
 	})
 
 	t.Run("DownloadOUI", func(t *testing.T) {
@@ -110,7 +143,7 @@ func TestMACService(t *testing.T) {
 		defer server.Close()
 
 		oldURL := MacVendorsURL
-		MacVendorsURL = server.URL + "/%s"
+		MacVendorsURL = server.URL + "/"
 		oldOUI := OUIPath
 		OUIPath = "force_api_bb_unique.txt"
 		_ = os.Remove(OUIPath)
@@ -149,7 +182,7 @@ func TestMACService(t *testing.T) {
 		defer server.Close()
 
 		oldURL := MacVendorsURL
-		MacVendorsURL = server.URL + "/%s"
+		MacVendorsURL = server.URL + "/"
 		oldOUI := OUIPath
 		OUIPath = "non_existent_file_v3.txt"
 		defer func() {

@@ -6,12 +6,18 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 	"whois/internal/config"
 	"whois/internal/storage"
+	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 )
+
+func init() {
+	utils.TestInitLogger()
+}
 
 func TestHandleWS(t *testing.T) {
 	// Setup
@@ -184,5 +190,90 @@ func TestHandleWS(t *testing.T) {
 	}
 
 	// Trigger read error by closing
+	_ = ws.Close()
+}
+
+func TestHandleWS_FullFeatures(t *testing.T) {
+	e := echo.New()
+	store := storage.NewStorage("localhost", "6379")
+	cfg := &config.Config{EnableWhois: true, EnableDNS: true, EnableGeo: true}
+	h := NewHandler(store, cfg)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = h.HandleWS(e.NewContext(r, w))
+	}))
+	defer srv.Close()
+
+	u := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ws, _, _ := websocket.DefaultDialer.Dial(u, nil)
+	_ = ws.SetReadDeadline(time.Now().Add(5 * time.Second))
+
+	input := struct {
+		Targets []string `json:"targets"`
+		Config  struct {
+			Ping       bool   `json:"ping"`
+			Trace      bool   `json:"trace"`
+			Route      bool   `json:"route"`
+			Subdomains bool   `json:"subdomains"`
+			Ports      string `json:"ports"`
+		} `json:"config"`
+	}{
+		Targets: []string{"localhost"},
+		Config: struct {
+			Ping       bool   `json:"ping"`
+			Trace      bool   `json:"trace"`
+			Route      bool   `json:"route"`
+			Subdomains bool   `json:"subdomains"`
+			Ports      string `json:"ports"`
+		}{Ping: true, Trace: true, Route: true, Subdomains: true, Ports: "80"},
+	}
+	_ = ws.WriteJSON(input)
+
+	// Consume some messages
+	for i := 0; i < 100; i++ {
+		var m WSMessage
+		err := ws.ReadJSON(&m)
+		if err != nil {
+			break
+		}
+		if m.Type == "all_done" {
+			break
+		}
+	}
+	_ = ws.Close()
+}
+
+func TestHandleWS_Errors(t *testing.T) {
+	e := echo.New()
+	store := storage.NewStorage("localhost", "6379")
+	h := NewHandler(store, &config.Config{})
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = h.HandleWS(e.NewContext(r, w))
+	}))
+	defer srv.Close()
+
+	u := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ws, _, _ := websocket.DefaultDialer.Dial(u, nil)
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+
+	// 1. Invalid JSON
+	_ = ws.WriteMessage(websocket.TextMessage, []byte("{invalid}"))
+	time.Sleep(50 * time.Millisecond)
+
+	// 2. Invalid Target
+	input := struct {
+		Targets []string `json:"targets"`
+	}{Targets: []string{"invalid!"}}
+	_ = ws.WriteJSON(input)
+
+	var msg WSMessage
+	for i := 0; i < 5; i++ {
+		_ = ws.ReadJSON(&msg)
+		if msg.Type == "error" {
+			break
+		}
+	}
+
 	_ = ws.Close()
 }

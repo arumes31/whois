@@ -24,11 +24,20 @@ func setupMiniredisStorage(t *testing.T) *storage.Storage {
 	return &storage.Storage{Client: client}
 }
 
+type mockDNS struct{}
+
+func (m *mockDNS) Lookup(ctx context.Context, target string, isIP bool) (map[string]interface{}, error) {
+	return map[string]interface{}{"A": []string{"1.2.3.4"}}, nil
+}
+
 func TestMonitorService(t *testing.T) {
 	s := setupMiniredisStorage(t)
 	ctx := context.Background()
 
-	m := NewMonitorService(s, "8.8.8.8:53", "")
+	m := &MonitorService{
+		Storage: s,
+		DNS:     &mockDNS{},
+	}
 	m.RunCheck(ctx, "example.com")
 
 	// Check if history was added
@@ -42,7 +51,10 @@ func TestMonitorService_IP(t *testing.T) {
 	s := setupMiniredisStorage(t)
 	ctx := context.Background()
 
-	m := NewMonitorService(s, "", "")
+	m := &MonitorService{
+		Storage: s,
+		DNS:     &mockDNS{},
+	}
 	target := "8.8.8.8"
 	m.RunCheck(ctx, target)
 
@@ -57,16 +69,16 @@ func TestMonitorService_ErrorPaths(t *testing.T) {
 	s := setupMiniredisStorage(t)
 	ctx := context.Background()
 
-	m := NewMonitorService(s, "", "")
+	m := &MonitorService{
+		Storage: s,
+		DNS:     &mockDNS{},
+	}
 
 	t.Run("Invalid Target", func(t *testing.T) {
 		m.RunCheck(ctx, "invalid..domain")
 	})
 
 	t.Run("Storage Error", func(t *testing.T) {
-		// Mock storage error by using a closed client if possible,
-		// but storage.AddDNSHistory uses Pipeline.
-		// For now we just ensure it doesn't crash.
 		m.RunCheck(ctx, "google.com")
 	})
 }

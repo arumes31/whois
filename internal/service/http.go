@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 	"whois/internal/utils"
 )
@@ -38,8 +39,11 @@ func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 		},
 	}
 
-	targetURL := "http://" + host
-	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+	targetURL := &url.URL{
+		Scheme: "http",
+		Host:   host,
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL.String(), nil)
 	if err != nil {
 		return &HTTPInfo{Error: err.Error()}
 	}
@@ -50,8 +54,8 @@ func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
-		targetURL = "https://" + host
-		req, err = http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+		targetURL.Scheme = "https"
+		req, err = http.NewRequestWithContext(ctx, "GET", targetURL.String(), nil)
 		if err != nil {
 			return &HTTPInfo{Error: err.Error()}
 		}
