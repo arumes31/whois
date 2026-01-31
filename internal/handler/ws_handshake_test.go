@@ -18,7 +18,7 @@ import (
 func TestWebSocketHandshake(t *testing.T) {
 	utils.TestInitLogger()
 	e := echo.New()
-	
+
 	// Add same middlewares as main.go
 	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
 		ContentSecurityPolicy: "default-src 'self'; connect-src 'self' ws: wss:;",
@@ -31,7 +31,7 @@ func TestWebSocketHandshake(t *testing.T) {
 		SkipOriginCheck: true,
 	}
 	h := NewHandler(&storage.Storage{}, cfg)
-	
+
 	e.GET("/ws", h.HandleWS)
 
 	srv := httptest.NewServer(e)
@@ -45,7 +45,7 @@ func TestWebSocketHandshake(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Handshake failed: %v (Status: %d)", err, resp.StatusCode)
 		}
-		conn.Close()
+		_ = conn.Close()
 	})
 
 	t.Run("Handshake with Proxy Headers", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestWebSocketHandshake(t *testing.T) {
 		header.Set("X-Forwarded-Proto", "https")
 		header.Set("X-Forwarded-Host", "whois-dev.reitetschlaeger.com")
 		header.Set("Origin", "https://whois-dev.reitetschlaeger.com")
-		
+
 		conn, resp, err := dialer.Dial(u, header)
 		if err != nil {
 			if resp != nil {
@@ -64,6 +64,6 @@ func TestWebSocketHandshake(t *testing.T) {
 			// If it fails with 400, it reproduces the issue
 			t.Fatalf("Handshake with proxy headers failed: %v", err)
 		}
-		conn.Close()
+		_ = conn.Close()
 	})
 }

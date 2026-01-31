@@ -97,10 +97,10 @@ func TestCheckOrigin(t *testing.T) {
 			want:       true,
 		},
 		{
-			name: "Localhost fallback",
-			host: "localhost",
+			name:   "Localhost fallback",
+			host:   "localhost",
 			origin: "http://localhost:5000",
-			want: true,
+			want:   true,
 		},
 	}
 

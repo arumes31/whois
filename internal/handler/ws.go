@@ -38,11 +38,11 @@ func (h *Handler) HandleWS(c echo.Context) error {
 
 	// Manual check for common proxy issues
 	if !strings.EqualFold(c.Request().Header.Get("Upgrade"), "websocket") {
-		utils.Log.Warn("websocket upgrade header missing or invalid", 
+		utils.Log.Warn("websocket upgrade header missing or invalid",
 			utils.Field("upgrade", c.Request().Header.Get("Upgrade")))
 	}
 	if !strings.Contains(strings.ToLower(c.Request().Header.Get("Connection")), "upgrade") {
-		utils.Log.Warn("websocket connection header does not contain upgrade", 
+		utils.Log.Warn("websocket connection header does not contain upgrade",
 			utils.Field("connection", c.Request().Header.Get("Connection")))
 	}
 
