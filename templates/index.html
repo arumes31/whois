@@ -205,15 +205,25 @@ function connectWS() {
             const msg = messageQueue.shift();
             socket.send(JSON.stringify(msg));
         }
+        
+        // Start heartbeat
+        if (window.wsHeartbeat) clearInterval(window.wsHeartbeat);
+        window.wsHeartbeat = setInterval(() => {
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify({ type: 'heartbeat' }));
+            }
+        }, 25000);
     };
 
     socket.onmessage = (event) => {
         const msg = JSON.parse(event.data);
+        if (msg.type === 'heartbeat') return; // Ignore heartbeat responses
         updateUI(msg);
     };
 
     socket.onclose = (event) => {
         console.log("Socket closed. Reconnecting...");
+        if (window.wsHeartbeat) clearInterval(window.wsHeartbeat);
         if (!event.wasClean) {
             appendLog("SYSTEM", `WebSocket connection failed (Code: ${event.code}). Possible proxy issue.`);
         }

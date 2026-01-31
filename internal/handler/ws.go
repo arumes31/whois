@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"whois/internal/service"
 	"whois/internal/utils"
 
@@ -58,13 +59,47 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		_ = ws.Close()
 	}()
 
+	// Heartbeat configuration
+	pingPeriod := 30 * time.Second
+	readWait := 60 * time.Second
+	_ = ws.SetReadDeadline(time.Now().Add(readWait))
+	ws.SetPongHandler(func(string) error {
+		_ = ws.SetReadDeadline(time.Now().Add(readWait))
+		return nil
+	})
+
+	// Background ping goroutine
+	stopPing := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				h.wsMu.Lock()
+				if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
+					h.wsMu.Unlock()
+					return
+				}
+				h.wsMu.Unlock()
+			case <-stopPing:
+				return
+			}
+		}
+	}()
+	defer close(stopPing)
+
 	for {
 		_, msg, err := ws.ReadMessage()
 		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				utils.Log.Warn("websocket read error", utils.Field("error", err.Error()))
+			}
 			break
 		}
 
 		var input struct {
+			Type    string   `json:"type"`
 			Targets []string `json:"targets"`
 			Config  struct {
 				Whois      bool   `json:"whois"`
@@ -82,6 +117,11 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		}
 
 		if err := json.Unmarshal(msg, &input); err != nil {
+			continue
+		}
+
+		if input.Type == "heartbeat" {
+			_ = ws.SetReadDeadline(time.Now().Add(readWait))
 			continue
 		}
 
