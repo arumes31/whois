@@ -38,6 +38,13 @@ var upgrader = websocket.Upgrader{
 			requestHost = h
 		}
 
+		utils.Log.Debug("websocket origin check",
+			utils.Field("origin", origin),
+			utils.Field("origin_host", originHost),
+			utils.Field("request_host_raw", r.Host),
+			utils.Field("request_host_stripped", requestHost),
+		)
+
 		// Allow if hosts match exactly
 		if originHost == requestHost {
 			return true

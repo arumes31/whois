@@ -190,6 +190,7 @@
 
 <script>
 let socket;
+let messageQueue = [];
 const activeScans = new Map();
 const pingCharts = new Map();
 
@@ -197,6 +198,15 @@ function connectWS() {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     socket = new WebSocket(`${proto}//${window.location.host}/ws`);
     
+    socket.onopen = () => {
+        console.log("WebSocket connected");
+        // Flush queue
+        while (messageQueue.length > 0) {
+            const msg = messageQueue.shift();
+            socket.send(JSON.stringify(msg));
+        }
+    };
+
     socket.onmessage = (event) => {
         const msg = JSON.parse(event.data);
         updateUI(msg);
@@ -206,6 +216,22 @@ function connectWS() {
         console.log("Socket closed. Reconnecting...");
         setTimeout(connectWS, 2000);
     };
+
+    socket.onerror = (err) => {
+        console.error("WebSocket error:", err);
+    };
+}
+
+function sendWS(data) {
+    if (socket && socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(data));
+    } else {
+        console.log("Socket not ready, queuing message...");
+        messageQueue.push(data);
+        if (!socket || socket.readyState === WebSocket.CLOSED) {
+            connectWS();
+        }
+    }
 }
 
 const targetColors = new Map();
@@ -310,7 +336,7 @@ function startQuery() {
         });
         updateProgressBar(t);
         appendLog(t, `Initializing diagnostic vectors...`);
-        socket.send(JSON.stringify({ targets: [t], config }));
+        sendWS({ targets: [t], config });
     });
 }
 
@@ -870,7 +896,7 @@ function reScanTarget(btn) {
         completed: 0
     });
     updateProgressBar(target);
-    socket.send(JSON.stringify({ targets: [target], config }));
+    sendWS({ targets: [target], config });
 }
 
 function copyTarget(btn) {
