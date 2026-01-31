@@ -74,13 +74,19 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 				}
 			}
 
+			// Cloudflare support: detect CF headers
+			cfIP := r.Header.Get("CF-Connecting-IP")
+			cfRay := r.Header.Get("CF-Ray")
+
 			utils.Log.Info("websocket origin check",
 				utils.Field("origin", origin),
 				utils.Field("origin_hostname", originHost),
 				utils.Field("request_host", r.Host),
 				utils.Field("request_hostname", requestHost),
 				utils.Field("forwarded_host", forwardedHost),
-				utils.Field("trust_proxy", cfg.TrustProxy),
+				utils.Field("cf_ip", cfIP),
+				utils.Field("cf_ray", cfRay),
+				utils.Field("use_cloudflare", cfg.UseCloudflare),
 				utils.Field("allowed_domain", cfg.AllowedDomain),
 			)
 
@@ -89,11 +95,10 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 				return true
 			}
 
-			// If no explicit AllowedDomain is set, and we trust the proxy,
-			// we can be slightly more permissive by trusting the forwarded host
-			// as long as it matches the origin.
-			if cfg.AllowedDomain == "" && cfg.TrustProxy && forwardedHost != "" {
-				if originHost == forwardedHost {
+			// If Cloudflare is enabled and headers are present, trust the origin
+			// if it matches the host or is a subdomain of the allowed domain.
+			if cfg.UseCloudflare && cfIP != "" {
+				if originHost == requestHost || originHost == forwardedHost {
 					return true
 				}
 			}
