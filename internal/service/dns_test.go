@@ -353,7 +353,7 @@ func TestDNSService_DoH(t *testing.T) {
 			})
 			_ = w.WriteMsg(m)
 		})
-		
+
 		bsAddr := startMockDNSServer(t, handler, "udp")
 
 		s := NewDNSService("http://doh.local:"+port, bsAddr)
@@ -390,7 +390,7 @@ func TestDNSService_Query_Truncated(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	// Use fixed port but randomized for this test specifically if needed, 
+	// Use fixed port but randomized for this test specifically if needed,
 	// but here we can just use the same port for both UDP and TCP on localhost.
 	l, _ := net.Listen("tcp", "127.0.0.1:0")
 	tcpAddr := l.Addr().String()
