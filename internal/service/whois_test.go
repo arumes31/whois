@@ -86,7 +86,11 @@ func TestRDAPLookup(t *testing.T) {
 
 func TestWhois_Mocked(t *testing.T) {
 	oldWhois := WhoisFunc
-	defer func() { WhoisFunc = oldWhois }()
+	oldRdap := RdapLookupFunc
+	defer func() {
+		WhoisFunc = oldWhois
+		RdapLookupFunc = oldRdap
+	}()
 
 	t.Run("Error Response Fallback", func(t *testing.T) {
 		WhoisFunc = func(target string, query ...string) (string, error) {
@@ -150,6 +154,20 @@ func TestWhois_Mocked(t *testing.T) {
 		}
 		if !strings.Contains(info.Raw, "Line 1") {
 			t.Error("Expected Line 1 to be present")
+		}
+	})
+
+	t.Run("RDAP Fallback", func(t *testing.T) {
+		WhoisFunc = func(target string, query ...string) (string, error) {
+			return "", fmt.Errorf("all whois failed")
+		}
+		RdapLookupFunc = func(target string) (string, error) {
+			return "Mock RDAP Data", nil
+		}
+		res := Whois("test.com")
+		info, ok := res.(WhoisInfo)
+		if !ok || !strings.Contains(info.Raw, "Mock RDAP Data") {
+			t.Errorf("Expected RDAP fallback to succeed, got %v", res)
 		}
 	})
 }
