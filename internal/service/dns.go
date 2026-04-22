@@ -107,16 +107,6 @@ func (s *DNSService) getNextResolver() string {
 	return res
 }
 
-func (s *DNSService) Lookup(ctx context.Context, target string, isIP bool) (map[string]interface{}, error) {
-	results := make(map[string]interface{})
-	var mu sync.Mutex
-	err := s.LookupStream(ctx, target, isIP, func(rtype string, data interface{}) {
-		mu.Lock()
-		results[rtype] = data
-		mu.Unlock()
-	})
-	return results, err
-}
 
 func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
 	var wg sync.WaitGroup

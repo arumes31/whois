@@ -457,7 +457,7 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 	isIP := net.ParseIP(domain) != nil
 	d, err := h.DNS.Lookup(c.Request().Context(), domain, isIP)
 	if err != nil {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", err))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", html.EscapeString(err.Error())))
 	}
 
 	var results []string
