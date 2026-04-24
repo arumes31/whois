@@ -107,7 +107,6 @@ func (s *DNSService) getNextResolver() string {
 	return res
 }
 
-
 func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 5) // Limit to 5 concurrent queries per target
