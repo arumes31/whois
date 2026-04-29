@@ -140,3 +140,10 @@ func TestGetHTTPInfo_InvalidURL(t *testing.T) {
 		t.Error("Expected error for invalid URL hostname")
 	}
 }
+
+func TestGetHTTPInfo_InvalidTarget(t *testing.T) {
+	info := GetHTTPInfo(context.Background(), "invalidhost")
+	if info.Error != "invalid target host" {
+		t.Errorf("Expected 'invalid target host' error, got '%s'", info.Error)
+	}
+}
