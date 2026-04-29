@@ -1,10 +1,10 @@
 package service
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"strings"
-	"time"
 	"whois/internal/utils"
 
 	"github.com/likexian/whois"
@@ -74,8 +74,14 @@ func Whois(target string) interface{} {
 		if servers, ok := fallbacks[tld]; ok {
 			shuffled := make([]string, len(servers))
 			copy(shuffled, servers)
-			r := rand.New(rand.NewSource(time.Now().UnixNano()))
-			r.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
+			for i := len(shuffled) - 1; i > 0; i-- {
+				n, err := rand.Int(rand.Reader, big.NewInt(int64(i+1)))
+				if err != nil {
+					continue
+				}
+				j := int(n.Int64())
+				shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+			}
 
 			for _, s := range shuffled {
 				rRaw, rErr := WhoisFunc(target, s)

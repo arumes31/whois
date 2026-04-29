@@ -86,7 +86,11 @@ func TestRDAPLookup(t *testing.T) {
 
 func TestWhois_Mocked(t *testing.T) {
 	oldWhois := WhoisFunc
-	defer func() { WhoisFunc = oldWhois }()
+	oldRdap := RdapLookupFunc
+	defer func() {
+		WhoisFunc = oldWhois
+		RdapLookupFunc = oldRdap
+	}()
 
 	t.Run("Error Response Fallback", func(t *testing.T) {
 		WhoisFunc = func(target string, query ...string) (string, error) {
