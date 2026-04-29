@@ -19,6 +19,7 @@ var (
 	OUIPath        = "data/oui.txt"
 	TestMode       = false
 	UpdateInterval = 12 * time.Hour
+	MacHTTPClient  = &http.Client{Timeout: 5 * time.Minute}
 )
 
 func InitializeMACService() {
@@ -48,8 +49,7 @@ func InitializeMACService() {
 }
 
 func DownloadOUI() error {
-	client := &http.Client{Timeout: 5 * time.Minute}
-	resp, err := client.Get(OUIURL)
+	resp, err := MacHTTPClient.Get(OUIURL)
 	if err != nil {
 		return err
 	}
