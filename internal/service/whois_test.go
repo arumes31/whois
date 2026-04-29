@@ -157,17 +157,54 @@ func TestWhois_Mocked(t *testing.T) {
 		}
 	})
 
-	t.Run("RDAP Fallback", func(t *testing.T) {
+	t.Run("IANA Lookup Failure Fallback to RDAP", func(t *testing.T) {
+		oldRdap := RdapLookupFunc
+		defer func() { RdapLookupFunc = oldRdap }()
+
 		WhoisFunc = func(target string, query ...string) (string, error) {
-			return "", fmt.Errorf("all whois failed")
+			if len(query) == 0 {
+				return "No whois server found", nil
+			}
+			if query[0] == "whois.iana.org" {
+				return "", fmt.Errorf("IANA connection error")
+			}
+			return "error", nil
 		}
 		RdapLookupFunc = func(target string) (string, error) {
-			return "Mock RDAP Data", nil
+			return "Mock RDAP Data for IANA Failure", nil
 		}
+
 		res := Whois("test.com")
 		info, ok := res.(WhoisInfo)
-		if !ok || !strings.Contains(info.Raw, "Mock RDAP Data") {
-			t.Errorf("Expected RDAP fallback to succeed, got %v", res)
+		if !ok || info.Raw != "Mock RDAP Data for IANA Failure" {
+			t.Errorf("Expected RDAP fallback on IANA failure, got %v", res)
+		}
+	})
+
+	t.Run("IANA Referred Server Failure Fallback to RDAP", func(t *testing.T) {
+		oldRdap := RdapLookupFunc
+		defer func() { RdapLookupFunc = oldRdap }()
+
+		WhoisFunc = func(target string, query ...string) (string, error) {
+			if len(query) == 0 {
+				return "No whois server found", nil
+			}
+			if query[0] == "whois.iana.org" {
+				return "whois: whois.nic.fail\nrefer: whois.nic.fail", nil
+			}
+			if query[0] == "whois.nic.fail" {
+				return "", fmt.Errorf("Referred server error")
+			}
+			return "error", nil
+		}
+		RdapLookupFunc = func(target string) (string, error) {
+			return "Mock RDAP Data for Referral Failure", nil
+		}
+
+		res := Whois("test.com")
+		info, ok := res.(WhoisInfo)
+		if !ok || info.Raw != "Mock RDAP Data for Referral Failure" {
+			t.Errorf("Expected RDAP fallback on referral failure, got %v", res)
 		}
 	})
 }
