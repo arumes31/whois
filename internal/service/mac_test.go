@@ -131,6 +131,21 @@ func TestMACService(t *testing.T) {
 		}
 	})
 
+	t.Run("DownloadOUI_RequestError", func(t *testing.T) {
+		oldTransport := MacHTTPClient.Transport
+		defer func() { MacHTTPClient.Transport = oldTransport }()
+
+		MacHTTPClient.Transport = &mockErrorTransport{}
+
+		err := DownloadOUI()
+		if err == nil {
+			t.Fatalf("Expected error for network failure")
+		}
+		if !strings.Contains(err.Error(), "mock error") {
+			t.Errorf("Expected error message to contain 'mock error', got: %v", err)
+		}
+	})
+
 	t.Run("LookupMacVendor_API", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cleanPath := strings.ReplaceAll(r.URL.Path, ":", "")
@@ -237,4 +252,10 @@ func TestMACService(t *testing.T) {
 
 func TestLocalOUILookup(t *testing.T) {
 	// Wrapper for legacy if any, though subtests cover it.
+}
+
+type mockErrorTransport struct{}
+
+func (m *mockErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("mock error")
 }
