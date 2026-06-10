@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -41,7 +42,7 @@ func TestWhois(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := Whois(tt.target)
+			result := Whois(context.Background(), tt.target)
 			if result == nil {
 				t.Error("Whois returned nil")
 			}
@@ -99,7 +100,7 @@ func TestWhois_Mocked(t *testing.T) {
 			}
 			return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nDomain Name: google.info\nRegistrar: InfoReg", nil
 		}
-		res := Whois("google.info")
+		res := Whois(context.Background(), "google.info")
 		info, ok := res.(WhoisInfo)
 		if !ok || info.Registrar != "InfoReg" {
 			t.Errorf("Expected fallback to succeed, got %v", res)
@@ -119,7 +120,7 @@ func TestWhois_Mocked(t *testing.T) {
 			}
 			return "error", nil
 		}
-		res := Whois("test.com")
+		res := Whois(context.Background(), "test.com")
 		info, ok := res.(WhoisInfo)
 		if !ok || info.Registrar != "TestReg" {
 			t.Errorf("Expected IANA referral to succeed, got %v", res)
@@ -136,7 +137,7 @@ func TestWhois_Mocked(t *testing.T) {
 			}
 			return "error", nil
 		}
-		res := Whois("test.com")
+		res := Whois(context.Background(), "test.com")
 		info, ok := res.(WhoisInfo)
 		if !ok || info.Registrar != "RegReg" {
 			t.Errorf("Expected registrar referral to succeed, got %v", res)
@@ -147,7 +148,7 @@ func TestWhois_Mocked(t *testing.T) {
 		WhoisFunc = func(target string, query ...string) (string, error) {
 			return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\n%\n#\n\nLine 1\n\nLine 2\n", nil
 		}
-		res := Whois("test.com")
+		res := Whois(context.Background(), "test.com")
 		info, _ := res.(WhoisInfo)
 		if strings.Contains(info.Raw, "%") || strings.Contains(info.Raw, "#") {
 			t.Error("Expected comments to be filtered")
@@ -174,7 +175,7 @@ func TestWhois_Mocked(t *testing.T) {
 			return "Mock RDAP Data for IANA Failure", nil
 		}
 
-		res := Whois("test.com")
+		res := Whois(context.Background(), "test.com")
 		info, ok := res.(WhoisInfo)
 		if !ok || info.Raw != "Mock RDAP Data for IANA Failure" {
 			t.Errorf("Expected RDAP fallback on IANA failure, got %v", res)
@@ -201,7 +202,7 @@ func TestWhois_Mocked(t *testing.T) {
 			return "Mock RDAP Data for Referral Failure", nil
 		}
 
-		res := Whois("test.com")
+		res := Whois(context.Background(), "test.com")
 		info, ok := res.(WhoisInfo)
 		if !ok || info.Raw != "Mock RDAP Data for Referral Failure" {
 			t.Errorf("Expected RDAP fallback on referral failure, got %v", res)

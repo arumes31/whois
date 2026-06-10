@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"io"
 	"mime/multipart"
@@ -402,7 +401,9 @@ func TestHandlers(t *testing.T) {
 	t.Run("LoginRequired Logic Exhaustive", func(t *testing.T) {
 		mw := h.LoginRequired(func(c echo.Context) error { return c.String(200, "ok") })
 		_ = os.Setenv("SECRET_KEY", "test")
-		expected := fmt.Sprintf("%x", "test")
+
+		// Compute the expected HMAC-SHA256 session token
+		expected := generateSessionToken("test")
 
 		tests := []struct {
 			name   string

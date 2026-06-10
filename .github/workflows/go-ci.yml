@@ -15,14 +15,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Go
-        uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26'
           cache: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           version: latest
 
@@ -32,11 +32,11 @@ jobs:
     timeout-minutes: 20
     needs: lint
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Go
-        uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26'
           cache: true
       - name: Run Tests
         run: go test -v -tags=!stress ./...
@@ -47,11 +47,11 @@ jobs:
     timeout-minutes: 15
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Set up Go
-        uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.26'
           cache: true
       - name: Build
         run: go build -v -o whois-app cmd/server/main.go

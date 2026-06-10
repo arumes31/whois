@@ -14,7 +14,7 @@ import (
 
 func init() {
 	utils.TestInitLogger()
-	utils.AllowPrivateIPs = true
+	utils.SetAllowPrivateIPs(true)
 }
 
 func TestLookupMacVendor(t *testing.T) {

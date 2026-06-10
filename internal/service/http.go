@@ -7,25 +7,17 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+	"whois/internal/model"
 	"whois/internal/utils"
 )
 
-type HTTPInfo struct {
-	Status       string            `json:"status"`
-	Protocol     string            `json:"protocol"`
-	Headers      map[string]string `json:"headers"`
-	Security     map[string]string `json:"security"`
-	ResponseTime int64             `json:"response_time_ms"`
-	IP           string            `json:"ip"`
-	Error        string            `json:"error,omitempty"`
-}
-
-func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
+func GetHTTPInfo(ctx context.Context, host string) *model.HTTPInfo {
 	if !utils.IsValidTarget(host) {
-		return &HTTPInfo{Error: "invalid target host"}
+		return &model.HTTPInfo{Error: "invalid target host"}
 	}
 
 	start := time.Now()
+	verified := true
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
@@ -45,7 +37,7 @@ func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 	}
 	req, err := http.NewRequestWithContext(ctx, "GET", targetURL.String(), nil)
 	if err != nil {
-		return &HTTPInfo{Error: err.Error()}
+		return &model.HTTPInfo{Error: err.Error()}
 	}
 
 	resp, err := client.Do(req)
@@ -54,24 +46,29 @@ func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
+		verified = false // plain HTTP has no TLS to verify
 		targetURL.Scheme = "https"
 		req, err = http.NewRequestWithContext(ctx, "GET", targetURL.String(), nil)
 		if err != nil {
-			return &HTTPInfo{Error: err.Error()}
+			return &model.HTTPInfo{Error: err.Error()}
 		}
 		resp, err = client.Do(req)
 		if err != nil {
 			// If HTTPS also fails (maybe due to invalid cert), we retry with skip verify
-			// but mark it in the info
+			// but mark it as unverified in the info
+			verified = false
 			tr := &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
 			client.Transport = tr
 			resp, err = client.Do(req)
 			if err != nil {
-				return &HTTPInfo{Error: fmt.Sprintf("HTTPS failed: %v", err)}
+				return &model.HTTPInfo{Error: fmt.Sprintf("HTTPS failed: %v", err)}
 			}
 		}
+	} else {
+		// Plain HTTP succeeded — no TLS, so no certificate was verified
+		verified = false
 	}
 	defer func() {
 		if resp != nil {
@@ -81,12 +78,13 @@ func GetHTTPInfo(ctx context.Context, host string) *HTTPInfo {
 
 	elapsed := time.Since(start).Milliseconds()
 
-	info := &HTTPInfo{
+	info := &model.HTTPInfo{
 		Status:       resp.Status,
 		Protocol:     resp.Proto,
 		Headers:      make(map[string]string),
 		Security:     make(map[string]string),
 		ResponseTime: elapsed,
+		Verified:     verified,
 	}
 
 	securityHeaders := []string{

@@ -33,6 +33,8 @@ func main() {
 		utils.Log.Fatal("config load failed", utils.Field("error", err.Error()))
 	}
 
+	utils.SetAllowPrivateIPs(cfg.AllowPrivateIPs)
+
 	e := NewServer(cfg)
 
 	// Start server
@@ -90,9 +92,13 @@ func NewServer(cfg *config.Config) *echo.Echo {
 		},
 	}))
 	e.Use(middleware.Recover())
+	origins := cfg.CORSOrigins
+	if origins == "" {
+		origins = "*" // fallback for development
+	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		Skipper:      wsSkipper,
-		AllowOrigins: []string{"*"},
+		AllowOrigins: []string{origins},
 		AllowMethods: []string{http.MethodGet, http.MethodPost},
 	}))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{

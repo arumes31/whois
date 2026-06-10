@@ -297,7 +297,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		go func() {
 			defer wg.Done()
 			sendLog("Querying WHOIS records for " + target)
-			send("whois", service.Whois(target))
+			send("whois", service.Whois(ctx, target))
 			sendLog("WHOIS data retrieved for " + target)
 			sendDone("whois")
 		}()

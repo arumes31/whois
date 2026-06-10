@@ -31,6 +31,8 @@ type Config struct {
 	SEODomain         string
 	AllowedDomain     string
 	SkipOriginCheck   bool
+	AllowPrivateIPs   bool   `json:"allow_private_ips"`
+	CORSOrigins       string `json:"cors_origins"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -58,6 +60,8 @@ func LoadConfig() (*Config, error) {
 		SEODomain:         getEnv("SEO_DOMAIN", ""),
 		AllowedDomain:     getEnv("ALLOWED_DOMAIN", ""),
 		SkipOriginCheck:   getEnvBool("WS_SKIP_ORIGIN_CHECK", false),
+		AllowPrivateIPs:   getEnvBool("ALLOW_PRIVATE_IPS", false),
+		CORSOrigins:       getEnv("CORS_ORIGINS", ""),
 	}
 
 	if cfg.SecretKey == "" {

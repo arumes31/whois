@@ -41,7 +41,7 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		w := Whois(item)
+		w := Whois(ctx, item)
 		mu.Lock()
 		res.Whois = w
 		mu.Unlock()

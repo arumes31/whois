@@ -2,8 +2,11 @@ package handler
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -26,6 +29,12 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
+
+func generateSessionToken(secretKey string) string {
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write([]byte("session-token"))
+	return hex.EncodeToString(mac.Sum(nil))
+}
 
 type Handler struct {
 	Storage   *storage.Storage
@@ -139,7 +148,7 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		sess, _ := c.Cookie("session_id")
-		expected := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
+		expected := generateSessionToken(os.Getenv("SECRET_KEY"))
 		if sess == nil || sess.Value == "" || subtle.ConstantTimeCompare([]byte(sess.Value), []byte(expected)) != 1 {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
@@ -332,7 +341,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			w := service.Whois(item)
+			w := service.Whois(ctx, item)
 			res.Whois = w
 		}()
 	}
@@ -517,7 +526,7 @@ func (h *Handler) Login(c echo.Context) error {
 			subtle.ConstantTimeCompare([]byte(pass), []byte(envPass)) == 1 {
 			// Generate a simple secure token (In production, use JWT or Redis-backed sessions)
 			// For this hardening, we'll use a hash of the credentials + secret
-			token := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
+			token := generateSessionToken(os.Getenv("SECRET_KEY"))
 			c.SetCookie(&http.Cookie{
 				Name:     "session_id",
 				Value:    token,

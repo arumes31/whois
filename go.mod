@@ -1,6 +1,6 @@
 module whois
 
-go 1.24.0
+go 1.26.4
 
 require (
 	github.com/alicebob/miniredis/v2 v2.36.1

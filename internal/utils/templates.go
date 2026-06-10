@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync/atomic"
 
 	"github.com/labstack/echo/v4"
 )
@@ -24,7 +25,19 @@ func IsIP(val interface{}) bool {
 	return false
 }
 
-var AllowPrivateIPs = false
+var allowPrivateIPs int32
+
+func SetAllowPrivateIPs(v bool) {
+	if v {
+		atomic.StoreInt32(&allowPrivateIPs, 1)
+	} else {
+		atomic.StoreInt32(&allowPrivateIPs, 0)
+	}
+}
+
+func GetAllowPrivateIPs() bool {
+	return atomic.LoadInt32(&allowPrivateIPs) == 1
+}
 
 func IsValidTarget(target string) bool {
 	// Support port numbers (e.g. 127.0.0.1:12345 or google.com:443)
@@ -34,7 +47,7 @@ func IsValidTarget(target string) bool {
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		if AllowPrivateIPs {
+		if GetAllowPrivateIPs() {
 			return !ip.IsMulticast() && !ip.IsUnspecified()
 		}
 		// Block private, loopback, multicast, link-local and unspecified to prevent SSRF
