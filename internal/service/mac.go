@@ -24,7 +24,7 @@ var (
 
 func InitializeMACService() {
 	// Ensure data directory exists
-	_ = os.MkdirAll("data", 0755)
+	_ = os.MkdirAll("data", 0750)
 
 	// Initial download if missing
 	if _, err := os.Stat(OUIPath); os.IsNotExist(err) {

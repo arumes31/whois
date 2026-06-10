@@ -11,7 +11,7 @@ import (
 
 func init() {
 	utils.TestInitLogger()
-	utils.AllowPrivateIPs = true
+	utils.SetAllowPrivateIPs(true)
 }
 
 func TestPing(t *testing.T) {

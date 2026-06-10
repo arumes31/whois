@@ -6,19 +6,10 @@ import (
 	"net"
 	"strings"
 	"time"
+	"whois/internal/model"
 )
 
-type SSLInfo struct {
-	Issuer      string    `json:"issuer"`
-	Subject     string    `json:"subject"`
-	Expiry      time.Time `json:"expiry"`
-	DaysLeft    int       `json:"days_left"`
-	Protocol    string    `json:"protocol"`
-	CipherSuite string    `json:"cipher_suite"`
-	Error       string    `json:"error,omitempty"`
-}
-
-func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
+func GetSSLInfo(ctx context.Context, host string) *model.SSLInfo {
 	addr := host
 	if !strings.Contains(host, ":") {
 		addr = host + ":443"
@@ -31,6 +22,7 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	var tlsConn *tls.Conn
 	var handshakeErr error
+	verified := true
 
 	if err == nil {
 		tlsConn = tls.Client(conn, conf)
@@ -38,6 +30,7 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 		if handshakeErr != nil {
 			_ = conn.Close()
 			// Fallback to insecure if verification fails
+			verified = false
 			conf.InsecureSkipVerify = true
 			conn, err = dialer.DialContext(ctx, "tcp", addr)
 			if err == nil {
@@ -48,11 +41,11 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 	}
 
 	if err != nil {
-		return &SSLInfo{Error: err.Error()}
+		return &model.SSLInfo{Error: err.Error()}
 	}
 	if handshakeErr != nil {
 		_ = conn.Close()
-		return &SSLInfo{Error: handshakeErr.Error()}
+		return &model.SSLInfo{Error: handshakeErr.Error()}
 	}
 
 	defer func() {
@@ -61,7 +54,7 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 
 	state := tlsConn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
-		return &SSLInfo{Error: "no certificates found"}
+		return &model.SSLInfo{Error: "no certificates found"}
 	}
 
 	cert := state.PeerCertificates[0]
@@ -78,12 +71,13 @@ func GetSSLInfo(ctx context.Context, host string) *SSLInfo {
 		protocol = "TLS 1.3"
 	}
 
-	return &SSLInfo{
+	return &model.SSLInfo{
 		Issuer:      cert.Issuer.CommonName,
 		Subject:     cert.Subject.CommonName,
-		Expiry:      cert.NotAfter,
+		Expiry:      cert.NotAfter.Format(time.RFC3339),
 		DaysLeft:    int(time.Until(cert.NotAfter).Hours() / 24),
 		Protocol:    protocol,
 		CipherSuite: tls.CipherSuiteName(state.CipherSuite),
+		Verified:    verified,
 	}
 }

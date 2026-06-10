@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"math/big"
@@ -8,7 +9,7 @@ import (
 	"whois/internal/utils"
 
 	"github.com/likexian/whois"
-	"github.com/likexian/whois-parser"
+	whoisparser "github.com/likexian/whois-parser"
 	"github.com/openrdap/rdap"
 )
 
@@ -19,17 +20,35 @@ type WhoisInfo struct {
 	Created   string `json:"created,omitempty"`
 }
 
+// WhoisFunc is the function type for WHOIS lookups, matching the signature of whois.Whois.
 var WhoisFunc = whois.Whois
 
 var RdapLookupFunc = rdapLookup
 
-func Whois(target string) interface{} {
+func Whois(ctx context.Context, target string) interface{} {
 	if !utils.IsValidTarget(target) {
 		return "Error: invalid target for WHOIS"
 	}
 
-	// Try primary lookup
-	raw, err := WhoisFunc(target)
+	// Try primary lookup with context support via goroutine
+	type whoisResult struct {
+		raw string
+		err error
+	}
+	ch := make(chan whoisResult, 1)
+	go func() {
+		raw, err := WhoisFunc(target)
+		ch <- whoisResult{raw: raw, err: err}
+	}()
+
+	var raw string
+	var err error
+	select {
+	case res := <-ch:
+		raw, err = res.raw, res.err
+	case <-ctx.Done():
+		return fmt.Sprintf("WHOIS error: %v", ctx.Err())
+	}
 
 	// Determine TLD
 	tld := ""

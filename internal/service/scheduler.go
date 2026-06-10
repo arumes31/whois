@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 	"whois/internal/storage"
 	"whois/internal/utils"
@@ -47,9 +48,15 @@ func (s *Scheduler) RunMonitorJob() {
 		utils.Log.Error("scheduler error getting items", utils.Field("error", err.Error()))
 		return
 	}
+	var wg sync.WaitGroup
 	for _, item := range items {
-		go s.Monitor.RunCheck(context.Background(), item)
+		wg.Add(1)
+		go func(item string) {
+			defer wg.Done()
+			s.Monitor.RunCheck(context.Background(), item)
+		}(item)
 	}
+	wg.Wait()
 }
 
 var BackgroundHTTPClient = &http.Client{Timeout: 30 * time.Second}
@@ -66,6 +73,7 @@ func DownloadBackground() {
 	}()
 
 	outPath := filepath.Join("static", "background.jpg")
+	// #nosec G304
 	out, err := os.Create(outPath)
 	if err != nil {
 		utils.Log.Error("failed to create background file", utils.Field("error", err.Error()))

@@ -25,6 +25,9 @@ func TestGetSSLInfo(t *testing.T) {
 			if info.Issuer == "" {
 				t.Error("Expected issuer common name")
 			}
+			if !info.Verified {
+				t.Log("Expected Verified=true for google.com (this can happen if the test environment lacks root CA certificates)")
+			}
 		}
 	})
 }
@@ -45,6 +48,10 @@ func TestGetSSLInfo_Local(t *testing.T) {
 
 	if info.Protocol == "Unknown" {
 		t.Error("Expected identified protocol, got Unknown")
+	}
+	// Self-signed cert from httptest should fall back to InsecureSkipVerify
+	if info.Verified {
+		t.Error("Expected Verified=false for self-signed cert (fallback)")
 	}
 }
 

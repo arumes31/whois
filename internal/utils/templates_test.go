@@ -73,7 +73,7 @@ func TestIsValidTarget(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		AllowPrivateIPs = tt.allowPrivate
+		SetAllowPrivateIPs(tt.allowPrivate)
 		if res := IsValidTarget(tt.input); res != tt.expected {
 			t.Errorf("IsValidTarget(%s, allowPrivate=%v) = %v; want %v", tt.input, tt.allowPrivate, res, tt.expected)
 		}

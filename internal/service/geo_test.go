@@ -17,7 +17,7 @@ import (
 
 func init() {
 	utils.TestInitLogger()
-	utils.AllowPrivateIPs = true
+	utils.SetAllowPrivateIPs(true)
 }
 
 func TestGetGeoInfo(t *testing.T) {

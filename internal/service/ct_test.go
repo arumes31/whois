@@ -10,7 +10,7 @@ import (
 )
 
 func init() {
-	utils.AllowPrivateIPs = true
+	utils.SetAllowPrivateIPs(true)
 }
 
 func TestFetchCTSubdomains(t *testing.T) {

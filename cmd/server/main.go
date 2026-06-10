@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 	"whois/internal/config"
 	"whois/internal/handler"
@@ -32,6 +33,8 @@ func main() {
 	if err != nil {
 		utils.Log.Fatal("config load failed", utils.Field("error", err.Error()))
 	}
+
+	utils.SetAllowPrivateIPs(cfg.AllowPrivateIPs)
 
 	e := NewServer(cfg)
 
@@ -90,9 +93,25 @@ func NewServer(cfg *config.Config) *echo.Echo {
 		},
 	}))
 	e.Use(middleware.Recover())
+	var allowOrigins []string
+	if cfg.CORSOrigins != "" {
+		for _, org := range strings.Split(cfg.CORSOrigins, ",") {
+			trimmed := strings.TrimSpace(org)
+			if trimmed != "" {
+				allowOrigins = append(allowOrigins, trimmed)
+			}
+		}
+	}
+	if len(allowOrigins) == 0 {
+		if cfg.Environment == "development" || cfg.AllowDevCors {
+			allowOrigins = []string{"*"}
+		} else {
+			allowOrigins = []string{"none"}
+		}
+	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		Skipper:      wsSkipper,
-		AllowOrigins: []string{"*"},
+		AllowOrigins: allowOrigins,
 		AllowMethods: []string{http.MethodGet, http.MethodPost},
 	}))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
@@ -115,6 +134,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	}))
 
 	// CSRF Protection
+	// #nosec G101
 	e.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
 		Skipper:        wsSkipper,
 		TokenLookup:    "form:_csrf,header:X-CSRF-Token",

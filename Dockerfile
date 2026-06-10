@@ -1,5 +1,5 @@
 # Build Stage
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -7,7 +7,7 @@ COPY . .
 RUN go build -o whois-app cmd/server/main.go
 
 # Runtime Stage
-FROM alpine:latest
+FROM alpine:3.21
 LABEL author="arumes31" maintainer="https://github.com/arumes31"
 WORKDIR /app
 

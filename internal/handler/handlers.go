@@ -2,8 +2,12 @@ package handler
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -26,6 +30,33 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 )
+
+func generateSessionToken(secretKey string) string {
+	entropy := make([]byte, 16)
+	_, _ = rand.Read(entropy)
+	entropyHex := hex.EncodeToString(entropy)
+
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write([]byte(entropyHex))
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	return entropyHex + "." + signature
+}
+
+func validateSessionToken(token, secretKey string) bool {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	entropyHex := parts[0]
+	signature := parts[1]
+
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write([]byte(entropyHex))
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+
+	return subtle.ConstantTimeCompare([]byte(signature), []byte(expectedSignature)) == 1
+}
 
 type Handler struct {
 	Storage   *storage.Storage
@@ -139,8 +170,7 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		sess, _ := c.Cookie("session_id")
-		expected := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
-		if sess == nil || sess.Value == "" || subtle.ConstantTimeCompare([]byte(sess.Value), []byte(expected)) != 1 {
+		if sess == nil || sess.Value == "" || !validateSessionToken(sess.Value, os.Getenv("SECRET_KEY")) {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
 		return next(c)
@@ -332,7 +362,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			w := service.Whois(item)
+			w := service.Whois(ctx, item)
 			res.Whois = w
 		}()
 	}
@@ -517,7 +547,7 @@ func (h *Handler) Login(c echo.Context) error {
 			subtle.ConstantTimeCompare([]byte(pass), []byte(envPass)) == 1 {
 			// Generate a simple secure token (In production, use JWT or Redis-backed sessions)
 			// For this hardening, we'll use a hash of the credentials + secret
-			token := fmt.Sprintf("%x", os.Getenv("SECRET_KEY"))
+			token := generateSessionToken(os.Getenv("SECRET_KEY"))
 			c.SetCookie(&http.Cookie{
 				Name:     "session_id",
 				Value:    token,
@@ -558,7 +588,14 @@ func (h *Handler) Config(c echo.Context) error {
 }
 
 func (h *Handler) Logout(c echo.Context) error {
-	c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1, Path: "/"})
+	c.SetCookie(&http.Cookie{
+		Name:     "session_id",
+		MaxAge:   -1,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	return c.Redirect(http.StatusFound, "/")
 }
 

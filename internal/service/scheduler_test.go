@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"os"
 	"testing"
-	"time"
 	"whois/internal/storage"
 	"whois/internal/utils"
 
@@ -65,8 +64,7 @@ func TestScheduler_RunMonitorJob(t *testing.T) {
 
 	// Test with items
 	_ = s.AddMonitoredItem(context.Background(), "google.com")
-	sched.RunMonitorJob()
-	time.Sleep(100 * time.Millisecond) // Let goroutines run
+	sched.RunMonitorJob() // blocks until all goroutines complete (wg.Wait inside)
 
 	// Test error branch (closed storage)
 	badStorage := &storage.Storage{Client: redis.NewClient(&redis.Options{Addr: "localhost:1"})}

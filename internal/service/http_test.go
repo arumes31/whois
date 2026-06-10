@@ -11,7 +11,7 @@ import (
 
 func init() {
 	utils.TestInitLogger()
-	utils.AllowPrivateIPs = true
+	utils.SetAllowPrivateIPs(true)
 }
 
 func TestGetHTTPInfo(t *testing.T) {
@@ -37,6 +37,11 @@ func TestGetHTTPInfo(t *testing.T) {
 	if info.Security["X-Frame-Options"] != "DENY" {
 		t.Errorf("Expected X-Frame-Options DENY, got %s", info.Security["X-Frame-Options"])
 	}
+
+	// HTTP (non-TLS) connection should not be marked as verified
+	if info.Verified {
+		t.Error("Expected Verified=false for plain HTTP connection")
+	}
 }
 
 func TestGetHTTPInfo_HTTPS(t *testing.T) {
@@ -56,6 +61,10 @@ func TestGetHTTPInfo_HTTPS(t *testing.T) {
 	} else {
 		if info.Status != "200 OK" {
 			t.Errorf("Expected 200 OK, got %s", info.Status)
+		}
+		// Self-signed cert should fall back to InsecureSkipVerify, so Verified=false
+		if info.Verified {
+			t.Error("Expected Verified=false for self-signed cert (fallback)")
 		}
 	}
 }
