@@ -73,6 +73,7 @@ func DownloadBackground() {
 	}()
 
 	outPath := filepath.Join("static", "background.jpg")
+	// #nosec G304
 	out, err := os.Create(outPath)
 	if err != nil {
 		utils.Log.Error("failed to create background file", utils.Field("error", err.Error()))

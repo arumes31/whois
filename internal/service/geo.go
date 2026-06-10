@@ -63,7 +63,7 @@ func InitializeGeoDB(licenseKey, accountID string) {
 	geoLicenseKey = licenseKey
 
 	// Ensure data directory exists
-	_ = os.MkdirAll("data", 0755)
+	_ = os.MkdirAll("data", 0750)
 
 	updateURL := ""
 	if licenseKey != "" {
@@ -225,7 +225,9 @@ func extractTarGz(r io.Reader) error {
 			if err != nil {
 				return err
 			}
-			_, err = io.Copy(out, tr)
+			// Limit MaxMind DB file extraction to 150MB to protect against decompression bombs.
+			// #nosec G110
+			_, err = io.Copy(out, io.LimitReader(tr, 150*1024*1024))
 			_ = out.Close()
 			return err
 		}

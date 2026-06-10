@@ -588,7 +588,14 @@ func (h *Handler) Config(c echo.Context) error {
 }
 
 func (h *Handler) Logout(c echo.Context) error {
-	c.SetCookie(&http.Cookie{Name: "session_id", MaxAge: -1, Path: "/"})
+	c.SetCookie(&http.Cookie{
+		Name:     "session_id",
+		MaxAge:   -1,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+	})
 	return c.Redirect(http.StatusFound, "/")
 }
 

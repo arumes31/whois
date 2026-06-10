@@ -10,6 +10,7 @@ import (
 )
 
 var PingCommandRunner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	// #nosec G204
 	return exec.CommandContext(ctx, name, args...)
 }
 

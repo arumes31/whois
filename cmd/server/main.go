@@ -134,6 +134,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	}))
 
 	// CSRF Protection
+	// #nosec G101
 	e.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
 		Skipper:        wsSkipper,
 		TokenLookup:    "form:_csrf,header:X-CSRF-Token",

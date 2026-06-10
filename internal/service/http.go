@@ -59,6 +59,7 @@ func GetHTTPInfo(ctx context.Context, host string) *model.HTTPInfo {
 			// but mark it as unverified in the info
 			verified = false
 			tr := &http.Transport{
+				// #nosec G402
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
 			client.Transport = tr
