@@ -4,6 +4,7 @@ package main
 
 import (
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -13,6 +14,8 @@ import (
 	"testing"
 
 	"whois/internal/utils"
+
+	"golang.org/x/mod/semver"
 )
 
 // TestV2Integration validates all changes introduced in the v2 update.
@@ -32,7 +35,7 @@ func TestV2Integration(t *testing.T) {
 				t.Fatal("no Go version directive found in go.mod")
 			}
 			version := string(matches[1])
-			if version < "1.26.4" {
+			if semver.Compare("v"+version, "v1.26.4") < 0 {
 				t.Errorf("expected Go version >= 1.26.4 in go.mod, got %q", version)
 			}
 		})
@@ -258,12 +261,12 @@ func TestV2Integration(t *testing.T) {
 				t.Fatalf("failed to read internal/service/scheduler.go: %v", err)
 			}
 			content := string(data)
-			if !strings.Contains(content, "sync.WaitGroup") && !strings.Contains(content, "sync.WaitGroup{}") {
-				// Also check for var wg sync.WaitGroup pattern
-				re := regexp.MustCompile(`var\s+wg\s+sync\.WaitGroup`)
-				if !re.MatchString(content) {
-					t.Error("expected internal/service/scheduler.go RunMonitorJob to use sync.WaitGroup, but it was not found")
-				}
+			hasA := strings.Contains(content, "sync.WaitGroup")
+			hasB := strings.Contains(content, "sync.WaitGroup{}")
+			re := regexp.MustCompile(`var\s+wg\s+sync\.WaitGroup`)
+			hasC := re.MatchString(content)
+			if !hasA && !hasB && !hasC {
+				t.Error("expected internal/service/scheduler.go RunMonitorJob to use sync.WaitGroup, but it was not found")
 			}
 		})
 
@@ -380,15 +383,15 @@ func TestV2Integration(t *testing.T) {
 
 			token := localGenerateSessionToken(secretKey)
 
-			// The HMAC-SHA256 output should be 64 hex characters (32 bytes)
-			if len(token) != 64 {
-				t.Errorf("expected HMAC-SHA256 token to be 64 hex characters long, got %d", len(token))
+			// The output format is: entropyHex (32 chars) + "." + signatureHex (64 chars) = 97 characters
+			if len(token) != 97 {
+				t.Errorf("expected HMAC-SHA256 token to be 97 hex characters long, got %d", len(token))
 			}
 
-			// Verify deterministic: same input produces same output
+			// Verify non-deterministic (unique per call due to per-session entropy)
 			token2 := localGenerateSessionToken(secretKey)
-			if token != token2 {
-				t.Error("expected generateSessionToken to be deterministic (HMAC), but two calls with same key produced different output")
+			if token == token2 {
+				t.Error("expected generateSessionToken to be unique across calls, but two calls with same key produced same output")
 			}
 
 			// Verify different from simple hex encoding of the key itself
@@ -442,7 +445,13 @@ func TestV2Integration(t *testing.T) {
 // correctness of the original implementation is validated by the
 // file-content tests in the SecurityFixes section above.
 func localGenerateSessionToken(secretKey string) string {
+	entropy := make([]byte, 16)
+	_, _ = rand.Read(entropy)
+	entropyHex := hex.EncodeToString(entropy)
+
 	mac := hmac.New(sha256.New, []byte(secretKey))
-	mac.Write([]byte("session-token"))
-	return hex.EncodeToString(mac.Sum(nil))
+	mac.Write([]byte(entropyHex))
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	return entropyHex + "." + signature
 }

@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/csv"
@@ -31,9 +32,30 @@ import (
 )
 
 func generateSessionToken(secretKey string) string {
+	entropy := make([]byte, 16)
+	_, _ = rand.Read(entropy)
+	entropyHex := hex.EncodeToString(entropy)
+
 	mac := hmac.New(sha256.New, []byte(secretKey))
-	mac.Write([]byte("session-token"))
-	return hex.EncodeToString(mac.Sum(nil))
+	mac.Write([]byte(entropyHex))
+	signature := hex.EncodeToString(mac.Sum(nil))
+
+	return entropyHex + "." + signature
+}
+
+func validateSessionToken(token, secretKey string) bool {
+	parts := strings.Split(token, ".")
+	if len(parts) != 2 {
+		return false
+	}
+	entropyHex := parts[0]
+	signature := parts[1]
+
+	mac := hmac.New(sha256.New, []byte(secretKey))
+	mac.Write([]byte(entropyHex))
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+
+	return subtle.ConstantTimeCompare([]byte(signature), []byte(expectedSignature)) == 1
 }
 
 type Handler struct {
@@ -148,8 +170,7 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		sess, _ := c.Cookie("session_id")
-		expected := generateSessionToken(os.Getenv("SECRET_KEY"))
-		if sess == nil || sess.Value == "" || subtle.ConstantTimeCompare([]byte(sess.Value), []byte(expected)) != 1 {
+		if sess == nil || sess.Value == "" || !validateSessionToken(sess.Value, os.Getenv("SECRET_KEY")) {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
 		return next(c)

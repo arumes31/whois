@@ -82,13 +82,15 @@ location / {
 #### 🛡️ Core & Security
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SECRET_KEY` | **Required**. Key for session encryption and CSRF protection | - |
+| `SECRET_KEY` | **Required**. Key for session encryption and CSRF protection (do not use default values in production) | - |
 | `SEO_ENABLED` | Enable SEO optimizations and dynamic metadata | `false` |
 | `SEO_DOMAIN` | Canonical domain for SEO indexing | - |
 | `ALLOWED_DOMAIN` | Base domain allowed for WebSocket connections | - |
 | `WS_SKIP_ORIGIN_CHECK` | Completely disable WebSocket origin validation | `false` |
-| `CONFIG_USER` | Administrator username for restricted tools | `admin` |
-| `CONFIG_PASS` | Administrator passcode for restricted tools | `admin` |
+| `CONFIG_USER` | Administrator username for restricted tools (configured via environment or .env) | `admin` |
+| `CONFIG_PASS` | Administrator passcode for restricted tools (configured via environment or .env) | `admin` |
+| `ENVIRONMENT` | Run environment (set to `development` for wildcard CORS, otherwise restricted) | `development` |
+| `ALLOW_DEV_CORS` | Force-allow wildcard CORS even in non-development environment | `false` |
 | `TRUSTED_IPS` | CSV of IPs allowed to access `/metrics` | `127.0.0.1,::1,...` |
 | `TRUST_PROXY` | Trust `X-Forwarded-For` headers | `true` |
 | `USE_CLOUDFLARE` | Use `CF-Connecting-IP` for client identification | `false` |

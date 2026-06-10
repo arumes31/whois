@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 	"whois/internal/config"
 	"whois/internal/handler"
@@ -92,13 +93,25 @@ func NewServer(cfg *config.Config) *echo.Echo {
 		},
 	}))
 	e.Use(middleware.Recover())
-	origins := cfg.CORSOrigins
-	if origins == "" {
-		origins = "*" // fallback for development
+	var allowOrigins []string
+	if cfg.CORSOrigins != "" {
+		for _, org := range strings.Split(cfg.CORSOrigins, ",") {
+			trimmed := strings.TrimSpace(org)
+			if trimmed != "" {
+				allowOrigins = append(allowOrigins, trimmed)
+			}
+		}
+	}
+	if len(allowOrigins) == 0 {
+		if cfg.Environment == "development" || cfg.AllowDevCors {
+			allowOrigins = []string{"*"}
+		} else {
+			allowOrigins = []string{"none"}
+		}
 	}
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		Skipper:      wsSkipper,
-		AllowOrigins: []string{origins},
+		AllowOrigins: allowOrigins,
 		AllowMethods: []string{http.MethodGet, http.MethodPost},
 	}))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{

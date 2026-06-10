@@ -17,7 +17,7 @@ func GetHTTPInfo(ctx context.Context, host string) *model.HTTPInfo {
 	}
 
 	start := time.Now()
-	verified := true
+	var verified bool
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 		Transport: &http.Transport{
@@ -46,14 +46,15 @@ func GetHTTPInfo(ctx context.Context, host string) *model.HTTPInfo {
 		if resp != nil {
 			_ = resp.Body.Close()
 		}
-		verified = false // plain HTTP has no TLS to verify
 		targetURL.Scheme = "https"
 		req, err = http.NewRequestWithContext(ctx, "GET", targetURL.String(), nil)
 		if err != nil {
 			return &model.HTTPInfo{Error: err.Error()}
 		}
 		resp, err = client.Do(req)
-		if err != nil {
+		if err == nil {
+			verified = true
+		} else {
 			// If HTTPS also fails (maybe due to invalid cert), we retry with skip verify
 			// but mark it as unverified in the info
 			verified = false
@@ -67,8 +68,12 @@ func GetHTTPInfo(ctx context.Context, host string) *model.HTTPInfo {
 			}
 		}
 	} else {
-		// Plain HTTP succeeded — no TLS, so no certificate was verified
-		verified = false
+		// If HTTP redirected to HTTPS, resp.TLS will be non-nil.
+		if resp != nil && resp.TLS != nil {
+			verified = true
+		} else {
+			verified = false
+		}
 	}
 	defer func() {
 		if resp != nil {

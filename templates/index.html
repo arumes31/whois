@@ -595,18 +595,6 @@
         });
 
         const resultsGrid = document.getElementById('resultsGrid');
-        resultsGrid.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            const draggable = document.querySelector('.dragging');
-            if (!draggable) return;
-
-            const afterElement = getDragAfterElement(resultsGrid, e.clientX, e.clientY);
-            if (afterElement == null) {
-                resultsGrid.appendChild(draggable);
-            } else {
-                resultsGrid.insertBefore(draggable, afterElement);
-            }
-        });
 
         const isIP = (str) => {
             const regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
@@ -1026,6 +1014,26 @@
         Prism.highlightAllUnder(section);
     }
 
+    function fallbackCopy(text, onSuccess) {
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.select();
+            const successful = document.execCommand('copy');
+            document.body.removeChild(textArea);
+            if (successful) {
+                if (onSuccess) onSuccess();
+            } else {
+                console.error('Fallback copy command was unsuccessful');
+            }
+        } catch (err) {
+            console.error('Fallback copy failed:', err);
+        }
+    }
+
     function exportToCSV() {
         const cards = document.querySelectorAll('.result-card');
         if (cards.length === 0) return;
@@ -1061,8 +1069,19 @@
 
     function copyAllJSON() {
         const data = getAllResultsData();
-        navigator.clipboard.writeText(JSON.stringify(data, null, 2));
-        alert("All results copied to clipboard as JSON");
+        const jsonStr = JSON.stringify(data, null, 2);
+        const onSuccess = () => {
+            alert("All results copied to clipboard as JSON");
+        };
+
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(jsonStr).then(onSuccess).catch(err => {
+                console.warn('Clipboard API failed for copyAllJSON, using fallback:', err);
+                fallbackCopy(jsonStr, onSuccess);
+            });
+        } else {
+            fallbackCopy(jsonStr, onSuccess);
+        }
     }
 
     function getAllResultsData() {
@@ -1301,7 +1320,7 @@
                             <span class="small fw-bold text-info">${date}</span>
                             <span class="badge bg-nordic-blue-dim text-nordic-blue" style="font-size:0.6rem">LOG</span>
                         </div>
-                        <pre class="mb-0 text-white font-monospace" style="font-size: 0.65rem; max-height: 150px; overflow-y: auto; white-space: pre-wrap;"><code>${JSON.stringify(parsedResult, null, 2)}</code></pre>
+                        <pre class="mb-0 text-white font-monospace" style="font-size: 0.65rem; max-height: 150px; overflow-y: auto; white-space: pre-wrap;"><code>${escapeHTML(JSON.stringify(parsedResult, null, 2))}</code></pre>
                     </div>`;
             });
 
@@ -1320,6 +1339,23 @@
     document.getElementById('cfg-portscan').addEventListener('change', (e) => {
         document.getElementById('portsInputWrapper').style.display = e.target.checked ? 'block' : 'none';
     });
+
+    // Register dragover event once globally for resultsGrid
+    const resultsGridElement = document.getElementById('resultsGrid');
+    if (resultsGridElement) {
+        resultsGridElement.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const draggable = document.querySelector('.dragging');
+            if (!draggable) return;
+
+            const afterElement = getDragAfterElement(resultsGridElement, e.clientX, e.clientY);
+            if (afterElement == null) {
+                resultsGridElement.appendChild(draggable);
+            } else {
+                resultsGridElement.insertBefore(draggable, afterElement);
+            }
+        });
+    }
 </script>
 
 {{ template "footer" . }}
