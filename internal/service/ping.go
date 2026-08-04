@@ -15,10 +15,12 @@ var PingCommandRunner = func(ctx context.Context, name string, args ...string) *
 }
 
 func Ping(ctx context.Context, target string, count int, callback func(string)) {
-	if !utils.IsValidTarget(target) {
-		callback("Error: invalid target for ping")
+	resolvedTarget, err := utils.ResolveValidatedTarget(ctx, target)
+	if err != nil {
+		callback("Error: invalid or disallowed target for ping: " + err.Error())
 		return
 	}
+	target = resolvedTarget
 
 	countStr := fmt.Sprintf("%d", count)
 	var cmd *exec.Cmd
@@ -29,7 +31,11 @@ func Ping(ctx context.Context, target string, count int, callback func(string)) 
 		cmd = PingCommandRunner(ctx, "ping", "-c", countStr, target)
 	}
 
-	stdout, _ := cmd.StdoutPipe()
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		callback(fmt.Sprintf("Error: %v", err))
+		return
+	}
 	if err := cmd.Start(); err != nil {
 		callback(fmt.Sprintf("Error: %v", err))
 		return
@@ -40,5 +46,7 @@ func Ping(ctx context.Context, target string, count int, callback func(string)) 
 		callback(scanner.Text())
 	}
 
-	_ = cmd.Wait()
+	if err := cmd.Wait(); err != nil && ctx.Err() == nil {
+		callback("Error: ping failed: " + err.Error())
+	}
 }

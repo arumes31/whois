@@ -79,14 +79,19 @@ func openTLS(ctx context.Context, host, port string, insecure bool, minVersion, 
 		return nil, false, "", err
 	}
 	conf := &tls.Config{
+		// #nosec G402 -- the fallback intentionally inspects untrusted endpoints and reports Verified=false.
 		ServerName: host, InsecureSkipVerify: insecure, MinVersion: minVersion, MaxVersion: maxVersion,
 		NextProtos: []string{"h2", "http/1.1"},
 	}
 	conn := tls.Client(rawConn, conf)
-	if err := conn.HandshakeContext(ctx); err != nil {
+	handshakeCtx, cancel := context.WithTimeout(ctx, tlsTimeout)
+	defer cancel()
+	_ = rawConn.SetDeadline(time.Now().Add(tlsTimeout))
+	if err := conn.HandshakeContext(handshakeCtx); err != nil {
 		_ = rawConn.Close()
 		return nil, false, err.Error(), fmt.Errorf("tls handshake: %w", err)
 	}
+	_ = rawConn.SetDeadline(time.Time{})
 	return conn, !insecure, "", nil
 }
 
@@ -199,6 +204,9 @@ func scoreTLS(info *model.SSLInfo, leaf *x509.Certificate, cipherSuite uint16) (
 	}
 	if !info.OCSPStapled && len(leaf.OCSPServer) > 0 {
 		addIssue(3, "OCSP response is not stapled")
+	}
+	if info.OCSPStatus == "revoked" {
+		addIssue(100, "certificate has been revoked")
 	}
 	if score < 0 {
 		score = 0

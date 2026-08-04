@@ -3,16 +3,15 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 
+	"whois/internal/service"
 	"whois/internal/utils"
 
 	"golang.org/x/mod/semver"
@@ -169,13 +168,13 @@ func TestV2Integration(t *testing.T) {
 			}
 		})
 
-		t.Run("GoCIGoVersion126", func(t *testing.T) {
+		t.Run("GoCIVersionMatchesModule", func(t *testing.T) {
 			data, err := os.ReadFile(".github/workflows/go-ci.yml")
 			if err != nil {
 				t.Fatalf("failed to read .github/workflows/go-ci.yml: %v", err)
 			}
-			if !strings.Contains(string(data), "go-version: '1.26'") {
-				t.Error("expected .github/workflows/go-ci.yml to use go-version: '1.26' (version consistency), but it was not found")
+			if !strings.Contains(string(data), "go-version-file: go.mod") {
+				t.Error("expected .github/workflows/go-ci.yml to derive its Go version from go.mod")
 			}
 		})
 	})
@@ -346,14 +345,23 @@ func TestV2Integration(t *testing.T) {
 	// =========================================================================
 	t.Run("FunctionalValidation", func(t *testing.T) {
 		t.Run("HTTPServicePlainHTTPVerifiedFalse", func(t *testing.T) {
-			data, err := os.ReadFile("internal/service/http.go")
-			if err != nil {
-				t.Fatalf("failed to read internal/service/http.go: %v", err)
+			allowPrivateIPs := utils.GetAllowPrivateIPs()
+			utils.SetAllowPrivateIPs(true)
+			defer utils.SetAllowPrivateIPs(allowPrivateIPs)
+			utils.SetAllowLoopbackIPs(true)
+			defer utils.SetAllowLoopbackIPs(false)
+
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+
+			info := service.GetHTTPInfo(context.Background(), strings.TrimPrefix(server.URL, "http://"))
+			if info.Error != "" {
+				t.Fatalf("plain HTTP probe failed: %s", info.Error)
 			}
-			content := string(data)
-			// When plain HTTP succeeds, verified should be set to false
-			if !strings.Contains(content, "verified = false") {
-				t.Error("expected internal/service/http.go to set verified = false for plain HTTP connections, but the assignment was not found")
+			if info.Verified {
+				t.Error("plain HTTP connections must not be marked as TLS-verified")
 			}
 		})
 
@@ -368,42 +376,6 @@ func TestV2Integration(t *testing.T) {
 			re := regexp.MustCompile(`Verified:\s+verified,`)
 			if !re.MatchString(content) {
 				t.Error("expected internal/service/ssl.go to set Verified field based on TLS verification result, but 'Verified: verified' was not found")
-			}
-		})
-
-		t.Run("GenerateSessionTokenDifferentFromSimpleHex", func(t *testing.T) {
-			// generateSessionToken uses HMAC-SHA256 which produces different output
-			// than a simple hex encoding of random bytes.
-			// Verify that the function produces deterministic HMAC output
-			// (same input → same output) and that it differs from simple hex.
-			// Note: generateSessionToken is unexported in the handler package,
-			// so we use localGenerateSessionToken which mirrors the exact same
-			// HMAC-SHA256 algorithm verified by the file-content tests above.
-			secretKey := "test-secret-key-v2"
-
-			token := localGenerateSessionToken(secretKey)
-
-			// The output format is: entropyHex (32 chars) + "." + signatureHex (64 chars) = 97 characters
-			if len(token) != 97 {
-				t.Errorf("expected HMAC-SHA256 token to be 97 hex characters long, got %d", len(token))
-			}
-
-			// Verify non-deterministic (unique per call due to per-session entropy)
-			token2 := localGenerateSessionToken(secretKey)
-			if token == token2 {
-				t.Error("expected generateSessionToken to be unique across calls, but two calls with same key produced same output")
-			}
-
-			// Verify different from simple hex encoding of the key itself
-			simpleHex := fmt.Sprintf("%x", secretKey)
-			if token == simpleHex {
-				t.Error("generateSessionToken output should differ from simple hex encoding of the secret key")
-			}
-
-			// Verify different keys produce different tokens
-			token3 := localGenerateSessionToken("different-secret-key")
-			if token == token3 {
-				t.Error("expected different secret keys to produce different HMAC tokens, but they matched")
 			}
 		})
 
@@ -436,22 +408,4 @@ func TestV2Integration(t *testing.T) {
 			utils.SetAllowPrivateIPs(original)
 		})
 	})
-}
-
-// localGenerateSessionToken mirrors the HMAC-SHA256 implementation from
-// internal/handler/handlers.go for functional testing. The unexported
-// generateSessionToken function cannot be called from this test package,
-// so we replicate the exact same algorithm here. The existence and
-// correctness of the original implementation is validated by the
-// file-content tests in the SecurityFixes section above.
-func localGenerateSessionToken(secretKey string) string {
-	entropy := make([]byte, 16)
-	_, _ = rand.Read(entropy)
-	entropyHex := hex.EncodeToString(entropy)
-
-	mac := hmac.New(sha256.New, []byte(secretKey))
-	mac.Write([]byte(entropyHex))
-	signature := hex.EncodeToString(mac.Sum(nil))
-
-	return entropyHex + "." + signature
 }

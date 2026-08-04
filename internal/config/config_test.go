@@ -2,11 +2,11 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
 func TestGetEnv(t *testing.T) {
-	t.Parallel()
 	_ = os.Setenv("TEST_KEY", "test_value")
 	defer func() { _ = os.Unsetenv("TEST_KEY") }()
 
@@ -22,7 +22,6 @@ func TestGetEnv(t *testing.T) {
 }
 
 func TestGetEnvBool(t *testing.T) {
-	t.Parallel()
 	tests := []struct {
 		key      string
 		val      string
@@ -50,7 +49,6 @@ func TestGetEnvBool(t *testing.T) {
 }
 
 func TestLoadConfig(t *testing.T) {
-	t.Parallel()
 	// Test failure without SECRET_KEY
 	_ = os.Unsetenv("SECRET_KEY")
 	_, err := LoadConfig()
@@ -73,6 +71,36 @@ func TestLoadConfig(t *testing.T) {
 
 	if cfg.Port != "5000" { // Default
 		t.Errorf("Expected default port 5000, got %s", cfg.Port)
+	}
+}
+
+func TestLoadConfigRejectsInvalidAndWeakProductionValues(t *testing.T) {
+	t.Setenv("SECRET_KEY", strings.Repeat("s", 32))
+	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("TRUST_PROXY", "definitely")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "TRUST_PROXY") {
+		t.Fatalf("expected named invalid boolean error, got %v", err)
+	}
+
+	t.Setenv("TRUST_PROXY", "false")
+	t.Setenv("PORT_SCAN_CONCURRENCY", "999")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "PORT_SCAN_CONCURRENCY") {
+		t.Fatalf("expected named integer range error, got %v", err)
+	}
+
+	t.Setenv("PORT_SCAN_CONCURRENCY", "32")
+	t.Setenv("TRUST_PROXY", "true")
+	t.Setenv("TRUSTED_PROXIES", "not-a-network")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "TRUSTED_PROXIES") {
+		t.Fatalf("expected trusted proxy range error, got %v", err)
+	}
+
+	t.Setenv("TRUST_PROXY", "false")
+	t.Setenv("ENVIRONMENT", "production")
+	t.Setenv("CONFIG_USER", "admin")
+	t.Setenv("CONFIG_PASS", "admin")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "CONFIG_USER") {
+		t.Fatalf("expected production credential error, got %v", err)
 	}
 }
 

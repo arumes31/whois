@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"sort"
 	"time"
 	"whois/internal/model"
@@ -30,6 +31,8 @@ type RedisClient interface {
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
 	Incr(ctx context.Context, key string) *redis.IntCmd
 	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+	SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
+	SCard(ctx context.Context, key string) *redis.IntCmd
 }
 
 type Storage struct {
@@ -38,7 +41,7 @@ type Storage struct {
 
 func NewStorage(host, port string) *Storage {
 	rdb := redis.NewClient(&redis.Options{
-		Addr: host + ":" + port,
+		Addr: net.JoinHostPort(host, port),
 		DB:   0,
 	})
 	return &Storage{Client: rdb}
@@ -128,6 +131,9 @@ type HistoryMetadata struct {
 }
 
 func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interface{}) error {
+	if err := s.Client.SAdd(ctx, "dns_history_targets", item).Err(); err != nil {
+		return fmt.Errorf("track DNS history target: %w", err)
+	}
 	// Normalize input data before saving to ensure consistent comparison
 	// Marshal and Unmarshal to ensure we have a generic interface{} structure to normalize
 	resBytes, _ := json.Marshal(result)
@@ -187,19 +193,19 @@ type SystemStats struct {
 }
 
 func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
-	monitored, _ := s.GetMonitoredItems(ctx)
-
-	// Count total history entries using SCAN for performance
-	count := 0
-	iter := s.Client.Scan(ctx, 0, "dns_history:*", 0).Iterator()
-	for iter.Next(ctx) {
-		count++
+	monitored, err := s.GetMonitoredItems(ctx)
+	if err != nil {
+		return SystemStats{}, fmt.Errorf("read monitored items: %w", err)
+	}
+	historyCount, err := s.Client.SCard(ctx, "dns_history_targets").Result()
+	if err != nil {
+		return SystemStats{}, fmt.Errorf("count DNS history targets: %w", err)
 	}
 
-	utils.Log.Debug("redis stats gathered", utils.Field("monitored", len(monitored)), utils.Field("history", count))
+	utils.Log.Debug("redis stats gathered", utils.Field("monitored", len(monitored)), utils.Field("history", historyCount))
 	return SystemStats{
 		MonitoredCount: len(monitored),
-		HistoryCount:   count,
+		HistoryCount:   int(historyCount),
 	}, nil
 }
 

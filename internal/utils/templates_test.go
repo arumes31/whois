@@ -3,6 +3,7 @@ package utils
 import (
 	"bytes"
 	"html/template"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -58,7 +59,7 @@ func TestIsValidTarget(t *testing.T) {
 		{"sub-domain.example.co.uk", false, true},
 		{"invalid_chars!", false, false},
 		{"localhost", false, false},
-		{"127.0.0.1", true, true},
+		{"127.0.0.1", true, false},
 		{"127.0.0.1", false, false},
 		{"10.0.0.1", false, false},
 		{"192.168.1.1", false, false},
@@ -78,6 +79,11 @@ func TestIsValidTarget(t *testing.T) {
 			t.Errorf("IsValidTarget(%s, allowPrivate=%v) = %v; want %v", tt.input, tt.allowPrivate, res, tt.expected)
 		}
 	}
+	SetAllowLoopbackIPs(true)
+	if !IsValidTarget("127.0.0.1") {
+		t.Error("explicit loopback opt-in should allow loopback targets")
+	}
+	SetAllowLoopbackIPs(false)
 }
 
 func TestIsValidMAC(t *testing.T) {
@@ -126,23 +132,25 @@ func TestExtractIP(t *testing.T) {
 	t.Parallel()
 	e := echo.New()
 
-	t.Run("Cloudflare", func(t *testing.T) {
+	t.Run("UnconfiguredCloudflareHeader", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("CF-Connecting-IP", "1.1.1.1")
 		c := e.NewContext(req, nil)
 		cfg := ProxyConfig{UseCloudflare: true}
-		if ip := ExtractIP(c, cfg); ip != "1.1.1.1" {
-			t.Errorf("Expected 1.1.1.1, got %s", ip)
+		if ip := ExtractIP(c, cfg); ip != "192.0.2.1" {
+			t.Errorf("expected direct peer without a configured extractor, got %s", ip)
 		}
 	})
 
 	t.Run("TrustProxy", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("X-Forwarded-For", "2.2.2.2, 3.3.3.3")
+		_, trustedProxy, _ := net.ParseCIDR("192.0.2.0/24")
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(echo.TrustIPRange(trustedProxy))
 		c := e.NewContext(req, nil)
 		cfg := ProxyConfig{TrustProxy: true}
-		if ip := ExtractIP(c, cfg); ip != "2.2.2.2" {
-			t.Errorf("Expected 2.2.2.2, got %s", ip)
+		if ip := ExtractIP(c, cfg); ip != "3.3.3.3" {
+			t.Errorf("expected the nearest untrusted forwarded hop 3.3.3.3, got %s", ip)
 		}
 	})
 

@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -114,14 +115,6 @@ func (s *DNSService) SetMaxAttempts(attempts int) {
 	s.mu.Unlock()
 }
 
-func (s *DNSService) getNextResolver() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	res := s.Resolvers[s.currentIndex]
-	s.currentIndex = (s.currentIndex + 1) % len(s.Resolvers)
-	return res
-}
-
 func (s *DNSService) resolverCandidates() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -168,6 +161,18 @@ func (s *DNSService) recordResolverResult(resolver string, err error) {
 func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 5) // Limit to 5 concurrent queries per target
+	var resultMu sync.Mutex
+	var queryErrors []error
+	successfulQueries := 0
+	recordResult := func(name string, err error) {
+		resultMu.Lock()
+		defer resultMu.Unlock()
+		if err != nil {
+			queryErrors = append(queryErrors, fmt.Errorf("%s lookup: %w", name, err))
+			return
+		}
+		successfulQueries++
+	}
 
 	if isIP {
 		// Reverse Lookup
@@ -183,10 +188,9 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 			}
 
 			r, err := s.query(ctx, target, dns.TypePTR, true)
+			recordResult("PTR", err)
 			if err == nil && len(r) > 0 {
 				callback("PTR", r)
-			} else {
-				callback("PTR", []string{})
 			}
 		}()
 	} else {
@@ -214,6 +218,7 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 				}
 
 				r, err := s.query(ctx, target, t, false)
+				recordResult(name, err)
 				if err == nil && len(r) > 0 {
 					callback(name, r)
 
@@ -247,24 +252,43 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 			}
 
 			r, err := s.query(ctx, "_dmarc."+target, dns.TypeTXT, false)
+			recordResult("DMARC", err)
 			if err == nil && len(r) > 0 {
 				callback("DMARC", r)
-			}
-		}()
-
-		// Well-known subdomains (run concurrently with other lookups)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			res := s.DiscoverSubdomains(ctx, target, nil)
-			if len(res) > 0 {
-				callback("Subdomains", res)
 			}
 		}()
 	}
 
 	wg.Wait()
+	resultMu.Lock()
+	defer resultMu.Unlock()
+	if successfulQueries == 0 && len(queryErrors) > 0 {
+		return fmt.Errorf("dns lookup failed: %w", errors.Join(queryErrors...))
+	}
 	return nil
+}
+
+// LookupType resolves exactly one supported DNS record type. It is used by the
+// focused lookup tool so a single A query does not fan out into a full profile.
+func (s *DNSService) LookupType(ctx context.Context, target, recordType string, isIP bool) ([]string, error) {
+	recordType = strings.ToUpper(strings.TrimSpace(recordType))
+	types := map[string]uint16{
+		"A": dns.TypeA, "AAAA": dns.TypeAAAA, "CNAME": dns.TypeCNAME,
+		"NS": dns.TypeNS, "TXT": dns.TypeTXT, "MX": dns.TypeMX,
+		"CAA": dns.TypeCAA, "SOA": dns.TypeSOA, "SRV": dns.TypeSRV,
+		"DS": dns.TypeDS, "DNSKEY": dns.TypeDNSKEY, "PTR": dns.TypePTR,
+	}
+	queryType, ok := types[recordType]
+	if !ok {
+		return nil, fmt.Errorf("unsupported DNS record type %q", recordType)
+	}
+	if isIP != (queryType == dns.TypePTR) {
+		if isIP {
+			return nil, fmt.Errorf("only PTR lookups apply to IP addresses")
+		}
+		return nil, fmt.Errorf("PTR lookups require an IP address")
+	}
+	return s.query(ctx, target, queryType, isIP)
 }
 
 // DiscoverSubdomains performs a brute-force search for common subdomains

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"whois/internal/utils"
@@ -140,6 +141,111 @@ func TestDNSService_LookupStream(t *testing.T) {
 	_ = s.LookupStream(context.Background(), "8.8.8.8", true, func(rtype string, data interface{}) {
 		count++
 	})
+}
+
+func TestDNSService_LookupStreamDoesNotDiscoverSubdomains(t *testing.T) {
+	var queryCount atomic.Int32
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		queryCount.Add(1)
+		response := new(dns.Msg)
+		response.SetReply(request)
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	if err := service.LookupStream(context.Background(), "example.com", false, func(string, interface{}) {}); err != nil {
+		t.Fatalf("LookupStream failed: %v", err)
+	}
+	const recordQueries = 12 // Eleven standard record types plus DMARC.
+	if got := queryCount.Load(); got != recordQueries {
+		t.Fatalf("LookupStream made %d DNS queries, want %d without subdomain discovery", got, recordQueries)
+	}
+}
+
+func TestDNSServiceLookupTypeQueriesOnlyRequestedType(t *testing.T) {
+	var queryCount atomic.Int32
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		queryCount.Add(1)
+		response := new(dns.Msg)
+		response.SetReply(request)
+		if request.Question[0].Qtype == dns.TypeAAAA {
+			response.Answer = append(response.Answer, &dns.AAAA{
+				Hdr:  dns.RR_Header{Name: request.Question[0].Name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60},
+				AAAA: net.ParseIP("2001:db8::1"),
+			})
+		}
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	records, err := service.LookupType(context.Background(), "example.com", "aaaa", false)
+	if err != nil {
+		t.Fatalf("LookupType failed: %v", err)
+	}
+	if len(records) != 1 || records[0] != "2001:db8::1" {
+		t.Fatalf("LookupType returned %v", records)
+	}
+	if got := queryCount.Load(); got != 1 {
+		t.Fatalf("LookupType made %d queries, want 1", got)
+	}
+	if _, err := service.LookupType(context.Background(), "example.com", "BOGUS", false); err == nil {
+		t.Fatal("LookupType accepted an unsupported record type")
+	}
+}
+
+func TestDNSService_LookupStreamReturnsAggregateFailure(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		response.SetRcode(request, dns.RcodeServerFailure)
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	err := service.LookupStream(context.Background(), "example.com", false, func(string, interface{}) {})
+	if err == nil {
+		t.Fatal("LookupStream returned nil after every resolver query failed")
+	}
+	if !strings.Contains(err.Error(), "A lookup") || !strings.Contains(err.Error(), "DMARC lookup") {
+		t.Fatalf("aggregate error did not preserve individual lookup failures: %v", err)
+	}
+}
+
+func TestDNSService_LookupStreamPreservesPartialResults(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		if request.Question[0].Qtype == dns.TypeA {
+			response.SetReply(request)
+			response.Answer = append(response.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: request.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+				A:   net.ParseIP("203.0.113.10"),
+			})
+		} else {
+			response.SetRcode(request, dns.RcodeServerFailure)
+		}
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	gotA := false
+	err := service.LookupStream(context.Background(), "example.com", false, func(recordType string, _ interface{}) {
+		if recordType == "A" {
+			gotA = true
+		}
+	})
+	if err != nil {
+		t.Fatalf("LookupStream rejected a partial success: %v", err)
+	}
+	if !gotA {
+		t.Fatal("LookupStream did not emit its successful A result")
+	}
 }
 
 func TestDNSService_DiscoverSubdomainsStream(t *testing.T) {

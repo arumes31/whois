@@ -14,7 +14,12 @@ func init() {
 
 func TestWhois(t *testing.T) {
 	oldWhois := WhoisFunc
-	defer func() { WhoisFunc = oldWhois }()
+	oldValidator := WhoisServerValidator
+	defer func() {
+		WhoisFunc = oldWhois
+		WhoisServerValidator = oldValidator
+	}()
+	WhoisServerValidator = func(context.Context, string) error { return nil }
 
 	WhoisFunc = func(target string, query ...string) (string, error) {
 		if target == "" {
@@ -88,10 +93,13 @@ func TestRDAPLookup(t *testing.T) {
 func TestWhois_Mocked(t *testing.T) {
 	oldWhois := WhoisFunc
 	oldRdap := RdapLookupFunc
+	oldValidator := WhoisServerValidator
 	defer func() {
 		WhoisFunc = oldWhois
 		RdapLookupFunc = oldRdap
+		WhoisServerValidator = oldValidator
 	}()
+	WhoisServerValidator = func(context.Context, string) error { return nil }
 
 	t.Run("Error Response Fallback", func(t *testing.T) {
 		WhoisFunc = func(target string, query ...string) (string, error) {
@@ -208,4 +216,12 @@ func TestWhois_Mocked(t *testing.T) {
 			t.Errorf("Expected RDAP fallback on referral failure, got %v", res)
 		}
 	})
+}
+
+func TestValidateWhoisServerRejectsPrivateAddress(t *testing.T) {
+	for _, server := range []string{"127.0.0.1", "[::1]:43", "http://127.0.0.1:43"} {
+		if err := validateWhoisServer(context.Background(), server); err == nil {
+			t.Errorf("validateWhoisServer(%q) accepted a private referral", server)
+		}
+	}
 }

@@ -2,10 +2,10 @@ package service
 
 import (
 	"context"
-	"fmt"
-	"net/http"
-	"os"
+	"errors"
+	"sync"
 	"testing"
+	"time"
 	"whois/internal/storage"
 	"whois/internal/utils"
 
@@ -36,19 +36,6 @@ func TestNewScheduler(t *testing.T) {
 	}
 }
 
-func TestDownloadBackground(t *testing.T) {
-	t.Parallel()
-	// Create static dir if not exists
-	_ = os.MkdirAll("static", 0755)
-
-	// This makes an actual network call, but we can test it
-	DownloadBackground()
-
-	if _, err := os.Stat("static/background.jpg"); os.IsNotExist(err) {
-		t.Log("Background image not downloaded (expected if offline)")
-	}
-}
-
 func TestScheduler_Start(t *testing.T) {
 	sched := NewScheduler(nil, "", "")
 	sched.Start()
@@ -58,48 +45,71 @@ func TestScheduler_Start(t *testing.T) {
 func TestScheduler_RunMonitorJob(t *testing.T) {
 	s := setupMiniredis(t) // Need miniredis for storage
 	sched := NewScheduler(s, "", "")
+	dns := &monitorDNSStub{result: map[string]interface{}{"A": []string{"192.0.2.1"}}}
+	sched.Monitor.DNS = dns
+	sched.JobTimeout = time.Second
+	sched.MaxConcurrency = 2
 
 	// Test empty items
 	sched.RunMonitorJob()
 
 	// Test with items
-	_ = s.AddMonitoredItem(context.Background(), "google.com")
+	_ = s.AddMonitoredItem(context.Background(), "example.com")
+	_ = s.AddMonitoredItem(context.Background(), "example.com")
 	sched.RunMonitorJob() // blocks until all goroutines complete (wg.Wait inside)
+	if dns.Calls() != 1 {
+		t.Fatalf("expected duplicate monitored targets to run once, got %d calls", dns.Calls())
+	}
+	history, err := s.GetDNSHistory(context.Background(), "example.com")
+	if err != nil || len(history) != 1 {
+		t.Fatalf("expected one stored DNS result, got %d entries and error %v", len(history), err)
+	}
 
 	// Test error branch (closed storage)
-	badStorage := &storage.Storage{Client: redis.NewClient(&redis.Options{Addr: "localhost:1"})}
+	badStorage := &storage.Storage{Client: redis.NewClient(&redis.Options{
+		Addr:        "localhost:1",
+		DialTimeout: 10 * time.Millisecond,
+		ReadTimeout: 10 * time.Millisecond,
+	})}
 	schedBad := NewScheduler(badStorage, "", "")
+	schedBad.JobTimeout = 50 * time.Millisecond
 	schedBad.RunMonitorJob()
 }
 
-func TestDownloadBackground_Errors(t *testing.T) {
-	// 1. Trigger os.Create error by using a path that is actually a directory
-	_ = os.MkdirAll("static/background.jpg", 0755)
-	DownloadBackground()
-	_ = os.RemoveAll("static/background.jpg")
+type monitorDNSStub struct {
+	mu     sync.Mutex
+	result map[string]interface{}
+	err    error
+	calls  int
+}
 
-	// 3. Trigger io.Copy error
-	BackgroundHTTPClient = &http.Client{
-		Transport: &faultyTransport{},
+func (s *monitorDNSStub) Lookup(context.Context, string, bool) (map[string]interface{}, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
 	}
-	DownloadBackground()
+	return s.result, nil
 }
 
-type faultyTransport struct{}
-
-func (t *faultyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Body:       &faultyBody{},
-	}, nil
+func (s *monitorDNSStub) Calls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.calls
 }
 
-type faultyBody struct{}
+func TestMonitorService_RunCheckFailureDoesNotStoreHistory(t *testing.T) {
+	store := setupMiniredis(t)
+	monitor := NewMonitorService(store, "", "")
+	monitor.DNS = &monitorDNSStub{err: errors.New("resolver unavailable")}
 
-func (b *faultyBody) Read(p []byte) (n int, err error) {
-	return 0, fmt.Errorf("faulty read")
-}
-
-func (b *faultyBody) Close() error {
-	return nil
+	monitor.RunCheck(context.Background(), "example.com")
+	history, err := store.GetDNSHistory(context.Background(), "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("failed DNS checks must not be stored as successful history: %#v", history)
+	}
 }

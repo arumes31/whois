@@ -5,7 +5,11 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"mime/multipart"
@@ -13,6 +17,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +69,44 @@ func setupMiniredisStorage(t *testing.T) *storage.Storage {
 	return &storage.Storage{Client: client}
 }
 
+func TestIndexRejectsExcessiveTargetsBeforeLaunchingWork(t *testing.T) {
+	e, _ := setupTestEcho()
+	store := setupMiniredisStorage(t)
+	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 2, MaxServiceConcurrency: 2})
+	targets := make([]string, maxQueryTargets+1)
+	for i := range targets {
+		targets[i] = fmt.Sprintf("host-%d.example.com", i)
+	}
+	form := url.Values{"ips_and_domains": []string{strings.Join(targets, ",")}}
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+	err := h.Index(e.NewContext(req, httptest.NewRecorder()))
+	httpError, ok := err.(*echo.HTTPError)
+	if !ok || httpError.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("Index error = %v, want HTTP 413", err)
+	}
+}
+
+func TestExportCSVIsDeterministicAndFormulaSafe(t *testing.T) {
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	h := &Handler{}
+	results := map[string]model.QueryResult{
+		"b.example.com": {Whois: "=HYPERLINK(\"bad\")"},
+		"a.example.com": {DNS: model.DNSResult{"A": []string{"192.0.2.1"}}},
+	}
+	if err := h.exportCSV(e.NewContext(httptest.NewRequest(http.MethodGet, "/", nil), recorder), results); err != nil {
+		t.Fatal(err)
+	}
+	body := recorder.Body.String()
+	if strings.Index(body, "a.example.com") > strings.Index(body, "b.example.com") {
+		t.Fatalf("CSV rows are not sorted: %s", body)
+	}
+	if !strings.Contains(body, "'=HYPERLINK") {
+		t.Fatalf("CSV formula was not escaped: %s", body)
+	}
+}
+
 type mockGeoTransport struct{}
 
 func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -85,7 +128,7 @@ func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 func TestHandlers(t *testing.T) {
 	e, _ := setupTestEcho()
-	cfg := &config.Config{SecretKey: "test", DNSResolver: "8.8.8.8:53", EnableDNS: true, EnableGeo: true}
+	cfg := &config.Config{SecretKey: "test", EnableDNS: true, EnableGeo: true}
 	store := setupMiniredisStorage(t)
 	h := NewHandler(store, cfg)
 
@@ -282,6 +325,19 @@ func TestHandlers(t *testing.T) {
 		_ = h.Health(c)
 	})
 
+	t.Run("Liveness Does Not Depend On Redis", func(t *testing.T) {
+		badStore := storage.NewStorage("localhost", "1")
+		badH := NewHandler(badStore, cfg)
+		req := httptest.NewRequest(http.MethodGet, "/livez", nil)
+		rec := httptest.NewRecorder()
+		if err := badH.Liveness(e.NewContext(req, rec)); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusOK {
+			t.Fatalf("liveness returned %d", rec.Code)
+		}
+	})
+
 	t.Run("Health Error", func(t *testing.T) {
 		badStore := storage.NewStorage("localhost", "1")
 		badH := NewHandler(badStore, cfg)
@@ -403,7 +459,10 @@ func TestHandlers(t *testing.T) {
 		_ = os.Setenv("SECRET_KEY", "test")
 
 		// Compute the expected HMAC-SHA256 session token
-		expected := generateSessionToken("test")
+		expected, err := generateSessionToken("test")
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		tests := []struct {
 			name   string
@@ -426,6 +485,18 @@ func TestHandlers(t *testing.T) {
 			if rec.Code != tt.code {
 				t.Errorf("%s: expected %d, got %d", tt.name, tt.code, rec.Code)
 			}
+		}
+	})
+
+	t.Run("Session Token Expiry", func(t *testing.T) {
+		const secret = "test"
+		issuedAt := strconv.FormatInt(time.Now().Add(-sessionTTL-time.Minute).Unix(), 10)
+		payload := strings.Repeat("a", 32) + "." + issuedAt
+		mac := hmac.New(sha256.New, []byte(secret))
+		_, _ = mac.Write([]byte(payload))
+		token := payload + "." + hex.EncodeToString(mac.Sum(nil))
+		if validateSessionToken(token, secret) {
+			t.Fatal("expired session token was accepted")
 		}
 	})
 

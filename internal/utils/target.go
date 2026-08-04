@@ -244,14 +244,26 @@ func ValidateResolvedHost(ctx context.Context, host string) ([]net.IPAddr, error
 			return nil, fmt.Errorf("target resolved to an invalid address")
 		}
 		meta := classifyIP(addr)
-		if !GetAllowPrivateIPs() && meta.IsBogon {
-			return nil, fmt.Errorf("target resolves to disallowed %s address", meta.Scope)
-		}
-		if meta.IsMulticast || meta.IsUnspecified {
+		if !addressAllowed(meta) {
 			return nil, fmt.Errorf("target resolves to disallowed %s address", meta.Scope)
 		}
 	}
 	return addresses, nil
+}
+
+// ResolveValidatedTarget returns one validated, numeric address suitable for
+// passing to an operating-system command. Using the numeric address prevents a
+// second DNS lookup from changing the destination after policy validation.
+func ResolveValidatedTarget(ctx context.Context, target string) (string, error) {
+	info := NormalizeTarget(target)
+	if !info.Valid || !info.Networkable || info.Host == "" {
+		return "", fmt.Errorf("invalid target")
+	}
+	addresses, err := ValidateResolvedHost(ctx, info.Host)
+	if err != nil {
+		return "", err
+	}
+	return addresses[0].IP.String(), nil
 }
 
 // DialTarget resolves once, validates every result, then connects to a validated address.
@@ -260,14 +272,38 @@ func DialTarget(ctx context.Context, network, host, port string, timeout time.Du
 	if err != nil {
 		return nil, "", err
 	}
-	dialer := &net.Dialer{Timeout: timeout}
+	return DialResolvedTarget(ctx, network, addresses, port, timeout)
+}
+
+// DialResolvedTarget connects only to a previously validated address snapshot.
+// Keeping resolution separate lets callers such as the port scanner avoid a DNS
+// lookup for every connection while preventing DNS rebinding between attempts.
+func DialResolvedTarget(ctx context.Context, network string, addresses []net.IPAddr, port string, timeout time.Duration) (net.Conn, string, error) {
+	if len(addresses) == 0 {
+		return nil, "", fmt.Errorf("connect target: no validated addresses")
+	}
+	dialCtx := ctx
+	cancel := func() {}
+	if timeout > 0 {
+		dialCtx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
+	dialer := &net.Dialer{}
 	var lastErr error
 	for _, address := range addresses {
-		conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(address.IP.String(), port))
+		if err := dialCtx.Err(); err != nil {
+			lastErr = err
+			break
+		}
+		conn, dialErr := dialer.DialContext(dialCtx, network, net.JoinHostPort(address.IP.String(), port))
 		if dialErr == nil {
 			return conn, address.IP.String(), nil
 		}
 		lastErr = dialErr
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no connection attempts were made")
 	}
 	return nil, "", fmt.Errorf("connect target: %w", lastErr)
 }

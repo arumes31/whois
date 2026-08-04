@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -38,36 +40,44 @@ func GetHTTPInfo(ctx context.Context, target string) *model.HTTPInfo {
 		return &model.HTTPInfo{Error: "invalid target host"}
 	}
 
-	schemes := []string{"http", "https"}
-	if targetInfo.Scheme != "" {
-		schemes = []string{targetInfo.Scheme}
-	}
 	hostPort := targetInfo.Host
 	if targetInfo.Port != "" {
 		hostPort = net.JoinHostPort(targetInfo.Host, targetInfo.Port)
 	}
 
+	type probeCandidate struct {
+		scheme   string
+		insecure bool
+	}
+	candidates := []probeCandidate{{"https", false}, {"https", true}, {"http", false}}
+	switch targetInfo.Scheme {
+	case "https":
+		candidates = candidates[:2]
+	case "http":
+		candidates = candidates[2:]
+	}
 	var probe *httpProbe
 	var err error
-	for _, scheme := range schemes {
-		probe, err = doHTTPProbe(ctx, scheme+"://"+hostPort, false)
-		if err == nil && probe.response.StatusCode != http.StatusBadRequest {
+	for _, candidate := range candidates {
+		probe, err = doHTTPProbe(ctx, candidate.scheme+"://"+hostPort, candidate.insecure)
+		if err == nil && probe != nil && probe.response != nil {
 			break
 		}
-	}
-	if err != nil || probe == nil || probe.response == nil || probe.response.StatusCode == http.StatusBadRequest {
-		probe, err = doHTTPProbe(ctx, "https://"+hostPort, true)
 	}
 	if err != nil {
 		return &model.HTTPInfo{Error: fmt.Sprintf("http probe failed: %v", err)}
 	}
 
 	resp := probe.response
+	compression := resp.Header.Get("Content-Encoding")
+	if compression == "" && resp.Uncompressed {
+		compression = "gzip"
+	}
 	info := &model.HTTPInfo{
 		Status: resp.Status, Protocol: resp.Proto, Headers: make(map[string]string), Security: make(map[string]string),
 		ResponseTime: probe.timing.Total, IP: probe.remoteIP, Verified: probe.verified,
 		FinalURL: resp.Request.URL.String(), Redirects: probe.redirects, Timing: probe.timing,
-		Compression: resp.Header.Get("Content-Encoding"), ContentType: resp.Header.Get("Content-Type"),
+		Compression: compression, ContentType: resp.Header.Get("Content-Type"),
 		ContentLength: resp.ContentLength, Server: resp.Header.Get("Server"), PoweredBy: resp.Header.Get("X-Powered-By"),
 		DirectoryListing: looksLikeDirectoryListing(probe.body),
 	}
@@ -121,7 +131,6 @@ func doHTTPProbe(ctx context.Context, targetURL string, insecure bool) (*httpPro
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Accept-Encoding", "gzip, br")
 	req.Header.Set("User-Agent", "whois-diagnostics/1.0")
 
 	transport := safeHTTPTransport(insecure)
@@ -193,10 +202,19 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 	for _, header := range headers {
 		value, status := resp.Header.Get(header.name), "pass"
 		legacy[header.name] = value
-		if value == "" {
+		if header.name == "Strict-Transport-Security" && resp.Request.URL.Scheme != "https" {
+			status = "not-applicable"
+			if value == "" {
+				legacy[header.name] = "Not applicable on HTTP"
+			}
+		} else if value == "" {
 			legacy[header.name], status = "Not Set", "missing"
 			score -= 10
 			issues = append(issues, header.name+" is not set")
+		} else if problem := invalidSecurityHeader(header.name, value); problem != "" {
+			status = "warning"
+			score -= 8
+			issues = append(issues, problem)
 		}
 		checks = append(checks, model.SecurityCheck{Name: header.name, Status: status, Value: value, Guidance: header.guidance})
 	}
@@ -205,7 +223,7 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 		issues = append(issues, "content security policy allows unsafe script execution")
 		checks = append(checks, model.SecurityCheck{Name: "CSP quality", Status: "warning", Value: csp, Guidance: "remove unsafe-inline and unsafe-eval where possible"})
 	}
-	if resp.Request.URL.Scheme == "https" && strings.Contains(strings.ToLower(body), "http://") {
+	if resp.Request.URL.Scheme == "https" && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") && mixedContentPattern.MatchString(body) {
 		score -= 8
 		issues = append(issues, "response may contain mixed HTTP content")
 	}
@@ -227,6 +245,39 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 		score = 0
 	}
 	return checks, legacy, issues, score
+}
+
+var mixedContentPattern = regexp.MustCompile(`(?i)(?:src|href)\s*=\s*["']http://`)
+
+func invalidSecurityHeader(name, value string) string {
+	lower := strings.ToLower(strings.TrimSpace(value))
+	switch name {
+	case "Strict-Transport-Security":
+		for _, directive := range strings.Split(lower, ";") {
+			key, raw, found := strings.Cut(strings.TrimSpace(directive), "=")
+			if key != "max-age" || !found {
+				continue
+			}
+			seconds, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+			if err == nil && seconds > 0 {
+				return ""
+			}
+		}
+		return "Strict-Transport-Security has no positive max-age"
+	case "X-Content-Type-Options":
+		if lower != "nosniff" {
+			return "X-Content-Type-Options must be nosniff"
+		}
+	case "X-Frame-Options":
+		if lower != "deny" && lower != "sameorigin" {
+			return "X-Frame-Options must be DENY or SAMEORIGIN"
+		}
+	case "Content-Security-Policy":
+		if !strings.Contains(lower, "default-src") {
+			return "Content-Security-Policy should define default-src"
+		}
+	}
+	return ""
 }
 
 func inspectCookies(cookies []*http.Cookie) []model.CookieInfo {

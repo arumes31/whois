@@ -14,7 +14,7 @@ jobs:
         with:
           package-name: 'whois'
           package-type: 'container'
-          min-versions-to-keep: 0
-          # Protect specific tags and also long SHA tags often used for internal tracking
-          ignore-versions: '^(latest|main|v1|v2|test)$'
-          delete-only-untagged-versions: 'false'
+          # Tagged versions include releases, deployment SHA tags, latest, and test.
+          # Delete only untagged versions and retain a rollback window.
+          min-versions-to-keep: 10
+          delete-only-untagged-versions: 'true'

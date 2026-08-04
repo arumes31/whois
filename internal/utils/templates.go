@@ -4,8 +4,10 @@ import (
 	"html/template"
 	"io"
 	"net"
+	"net/netip"
 	"strings"
 	"sync/atomic"
+	"whois/internal/model"
 
 	"github.com/labstack/echo/v4"
 )
@@ -25,7 +27,11 @@ func IsIP(val interface{}) bool {
 	return false
 }
 
-var allowPrivateIPs int32
+var (
+	allowPrivateIPs   int32
+	allowLoopbackIPs  int32
+	allowLinkLocalIPs int32
+)
 
 func SetAllowPrivateIPs(v bool) {
 	if v {
@@ -39,6 +45,49 @@ func GetAllowPrivateIPs() bool {
 	return atomic.LoadInt32(&allowPrivateIPs) == 1
 }
 
+func SetAllowLoopbackIPs(v bool) {
+	if v {
+		atomic.StoreInt32(&allowLoopbackIPs, 1)
+	} else {
+		atomic.StoreInt32(&allowLoopbackIPs, 0)
+	}
+}
+
+func SetAllowLinkLocalIPs(v bool) {
+	if v {
+		atomic.StoreInt32(&allowLinkLocalIPs, 1)
+	} else {
+		atomic.StoreInt32(&allowLinkLocalIPs, 0)
+	}
+}
+
+func addressAllowed(meta model.IPMetadata) bool {
+	if meta.IsMulticast || meta.IsUnspecified || meta.IsDocumentation || meta.IsCGNAT || meta.IsReserved {
+		return false
+	}
+	if meta.IsLoopback {
+		return atomic.LoadInt32(&allowLoopbackIPs) == 1
+	}
+	if meta.IsLinkLocal {
+		return atomic.LoadInt32(&allowLinkLocalIPs) == 1
+	}
+	return !meta.IsPrivate || GetAllowPrivateIPs()
+}
+
+// IsPublicIP reports whether ip is safe for infrastructure-selected outbound
+// connections. Unlike user target policy, this deliberately ignores the
+// ALLOW_* overrides so remote referrals can never opt into internal networks.
+func IsPublicIP(ip net.IP) bool {
+	addr, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	meta := classifyIP(addr.Unmap())
+	return !meta.IsPrivate && !meta.IsLoopback && !meta.IsLinkLocal &&
+		!meta.IsMulticast && !meta.IsUnspecified && !meta.IsDocumentation &&
+		!meta.IsCGNAT && !meta.IsReserved && !meta.IsBogon
+}
+
 func IsValidTarget(target string) bool {
 	info := NormalizeTarget(target)
 	if !info.Valid || !info.Networkable {
@@ -48,10 +97,7 @@ func IsValidTarget(target string) bool {
 		return true
 	}
 	meta := info.IPs[0]
-	if meta.IsMulticast || meta.IsUnspecified {
-		return false
-	}
-	return GetAllowPrivateIPs() || !meta.IsBogon
+	return addressAllowed(meta)
 }
 
 func IsValidMAC(mac string) bool {
@@ -92,18 +138,14 @@ type ProxyConfig struct {
 }
 
 func ExtractIP(c echo.Context, cfg ProxyConfig) string {
-	if cfg.UseCloudflare {
-		if cfIP := c.Request().Header.Get("CF-Connecting-IP"); cfIP != "" {
-			return cfIP
+	if !cfg.TrustProxy && !cfg.UseCloudflare {
+		host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
+		if err == nil {
+			return host
 		}
+		return strings.Trim(c.Request().RemoteAddr, "[]")
 	}
-
-	if cfg.TrustProxy {
-		if xff := c.Request().Header.Get("X-Forwarded-For"); xff != "" {
-			parts := strings.Split(xff, ",")
-			return strings.TrimSpace(parts[0])
-		}
-	}
-
+	// Proxy-aware servers configure Echo's IPExtractor with explicit trusted
+	// proxy ranges. RealIP then safely applies that centralized policy.
 	return c.RealIP()
 }

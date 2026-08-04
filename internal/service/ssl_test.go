@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
+	"whois/internal/model"
 	"whois/internal/utils"
 )
 
@@ -136,4 +139,29 @@ func TestGetSSLInfo_Versions(t *testing.T) {
 	defer ts4.Close()
 	u4, _ := url.Parse(ts4.URL)
 	_ = GetSSLInfo(context.Background(), u4.Host)
+}
+
+func TestScoreTLSRevokedCertificate(t *testing.T) {
+	info := &model.SSLInfo{
+		Verified:      true,
+		HostnameValid: true,
+		OCSPStapled:   true,
+		OCSPStatus:    "revoked",
+	}
+	leaf := &x509.Certificate{NotAfter: time.Now().Add(90 * 24 * time.Hour)}
+
+	score, grade, issues := scoreTLS(info, leaf, tls.TLS_AES_128_GCM_SHA256)
+	if score != 0 || grade != "F" {
+		t.Fatalf("revoked certificate scored %d/%s, want 0/F", score, grade)
+	}
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue, "revoked") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("revocation issue missing from %v", issues)
+	}
 }

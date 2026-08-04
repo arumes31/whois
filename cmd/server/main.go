@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"html/template"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 	"whois/internal/config"
 	"whois/internal/handler"
@@ -35,6 +37,8 @@ func main() {
 	}
 
 	utils.SetAllowPrivateIPs(cfg.AllowPrivateIPs)
+	utils.SetAllowLoopbackIPs(cfg.AllowLoopbackIPs)
+	utils.SetAllowLinkLocalIPs(cfg.AllowLinkLocalIPs)
 
 	e := NewServer(cfg)
 
@@ -48,7 +52,7 @@ func main() {
 
 	// Graceful Shutdown
 	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, os.Interrupt)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -63,15 +67,73 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	h := handler.NewHandler(store, cfg)
 	sched := service.NewScheduler(store, cfg.DNSServers, cfg.BootstrapDNS)
 
-	// Startup tasks
-	go service.DownloadBackground()
-	go service.InitializeGeoDB(cfg.MaxMindLicenseKey, cfg.MaxMindAccountID)
-	go service.InitializeMACService()
+	// Load local lookup data without generating startup traffic. Operators can
+	// explicitly opt into remote database downloads and periodic updates.
+	if cfg.EnableGeo {
+		service.ReloadGeoDB()
+	}
+	if cfg.AutoUpdateDatabases {
+		if cfg.EnableGeo {
+			go service.InitializeGeoDB(cfg.MaxMindLicenseKey, cfg.MaxMindAccountID)
+		}
+		go service.InitializeMACService()
+	}
 	sched.Start()
 
 	// Web Server
 	e := echo.New()
 	e.HideBanner = true
+	e.IPExtractor = echo.ExtractIPDirect()
+	if cfg.TrustProxy {
+		trustOptions := []echo.TrustOption{
+			echo.TrustLoopback(false),
+			echo.TrustLinkLocal(false),
+			echo.TrustPrivateNet(false),
+		}
+		for _, entry := range strings.Split(cfg.TrustedProxies, ",") {
+			entry = strings.TrimSpace(entry)
+			if entry == "" {
+				continue
+			}
+			if !strings.Contains(entry, "/") {
+				if strings.Contains(entry, ":") {
+					entry += "/128"
+				} else {
+					entry += "/32"
+				}
+			}
+			if _, network, err := net.ParseCIDR(entry); err == nil {
+				trustOptions = append(trustOptions, echo.TrustIPRange(network))
+			} else {
+				utils.Log.Warn("ignoring invalid trusted proxy range", utils.Field("range", entry))
+			}
+		}
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOptions...)
+	}
+	if cfg.UseCloudflare {
+		baseExtractor := e.IPExtractor
+		e.IPExtractor = func(request *http.Request) string {
+			directIP := echo.ExtractIPDirect()(request)
+			if utils.IsTrustedIP(directIP, cfg.TrustedProxies) {
+				if cloudflareIP := net.ParseIP(strings.TrimSpace(request.Header.Get("CF-Connecting-IP"))); cloudflareIP != nil {
+					return cloudflareIP.String()
+				}
+			}
+			return baseExtractor(request)
+		}
+	}
+	e.Server.ReadHeaderTimeout = 5 * time.Second
+	e.Server.IdleTimeout = 60 * time.Second
+	e.Server.MaxHeaderBytes = 1 << 20
+	e.Server.RegisterOnShutdown(func() {
+		h.Close()
+		service.StopGeoDBUpdater()
+		service.StopMACService()
+		sched.Cron.Stop()
+		if closer, ok := store.Client.(interface{ Close() error }); ok {
+			_ = closer.Close()
+		}
+	})
 
 	// Prometheus endpoint with IP restriction
 	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), h.Metrics)
@@ -116,11 +178,10 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	}))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
 		Skipper: wsSkipper,
-		Limit:   "1M",
+		Limit:   "2M",
 	}))
 	e.Use(middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
-		Skipper: wsSkipper,
-		Store:   middleware.NewRateLimiterMemoryStore(20),
+		Store: middleware.NewRateLimiterMemoryStore(20),
 	}))
 
 	// Secure Headers
@@ -175,7 +236,9 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	}
 
 	// Routes
-	e.GET("/health", h.Health)
+	e.GET("/livez", h.Liveness)
+	e.GET("/readyz", h.Health)
+	e.GET("/health", h.Health) // Backward-compatible readiness alias.
 	e.GET("/robots.txt", h.Robots)
 	e.GET("/", h.Index)
 	e.POST("/", h.Index)

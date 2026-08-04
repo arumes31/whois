@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "minify:js": "node scripts/minify-js.mjs static"
+    "minify:js": "node scripts/minify-js.mjs static templates"
   },
   "devDependencies": {
     "terser": "5.49.0"

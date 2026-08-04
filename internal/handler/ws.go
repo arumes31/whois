@@ -21,19 +21,36 @@ type WSMessage struct {
 	Data    interface{} `json:"data"`
 }
 
-func (h *Handler) HandleWS(c echo.Context) error {
-	// Exhaustive debug logging for handshake
-	headers := make(map[string]string)
-	for k, v := range c.Request().Header {
-		headers[k] = strings.Join(v, ", ")
-	}
+const (
+	maxWSMessageBytes   = 64 << 10
+	maxWSTargets        = 25
+	maxWSActiveQueries  = 4
+	maxCTResolveTargets = 100
+	wsWriteWait         = 10 * time.Second
+)
 
+type wsWriter struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (w *wsWriter) write(messageType int, data []byte) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if err := w.conn.SetWriteDeadline(time.Now().Add(wsWriteWait)); err != nil {
+		return err
+	}
+	return w.conn.WriteMessage(messageType, data)
+}
+
+func (h *Handler) HandleWS(c echo.Context) error {
 	utils.Log.Info("websocket handshake start",
-		utils.Field("headers", headers),
 		utils.Field("host", c.Request().Host),
 		utils.Field("remote_addr", c.Request().RemoteAddr),
 		utils.Field("proto", c.Request().Proto),
 		utils.Field("uri", c.Request().RequestURI),
+		utils.Field("origin", c.Request().Header.Get("Origin")),
+		utils.Field("user_agent", c.Request().UserAgent()),
 	)
 
 	// Manual check for common proxy issues
@@ -50,13 +67,33 @@ func (h *Handler) HandleWS(c echo.Context) error {
 	if err != nil {
 		utils.Log.Error("websocket upgrade failed",
 			utils.Field("error", err.Error()),
-			utils.Field("headers", headers),
+			utils.Field("remote_addr", c.Request().RemoteAddr),
+			utils.Field("origin", c.Request().Header.Get("Origin")),
 		)
 		return err
 	}
+	h.wsConnMu.Lock()
+	h.wsConns[ws] = struct{}{}
+	h.wsConnMu.Unlock()
 	defer func() {
+		h.wsConnMu.Lock()
+		delete(h.wsConns, ws)
+		h.wsConnMu.Unlock()
 		_ = ws.Close()
 	}()
+	ws.SetReadLimit(maxWSMessageBytes)
+	writer := &wsWriter{conn: ws}
+	ctx, cancel := context.WithCancel(c.Request().Context())
+	var queryWG sync.WaitGroup
+	defer func() {
+		cancel()
+		queryWG.Wait()
+	}()
+	activeLimit := maxWSActiveQueries
+	if globalLimit := cap(h.targetSem); globalLimit > 0 && globalLimit < activeLimit {
+		activeLimit = globalLimit
+	}
+	activeQueries := make(chan struct{}, activeLimit)
 
 	// Heartbeat configuration
 	pingPeriod := 30 * time.Second
@@ -75,12 +112,9 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		for {
 			select {
 			case <-ticker.C:
-				h.wsMu.Lock()
-				if err := ws.WriteMessage(websocket.PingMessage, nil); err != nil {
-					h.wsMu.Unlock()
+				if err := writer.write(websocket.PingMessage, nil); err != nil {
 					return
 				}
-				h.wsMu.Unlock()
 			case <-stopPing:
 				return
 			}
@@ -116,6 +150,8 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		}
 
 		if err := json.Unmarshal(msg, &input); err != nil {
+			payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "invalid websocket message"})
+			_ = writer.write(websocket.TextMessage, payload)
 			continue
 		}
 
@@ -124,19 +160,50 @@ func (h *Handler) HandleWS(c echo.Context) error {
 			continue
 		}
 
+		if len(input.Targets) > maxWSTargets {
+			payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "too many targets; maximum is 25"})
+			_ = writer.write(websocket.TextMessage, payload)
+			continue
+		}
+		seenTargets := make(map[string]struct{}, len(input.Targets))
 		for _, target := range input.Targets {
 			target = strings.TrimSpace(target)
 			if target == "" {
 				continue
 			}
-
-			go h.streamQuery(c.Request().Context(), ws, target, input.Config)
+			targetInfo := utils.NormalizeTarget(target)
+			identity := targetInfo.Scheme + "|" + targetInfo.Normalized
+			if !targetInfo.Valid {
+				identity = target
+			}
+			if _, exists := seenTargets[identity]; exists {
+				continue
+			}
+			seenTargets[identity] = struct{}{}
+			select {
+			case <-ctx.Done():
+				return nil
+			case activeQueries <- struct{}{}:
+			}
+			select {
+			case <-ctx.Done():
+				<-activeQueries
+				return nil
+			case h.targetSem <- struct{}{}:
+			}
+			queryWG.Add(1)
+			go func(target string) {
+				defer queryWG.Done()
+				defer func() { <-activeQueries }()
+				defer func() { <-h.targetSem }()
+				h.streamQuery(ctx, writer, target, input.Config)
+			}(target)
 		}
 	}
 	return nil
 }
 
-func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target string, cfg struct {
+func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target string, cfg struct {
 	Whois      bool   `json:"whois"`
 	DNS        bool   `json:"dns"`
 	CT         bool   `json:"ct"`
@@ -149,16 +216,12 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 	Subdomains bool   `json:"subdomains"`
 	Ports      string `json:"ports"`
 }) {
-	select {
-	case <-ctx.Done():
-		return
-	case h.targetSem <- struct{}{}:
-		defer func() { <-h.targetSem }()
-	}
 	cardTarget := target
 	targetInfo := utils.EnrichTarget(ctx, target)
+	endpointTarget := targetInfo.Normalized
+	httpTarget := cardTarget
 	if targetInfo.Networkable {
-		target = targetInfo.Normalized
+		target = targetInfo.Host
 	}
 	var wg sync.WaitGroup
 	isIP := targetInfo.Kind == "ipv4" || targetInfo.Kind == "ipv6"
@@ -172,9 +235,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			Data:    data,
 		}
 		b, _ := json.Marshal(msg)
-		h.wsMu.Lock()
-		_ = ws.WriteMessage(websocket.TextMessage, b)
-		h.wsMu.Unlock()
+		_ = writer.write(websocket.TextMessage, b)
 	}
 
 	sendLog := func(message string) {
@@ -185,9 +246,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			Data:    message,
 		}
 		b, _ := json.Marshal(msg)
-		h.wsMu.Lock()
-		_ = ws.WriteMessage(websocket.TextMessage, b)
-		h.wsMu.Unlock()
+		_ = writer.write(websocket.TextMessage, b)
 	}
 
 	send("target", targetInfo)
@@ -199,9 +258,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		sendLog("Target cannot be queried: " + reason)
 		msg := WSMessage{Type: "all_done", Target: cardTarget}
 		b, _ := json.Marshal(msg)
-		h.wsMu.Lock()
-		_ = ws.WriteMessage(websocket.TextMessage, b)
-		h.wsMu.Unlock()
+		_ = writer.write(websocket.TextMessage, b)
 		return
 	}
 	sendLog("Initializing diagnostic chain for " + target)
@@ -254,9 +311,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			Service: serviceName,
 		}
 		b, _ := json.Marshal(msg)
-		h.wsMu.Lock()
-		_ = ws.WriteMessage(websocket.TextMessage, b)
-		h.wsMu.Unlock()
+		_ = writer.write(websocket.TextMessage, b)
 	}
 	acquireService := func() bool {
 		select {
@@ -411,12 +466,14 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			if err == nil {
 				send("ct", c)
 				// Also add to subdomain discovery
+				resolvedCount := 0
 				for sub := range c {
-					wg.Add(1)
-					go func(s string) {
-						defer wg.Done()
-						processSub(s, nil)
-					}(sub)
+					if resolvedCount >= maxCTResolveTargets {
+						sendLog("CT enrichment limited to 100 subdomains; the complete CT list remains available above")
+						break
+					}
+					processSub(sub, nil)
+					resolvedCount++
 				}
 			} else {
 				send("ct", map[string]string{"error": err.Error()})
@@ -435,8 +492,8 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 				return
 			}
 			defer releaseService()
-			sendLog("Analyzing SSL/TLS configuration for " + target)
-			res := service.GetSSLInfo(ctx, target)
+			sendLog("Analyzing SSL/TLS configuration for " + endpointTarget)
+			res := service.GetSSLInfo(ctx, endpointTarget)
 			send("ssl", res)
 			if res.Protocol != "" {
 				sendLog("SSL/TLS verified: " + res.Protocol + " (" + strconv.Itoa(res.DaysLeft) + " days left)")
@@ -454,8 +511,8 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 				return
 			}
 			defer releaseService()
-			sendLog("Inspecting HTTP response from " + target)
-			res := service.GetHTTPInfo(ctx, target)
+			sendLog("Inspecting HTTP response from " + httpTarget)
+			res := service.GetHTTPInfo(ctx, httpTarget)
 			send("http", res)
 			if res.Status != "" {
 				sendLog("HTTP status: " + res.Status + " (" + strconv.FormatInt(res.ResponseTime, 10) + "ms)")
@@ -474,9 +531,14 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 			}
 			defer releaseService()
 			sendLog("Locating IP and ASN data for " + target)
-			g, _ := service.GetGeoInfo(ctx, target)
-			send("geo", g)
-			sendLog("Geolocation data updated for " + target)
+			g, err := service.GetGeoInfo(ctx, target)
+			if err != nil {
+				send("geo", map[string]string{"error": err.Error()})
+				sendLog("Geolocation lookup failed: " + err.Error())
+			} else {
+				send("geo", g)
+				sendLog("Geolocation data updated for " + target)
+			}
 			sendDone("geo")
 		}()
 	}
@@ -526,18 +588,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		}()
 	}
 
-	go func() {
-		wg.Wait()
-		sendLog("All tasks completed for " + target)
+	wg.Wait()
+	sendLog("All tasks completed for " + target)
 
-		// Final 'done' message for the whole card
-		msg := WSMessage{
-			Type:   "all_done",
-			Target: cardTarget,
-		}
-		b, _ := json.Marshal(msg)
-		h.wsMu.Lock()
-		_ = ws.WriteMessage(websocket.TextMessage, b)
-		h.wsMu.Unlock()
-	}()
+	msg := WSMessage{Type: "all_done", Target: cardTarget}
+	b, _ := json.Marshal(msg)
+	_ = writer.write(websocket.TextMessage, b)
 }

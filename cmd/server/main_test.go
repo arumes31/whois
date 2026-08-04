@@ -13,7 +13,9 @@ import (
 func TestNewServer(t *testing.T) {
 	// Setup environment
 	_ = os.Setenv("SECRET_KEY", "test-secret")
+	_ = os.Setenv("ENVIRONMENT", "development")
 	defer func() { _ = os.Unsetenv("SECRET_KEY") }()
+	defer func() { _ = os.Unsetenv("ENVIRONMENT") }()
 
 	// Change to project root so templates can be found
 	_ = os.Chdir("../../")
@@ -36,6 +38,19 @@ func TestNewServer(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
+
+	t.Run("MetricsRejectsSpoofedForwardedIP", func(t *testing.T) {
+		cfg.TrustedIPs = "127.0.0.1"
+		cfg.TrustProxy = false
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "198.51.100.20:1234"
+		req.Header.Set("X-Forwarded-For", "127.0.0.1")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("spoofed forwarding header returned %d, want 403", rec.Code)
+		}
+	})
 
 	// Test Custom Error Handler
 	t.Run("HTTPErrorHandler", func(t *testing.T) {

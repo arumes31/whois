@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTraceroute_Cancel(t *testing.T) {
@@ -83,6 +84,33 @@ func TestTraceroute_Stderr(t *testing.T) {
 	}
 }
 
+func TestTracerouteDrainsStdoutAndStderrConcurrently(t *testing.T) {
+	oldRunner := CommandRunner
+	defer func() { CommandRunner = oldRunner }()
+
+	CommandRunner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestHelperProcess", "--", name)
+		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", "HELPER_LARGE_STDERR=1"}
+		return cmd
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	started := time.Now()
+	foundHop := false
+	Traceroute(ctx, "example.com", func(line string) {
+		if strings.Contains(line, "1.1.1.1") {
+			foundHop = true
+		}
+	})
+	if elapsed := time.Since(started); elapsed >= 9*time.Second {
+		t.Fatalf("traceroute blocked while draining process output for %v", elapsed)
+	}
+	if !foundHop {
+		t.Fatal("traceroute lost stdout while draining a full stderr pipe")
+	}
+}
+
 func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
@@ -92,6 +120,12 @@ func TestHelperProcess(t *testing.T) {
 	}
 	if err := os.Getenv("HELPER_STDERR"); err != "" {
 		_, _ = fmt.Fprintln(os.Stderr, err)
+	}
+	if os.Getenv("HELPER_LARGE_STDERR") == "1" {
+		for range 512 {
+			_, _ = fmt.Fprintln(os.Stderr, strings.Repeat("x", 1024))
+		}
+		_, _ = fmt.Fprintln(os.Stdout, "1 hop  1.1.1.1  1ms")
 	}
 	os.Exit(0)
 }

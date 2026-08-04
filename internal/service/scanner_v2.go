@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"whois/internal/utils"
@@ -102,11 +105,27 @@ func ParsePortSpec(spec string, maxPorts int) ([]int, error) {
 }
 
 func ScanPortsStreamWithOptions(ctx context.Context, target string, ports []int, options ScanOptions, onResult func(port int, banner string, err error)) ScanResult {
+	return scanPortsStreamWithOptions(ctx, target, ports, options, onResult, utils.ValidateResolvedHost, utils.DialResolvedTarget)
+}
+
+type scanResolver func(context.Context, string) ([]net.IPAddr, error)
+type scanDialer func(context.Context, string, []net.IPAddr, string, time.Duration) (net.Conn, string, error)
+
+func scanPortsStreamWithOptions(
+	ctx context.Context,
+	target string,
+	ports []int,
+	options ScanOptions,
+	onResult func(port int, banner string, err error),
+	resolve scanResolver,
+	dial scanDialer,
+) ScanResult {
 	start := time.Now()
-	result := ScanResult{Open: make(map[int]string), Closed: []int{}, Error: []string{}}
+	result := ScanResult{Open: make(map[int]string), Closed: []int{}, Filtered: []int{}, Error: []string{}}
 	targetInfo := utils.NormalizeTarget(target)
 	if !targetInfo.Valid || !targetInfo.Networkable {
 		result.Error = append(result.Error, "invalid target host")
+		result.Elapsed = time.Since(start).Seconds()
 		return result
 	}
 	if options.Concurrency < 1 {
@@ -123,10 +142,43 @@ func ScanPortsStreamWithOptions(ctx context.Context, target string, ports []int,
 	}
 	if len(ports) > options.MaxPorts {
 		result.Error = append(result.Error, fmt.Sprintf("port selection exceeds the safe limit of %d", options.MaxPorts))
+		result.Elapsed = time.Since(start).Seconds()
 		return result
 	}
-	if options.Concurrency > len(ports) {
-		options.Concurrency = len(ports)
+	validPorts := make([]int, 0, len(ports))
+	seen := make(map[int]struct{}, len(ports))
+	for _, port := range ports {
+		if port < 1 || port > 65535 {
+			result.Error = append(result.Error, fmt.Sprintf("port %d is outside 1-65535", port))
+			continue
+		}
+		if _, exists := seen[port]; exists {
+			continue
+		}
+		seen[port] = struct{}{}
+		validPorts = append(validPorts, port)
+	}
+	if err := ctx.Err(); err != nil {
+		result.Error = append(result.Error, fmt.Sprintf("scan canceled: %v", err))
+		result.Elapsed = time.Since(start).Seconds()
+		return result
+	}
+	if len(validPorts) == 0 {
+		result.Elapsed = time.Since(start).Seconds()
+		return result
+	}
+	addresses, err := resolve(ctx, targetInfo.Host)
+	if err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			result.Error = append(result.Error, fmt.Sprintf("scan canceled: %v", contextErr))
+		} else {
+			result.Error = append(result.Error, err.Error())
+		}
+		result.Elapsed = time.Since(start).Seconds()
+		return result
+	}
+	if options.Concurrency > len(validPorts) {
+		options.Concurrency = len(validPorts)
 	}
 	if options.Concurrency == 0 {
 		return result
@@ -138,20 +190,42 @@ func ScanPortsStreamWithOptions(ctx context.Context, target string, ports []int,
 	worker := func() {
 		defer wg.Done()
 		for port := range jobs {
-			conn, _, err := utils.DialTarget(ctx, "tcp", targetInfo.Host, strconv.Itoa(port), options.ConnectTimeout)
+			conn, _, err := dial(ctx, "tcp", addresses, strconv.Itoa(port), options.ConnectTimeout)
 			if err != nil {
+				if ctx.Err() != nil {
+					if onResult != nil {
+						onResult(port, "", ctx.Err())
+					}
+					return
+				}
 				mu.Lock()
-				result.Closed = append(result.Closed, port)
+				if isConnectionRefused(err) {
+					result.Closed = append(result.Closed, port)
+				} else {
+					result.Filtered = append(result.Filtered, port)
+				}
 				mu.Unlock()
 				if onResult != nil {
 					onResult(port, "", err)
 				}
 				continue
 			}
-			_ = conn.SetReadDeadline(time.Now().Add(options.BannerTimeout))
+			bannerDeadline := time.Now().Add(options.BannerTimeout)
+			if deadline, ok := ctx.Deadline(); ok && deadline.Before(bannerDeadline) {
+				bannerDeadline = deadline
+			}
+			_ = conn.SetReadDeadline(bannerDeadline)
+			stopCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
 			bannerBytes := make([]byte, 256)
 			n, _ := conn.Read(bannerBytes)
+			stopCancel()
 			_ = conn.Close()
+			if ctx.Err() != nil {
+				if onResult != nil {
+					onResult(port, "", ctx.Err())
+				}
+				return
+			}
 			banner := ""
 			if n > 0 {
 				banner = strings.TrimSpace(string(bannerBytes[:n]))
@@ -168,25 +242,32 @@ func ScanPortsStreamWithOptions(ctx context.Context, target string, ports []int,
 		wg.Add(1)
 		go worker()
 	}
-	for _, port := range ports {
-		if port < 1 || port > 65535 {
-			continue
-		}
+	for _, port := range validPorts {
 		select {
 		case <-ctx.Done():
 			close(jobs)
 			wg.Wait()
+			result.Error = append(result.Error, fmt.Sprintf("scan canceled: %v", ctx.Err()))
 			result.Elapsed = time.Since(start).Seconds()
 			sort.Ints(result.Closed)
+			sort.Ints(result.Filtered)
 			return result
 		case jobs <- port:
 		}
 	}
 	close(jobs)
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		result.Error = append(result.Error, fmt.Sprintf("scan canceled: %v", err))
+	}
 	result.Elapsed = time.Since(start).Seconds()
 	sort.Ints(result.Closed)
+	sort.Ints(result.Filtered)
 	return result
+}
+
+func isConnectionRefused(err error) bool {
+	return errors.Is(err, syscall.ECONNREFUSED)
 }
 
 func ScanPortsStream(ctx context.Context, target string, ports []int, onResult func(port int, banner string, err error)) ScanResult {

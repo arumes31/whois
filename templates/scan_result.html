@@ -1,5 +1,5 @@
 {{ if .result.Error }}
-  <div class="glass-panel p-3 border-danger mb-3">
+  <div class="glass-panel p-3 border-danger mb-3" role="alert">
     <strong class="text-danger">ERRORS DETECTED:</strong>
     <ul class="text-white small mb-0 mt-2">
     {{ range .result.Error }}
@@ -19,7 +19,7 @@
         <strong class="text-success small d-block mb-2">OPEN PORTS ({{ len .result.Open }})</strong>
         <div class="list-group list-group-flush">
           {{ range $port, $banner := .result.Open }}
-            <div class="list-group-item bg-transparent text-main border-secondary p-2 clickable-record" onclick="copyToClipboard(this)">
+            <button type="button" class="list-group-item bg-transparent text-main border-secondary p-2 clickable-record text-start" onclick="copyToClipboard(this)" aria-label="Copy details for open port {{ $port }}">
               <div class="d-flex align-items-center gap-3">
                   <span class="badge bg-success-dim text-success" style="width: 60px;">{{ $port }}</span>
                   {{ if $banner }}
@@ -28,7 +28,7 @@
                     <span class="text-white small italic">Open (No banner)</span>
                   {{ end }}
               </div>
-            </div>
+            </button>
           {{ end }}
         </div>
       </div>
@@ -39,9 +39,9 @@
     {{ if .result.Closed }}
       <details class="mt-3">
         <summary class="small">CLOSED PORTS ({{ len .result.Closed }})</summary>
-        <div class="p-2 text-white font-monospace clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;">
+        <button type="button" class="p-2 text-white font-monospace clickable-record text-start bg-transparent" onclick="copyToClipboard(this)" style="font-size: 0.7rem;" aria-label="Copy closed port list">
           {{ range $i, $p := .result.Closed }}{{ if $i }}, {{ end }}{{ $p }}{{ end }}
-        </div>
+        </button>
       </details>
     {{ end }}
   </div>
