@@ -3,69 +3,81 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
 type Config struct {
-	RedisHost         string
-	RedisPort         string
-	Port              string
-	ConfigUser        string
-	ConfigPass        string
-	SecretKey         string
-	TrustedIPs        string
-	TrustProxy        bool
-	UseCloudflare     bool
-	EnableGeo         bool
-	EnableSSL         bool
-	EnableWhois       bool
-	EnableDNS         bool
-	EnableCT          bool
-	EnableHTTP        bool
-	MaxMindLicenseKey string
-	MaxMindAccountID  string
-	DNSResolver       string
-	DNSServers        string
-	BootstrapDNS      string
-	SEOEnabled        bool
-	SEODomain         string
-	AllowedDomain     string
-	SkipOriginCheck   bool
-	AllowPrivateIPs   bool   `json:"allow_private_ips"`
-	CORSOrigins       string `json:"cors_origins"`
-	Environment       string
-	AllowDevCors      bool
+	RedisHost             string
+	RedisPort             string
+	Port                  string
+	ConfigUser            string
+	ConfigPass            string
+	SecretKey             string
+	TrustedIPs            string
+	TrustProxy            bool
+	UseCloudflare         bool
+	EnableGeo             bool
+	EnableSSL             bool
+	EnableWhois           bool
+	EnableDNS             bool
+	EnableCT              bool
+	EnableHTTP            bool
+	MaxMindLicenseKey     string
+	MaxMindAccountID      string
+	DNSResolver           string
+	DNSServers            string
+	BootstrapDNS          string
+	SEOEnabled            bool
+	SEODomain             string
+	AllowedDomain         string
+	SkipOriginCheck       bool
+	AllowPrivateIPs       bool   `json:"allow_private_ips"`
+	CORSOrigins           string `json:"cors_origins"`
+	Environment           string
+	AllowDevCors          bool
+	MaxTargetConcurrency  int
+	MaxServiceConcurrency int
+	PortScanConcurrency   int
+	PortScanMaxPorts      int
+	DNSMaxAttempts        int
 }
 
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		RedisHost:  getEnv("REDIS_HOST", "localhost"),
-		RedisPort:  getEnv("REDIS_PORT", "6379"),
-		Port:       getEnv("PORT", "5000"),
-		ConfigUser: getEnv("CONFIG_USER", "admin"),
-		ConfigPass: getEnv("CONFIG_PASS", "admin"), SecretKey: os.Getenv("SECRET_KEY"),
-		TrustedIPs:        getEnv("TRUSTED_IPS", "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"),
-		TrustProxy:        getEnvBool("TRUST_PROXY", true),
-		UseCloudflare:     getEnvBool("USE_CLOUDFLARE", false),
-		EnableGeo:         getEnvBool("ENABLE_GEO", true),
-		EnableSSL:         getEnvBool("ENABLE_SSL", true),
-		EnableWhois:       getEnvBool("ENABLE_WHOIS", true),
-		EnableDNS:         getEnvBool("ENABLE_DNS", true),
-		EnableCT:          getEnvBool("ENABLE_CT", true),
-		EnableHTTP:        getEnvBool("ENABLE_HTTP", true),
-		MaxMindLicenseKey: os.Getenv("MAXMIND_LICENSE_KEY"),
-		MaxMindAccountID:  os.Getenv("MAXMIND_ACCOUNT_ID"),
-		DNSResolver:       getEnv("DNS_RESOLVER", "8.8.8.8:53"),
-		DNSServers:        getEnv("DNS_SERVERS", "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query"),
-		BootstrapDNS:      getEnv("BOOTSTRAP_DNS", "1.1.1.1,9.9.9.9"),
-		SEOEnabled:        getEnvBool("SEO_ENABLED", false),
-		SEODomain:         getEnv("SEO_DOMAIN", ""),
-		AllowedDomain:     getEnv("ALLOWED_DOMAIN", ""),
-		SkipOriginCheck:   getEnvBool("WS_SKIP_ORIGIN_CHECK", false),
-		AllowPrivateIPs:   getEnvBool("ALLOW_PRIVATE_IPS", false),
-		CORSOrigins:       getEnv("CORS_ORIGINS", ""),
-		Environment:       getEnv("ENVIRONMENT", "development"),
-		AllowDevCors:      getEnvBool("ALLOW_DEV_CORS", false),
+		RedisHost:             getEnv("REDIS_HOST", "localhost"),
+		RedisPort:             getEnv("REDIS_PORT", "6379"),
+		Port:                  getEnv("PORT", "5000"),
+		ConfigUser:            getEnv("CONFIG_USER", "admin"),
+		ConfigPass:            getEnv("CONFIG_PASS", "admin"),
+		SecretKey:             os.Getenv("SECRET_KEY"),
+		TrustedIPs:            getEnv("TRUSTED_IPS", "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"),
+		TrustProxy:            getEnvBool("TRUST_PROXY", true),
+		UseCloudflare:         getEnvBool("USE_CLOUDFLARE", false),
+		EnableGeo:             getEnvBool("ENABLE_GEO", true),
+		EnableSSL:             getEnvBool("ENABLE_SSL", true),
+		EnableWhois:           getEnvBool("ENABLE_WHOIS", true),
+		EnableDNS:             getEnvBool("ENABLE_DNS", true),
+		EnableCT:              getEnvBool("ENABLE_CT", true),
+		EnableHTTP:            getEnvBool("ENABLE_HTTP", true),
+		MaxMindLicenseKey:     os.Getenv("MAXMIND_LICENSE_KEY"),
+		MaxMindAccountID:      os.Getenv("MAXMIND_ACCOUNT_ID"),
+		DNSResolver:           getEnv("DNS_RESOLVER", "8.8.8.8:53"),
+		DNSServers:            getEnv("DNS_SERVERS", "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query"),
+		BootstrapDNS:          getEnv("BOOTSTRAP_DNS", "1.1.1.1,9.9.9.9"),
+		SEOEnabled:            getEnvBool("SEO_ENABLED", false),
+		SEODomain:             getEnv("SEO_DOMAIN", ""),
+		AllowedDomain:         getEnv("ALLOWED_DOMAIN", ""),
+		SkipOriginCheck:       getEnvBool("WS_SKIP_ORIGIN_CHECK", false),
+		AllowPrivateIPs:       getEnvBool("ALLOW_PRIVATE_IPS", false),
+		CORSOrigins:           getEnv("CORS_ORIGINS", ""),
+		Environment:           getEnv("ENVIRONMENT", "development"),
+		AllowDevCors:          getEnvBool("ALLOW_DEV_CORS", false),
+		MaxTargetConcurrency:  getEnvInt("MAX_TARGET_CONCURRENCY", 4, 1, 64),
+		MaxServiceConcurrency: getEnvInt("MAX_SERVICE_CONCURRENCY", 12, 1, 128),
+		PortScanConcurrency:   getEnvInt("PORT_SCAN_CONCURRENCY", 32, 1, 256),
+		PortScanMaxPorts:      getEnvInt("PORT_SCAN_MAX_PORTS", 1024, 1, 65535),
+		DNSMaxAttempts:        getEnvInt("DNS_MAX_ATTEMPTS", 3, 1, 10),
 	}
 
 	if cfg.SecretKey == "" {
@@ -73,6 +85,18 @@ func LoadConfig() (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func getEnvInt(key string, fallback, minimum, maximum int) int {
+	value, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || parsed < minimum || parsed > maximum {
+		return fallback
+	}
+	return parsed
 }
 
 func getEnv(key, fallback string) string {

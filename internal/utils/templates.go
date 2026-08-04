@@ -40,34 +40,18 @@ func GetAllowPrivateIPs() bool {
 }
 
 func IsValidTarget(target string) bool {
-	// Support port numbers (e.g. 127.0.0.1:12345 or google.com:443)
-	host := target
-	if h, _, err := net.SplitHostPort(target); err == nil {
-		host = h
-	}
-
-	if ip := net.ParseIP(host); ip != nil {
-		if GetAllowPrivateIPs() {
-			return !ip.IsMulticast() && !ip.IsUnspecified()
-		}
-		// Block private, loopback, multicast, link-local and unspecified to prevent SSRF
-		return !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsMulticast() && !ip.IsUnspecified() && !ip.IsLinkLocalUnicast() && !ip.IsLinkLocalMulticast()
-	}
-	if len(host) > 255 || len(host) == 0 {
+	info := NormalizeTarget(target)
+	if !info.Valid || !info.Networkable {
 		return false
 	}
-	if strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") || strings.HasPrefix(host, "-") || strings.HasSuffix(host, "-") {
+	if len(info.IPs) == 0 {
+		return true
+	}
+	meta := info.IPs[0]
+	if meta.IsMulticast || meta.IsUnspecified {
 		return false
 	}
-	if strings.Contains(host, "..") {
-		return false
-	}
-	for _, ch := range host {
-		if (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '.' && ch != '-' {
-			return false
-		}
-	}
-	return strings.Contains(host, ".")
+	return GetAllowPrivateIPs() || !meta.IsBogon
 }
 
 func IsValidMAC(mac string) bool {

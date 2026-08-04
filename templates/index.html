@@ -146,15 +146,16 @@
                                         d="M320 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V32zM448 160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V160zM64 288c0 17.7 14.3 32 32 32s32-14.3 32-32V160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288zM192 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V416c0 17.7 14.3 32 32 32s32-14.3 32-32V32z" />
                                 </svg>PORTSCAN <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2"
                                     viewBox="0 0 512 512" class="help-icon"
-                                    data-tippy-content="Port scanning is only supported for direct IP addresses (skipped for domains).">
+                                    data-tippy-content="Supports domains and IPs, named presets, comma-separated ports, and inclusive ranges.">
                                     <path
                                         d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z" />
                                 </svg></label>
                         </div>
                         <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
                             <input type="text" id="cfg-ports" class="form-control matrix-input py-1"
-                                style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389"
-                                placeholder="Specific ports...">
+                                style="font-size: 0.7rem; width: 180px;" value="common" list="port-presets"
+                                placeholder="common, web, 8000-8010">
+                            <datalist id="port-presets"><option value="common"><option value="web"><option value="mail"><option value="database"><option value="remote"></datalist>
                         </div>
                     </div>
                 </div>
@@ -296,6 +297,9 @@
             <div class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
         </div>
         <div class="diagnostic-content p-3 pt-0">
+            <div class="service-section" data-service="target">
+                <details open><summary>TARGET PROFILE</summary></details>
+            </div>
             <div class="service-section" data-service="geo">
                 <details>
                     <summary><span class="status-indicator" data-status="pending"><svg
@@ -537,11 +541,11 @@
                 trace: document.getElementById('cfg-trace').checked,
                 route: document.getElementById('cfg-route').checked,
                 subdomains: document.getElementById('cfg-subdomains').checked,
-                portscan: document.getElementById('cfg-portscan').checked && targetIsIP,
+                portscan: document.getElementById('cfg-portscan').checked,
                 ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
             };
 
-            const enabledServices = Object.values(config).filter(v => v && v !== "").length;
+            const enabledServices = Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
 
             createCard(t);
             activeScans.set(t, {
@@ -613,7 +617,7 @@
             ping: document.getElementById('cfg-ping').checked,
             trace: document.getElementById('cfg-trace').checked,
             route: document.getElementById('cfg-route').checked,
-            portscan: document.getElementById('cfg-portscan').checked && targetIsIP,
+            portscan: document.getElementById('cfg-portscan').checked,
             subdomains: document.getElementById('cfg-subdomains').checked,
         };
 
@@ -718,6 +722,21 @@
         const data = msg.data;
 
         switch (msg.service) {
+            case 'target': {
+                const ips = Array.isArray(data.ips) ? data.ips : [];
+                const ipRows = ips.map(ip => `<div class="mb-2 pb-1 border-bottom border-secondary border-opacity-10">
+                    <div><span class="badge bg-dark border border-secondary text-info">IPv${escapeHTML(ip.version)}</span>
+                    <span class="clickable-record ms-1" onclick="copyToClipboard(this)">${escapeHTML(ip.address)}</span></div>
+                    <div class="text-white" style="font-size:.65rem">Scope: ${escapeHTML(ip.scope)}${ip.is_bogon ? ' · BOGON/SPECIAL' : ''}${ip.is_cgnat ? ' · CGNAT' : ''}${ip.is_documentation ? ' · DOCUMENTATION' : ''}</div>
+                    ${ip.reverse_dns?.length ? `<div class="text-white" style="font-size:.65rem">PTR: ${escapeHTML(ip.reverse_dns.join(', '))}</div>` : ''}
+                </div>`).join('');
+                const warningRows = (data.warnings || []).map(w => `<div class="text-warning" style="font-size:.65rem">${escapeHTML(w)}</div>`).join('');
+                html = `<details open><summary><span class="status-indicator" data-status="${data.valid ? 'success' : 'error'}">${data.valid ? statusIcons.success : statusIcons.error}</span>TARGET PROFILE</summary>
+                    <div class="p-2 small"><div class="d-flex justify-content-between mb-2"><strong>${escapeHTML(data.normalized || data.input)}</strong><span class="badge bg-nordic-blue-dim text-nordic-blue">${escapeHTML(data.kind)}</span></div>
+                    ${data.resolution_ms ? `<div class="mb-2 text-white">System DNS: ${escapeHTML(data.resolution_ms)} ms</div>` : ''}
+                    ${data.prefix ? `<div class="mb-2">Prefix: ${escapeHTML(data.prefix)}</div>` : ''}${ipRows}${warningRows}${data.error ? `<div class="text-danger">${escapeHTML(data.error)}</div>` : ''}</div></details>`;
+                break;
+            }
             case 'geo':
                 if (data && !data.error) {
                     const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${data.country_emoji}</span>` : '';
@@ -876,11 +895,17 @@
                 if (data.error) {
                     html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>SSL/TLS</summary><div class="p-2 text-white small">${escapeHTML(data.error)}</div></details>`;
                 } else {
-                    html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake, Cipher Suite, and Certificate Authority details"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    const tlsIssues = (data.issues || []).map(issue => `<li>${escapeHTML(issue)}</li>`).join('');
+                    html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>SSL/TLS <span class="badge bg-dark border border-secondary text-info ms-1">${escapeHTML(data.grade)} ${escapeHTML(data.score)}</span></summary>
                         <div class="p-2 small">
-                            <span class="badge bg-success mb-2">${escapeHTML(data.protocol)}</span><br>
+                            <span class="badge bg-success mb-2">${escapeHTML(data.protocol)}</span> <span class="badge bg-dark text-info">${escapeHTML(data.cipher_suite)}</span><br>
                             <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${escapeHTML(data.issuer)}</span><br>
-                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Expiry:</strong> ${escapeHTML(data.expiry.split('T')[0])} (${escapeHTML(data.days_left)}d)</span>
+                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Expiry:</strong> ${escapeHTML(data.expiry.split('T')[0])} (${escapeHTML(data.days_left)}d)</span><br>
+                            <span><strong>Trust / hostname:</strong> ${data.verified ? 'verified' : 'untrusted'} / ${data.hostname_valid ? 'valid' : 'mismatch'}</span><br>
+                            <span><strong>Versions:</strong> ${escapeHTML((data.supported_versions || []).join(', '))}</span><br>
+                            <span><strong>OCSP:</strong> ${escapeHTML(data.ocsp_status)} · <strong>SCTs:</strong> ${escapeHTML(data.sct_count)}</span>
+                            ${tlsIssues ? `<ul class="text-warning mt-2 mb-0">${tlsIssues}</ul>` : ''}
+                            <details class="mt-2"><summary><small>CERTIFICATE CHAIN & SANS</small></summary><pre class="p-2 mt-1 rounded" style="font-size:.65rem"><code>${escapeHTML(JSON.stringify({sans:data.sans, chain:data.chain, fingerprint:data.fingerprint_sha256}, null, 2))}</code></pre></details>
                         </div></details>`;
                 }
                 break;
@@ -897,14 +922,17 @@
                     </div>`;
                     }
 
-                    html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of HTTP Security Headers (HSTS, CSP, XFO) and server metadata"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>HTTP INSPECTOR <span class="badge bg-dark border border-secondary text-info ms-1">${escapeHTML(data.grade)} ${escapeHTML(data.score)}</span></summary>
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
                                 <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${escapeHTML(data.status)}</span>
                                 <span class="badge bg-dark border border-secondary text-info">${escapeHTML(data.response_time_ms)}ms</span>
                             </div>
                             <div class="mb-2"><strong>Protocol:</strong> ${escapeHTML(data.protocol)}</div>
-                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Server:</strong> ${escapeHTML(data.headers.Server) || 'Unknown'}</div>
+                            <div class="mb-2"><strong>Timing:</strong> DNS ${escapeHTML(data.timing?.dns_ms)} · TCP ${escapeHTML(data.timing?.connect_ms)} · TLS ${escapeHTML(data.timing?.tls_ms)} · TTFB ${escapeHTML(data.timing?.ttfb_ms)} ms</div>
+                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Final URL:</strong> ${escapeHTML(data.final_url)}</div>
+                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Server:</strong> ${escapeHTML(data.server) || 'Unknown'} ${data.powered_by ? `· ${escapeHTML(data.powered_by)}` : ''}</div>
+                            <div class="mb-2"><strong>CORS:</strong> ${escapeHTML(data.cors)} · <strong>robots:</strong> ${escapeHTML(data.robots_txt)} · <strong>security.txt:</strong> ${escapeHTML(data.security_txt)}</div>
                             <div class="security-headers-minimal mb-2">
                                 ${securityHtml}
                             </div>
@@ -1118,11 +1146,11 @@
             trace: document.getElementById('cfg-trace').checked,
             route: document.getElementById('cfg-route').checked,
             subdomains: document.getElementById('cfg-subdomains').checked,
-            portscan: document.getElementById('cfg-portscan').checked && targetIsIP,
+            portscan: document.getElementById('cfg-portscan').checked,
             ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
         };
 
-        const enabledServices = Object.values(config).filter(v => v && v !== "").length;
+        const enabledServices = Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
         createCard(target);
         activeScans.set(target, {
             total: enabledServices,

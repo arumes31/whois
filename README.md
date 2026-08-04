@@ -15,6 +15,8 @@ A high-performance, professional-grade network diagnostic platform designed for 
 - 🔍 **Multi-Vector LOOKUP:** Comprehensive analysis including WHOIS data, advanced DNS resolution (A, AAAA, MX, NS, TXT, SPF, DMARC), and GeoIP geolocation.
 - 🌐 **Subdomain Discovery:** Uses multi-source Certificate Transparency (CT) logs (Certspotter primary, crt.sh fallback) with real-time incremental streaming.
 - 🛡️ **Security Port Scanner:** Specialized tool for open port detection and service banner grabbing with localized security controls.
+- 🧭 **Provider-Free Target Intelligence:** Normalizes pasted URLs, detects domains/IPv4/IPv6/CIDRs/ASNs, classifies private, reserved, documentation, CGNAT, and bogon ranges, and performs reverse DNS locally.
+- 🔐 **TLS & HTTP Posture:** Directly inspects certificate chains, SANs, fingerprints, supported TLS versions, OCSP stapling, redirects, request timings, cookies, CORS, security headers, and well-known policy files.
 - 📡 **Live WebSocket Streaming:** Diagnostic results and discovery events are pushed individually as they complete, ensuring zero-latency feedback.
 - 📈 **Automated Monitoring:** Periodic DNS health checks with change detection and unified diff history.
 - 📦 **100% Self-Contained:** All assets (CSS, JS, Fonts) are hosted locally. Zero external CDNs required—ideal for isolated or air-gapped networks.
@@ -101,6 +103,11 @@ location / {
 | `DNS_SERVERS` | CSV of DoH resolvers used for multi-vector lookups | `Cloudflare, Google, Quad9` |
 | `BOOTSTRAP_DNS` | DNS used to resolve the hostnames of DoH providers | `1.1.1.1, 9.9.9.9` |
 | `DNS_RESOLVER` | Standard UDP resolver used for discovery modules | `8.8.8.8:53` |
+| `DNS_MAX_ATTEMPTS` | Resolver attempts before returning an error; unhealthy resolvers receive a short cooldown | `3` |
+| `MAX_TARGET_CONCURRENCY` | Maximum target diagnostic chains running at once | `4` |
+| `MAX_SERVICE_CONCURRENCY` | Maximum individual diagnostic services running at once | `12` |
+| `PORT_SCAN_CONCURRENCY` | TCP scan worker count | `32` |
+| `PORT_SCAN_MAX_PORTS` | Maximum ports accepted in one scan | `1024` |
 | `PORT` | Local port the web server listens on | `5000` |
 | `REDIS_HOST` | Hostname of the Redis server | `localhost` |
 | `REDIS_PORT` | Port of the Redis server | `6379` |
@@ -114,6 +121,8 @@ location / {
 | `ENABLE_SSL` | Enable SSL/TLS certificate analysis | `true` |
 | `ENABLE_HTTP` | Enable HTTP security header inspection | `true` |
 | `ENABLE_CT` | Enable Certificate Transparency log discovery | `true` |
+
+Target classification, TLS/HTTP inspection, DNS failover, and port scanning are performed directly by the application and do not require a paid intelligence provider. GeoIP, CT, WHOIS/RDAP, and configured public DNS resolvers remain optional external data sources.
 
 #### 🌍 External API Keys
 | Variable | Description | Default |

@@ -15,11 +15,14 @@ import (
 )
 
 type DNSService struct {
-	Resolvers    []string
-	Bootstrap    []string
-	httpClient   *http.Client
-	currentIndex int
-	mu           sync.Mutex
+	Resolvers      []string
+	Bootstrap      []string
+	httpClient     *http.Client
+	currentIndex   int
+	mu             sync.Mutex
+	maxAttempts    int
+	failures       map[string]int
+	unhealthyUntil map[string]time.Time
 }
 
 func NewDNSService(resolvers string, bootstrap string) *DNSService {
@@ -93,10 +96,22 @@ func NewDNSService(resolvers string, bootstrap string) *DNSService {
 	}
 
 	return &DNSService{
-		Resolvers:  resList,
-		Bootstrap:  bootList,
-		httpClient: &http.Client{Transport: transport, Timeout: 10 * time.Second},
+		Resolvers:      resList,
+		Bootstrap:      bootList,
+		httpClient:     &http.Client{Transport: transport, Timeout: 10 * time.Second},
+		maxAttempts:    3,
+		failures:       make(map[string]int),
+		unhealthyUntil: make(map[string]time.Time),
 	}
+}
+
+func (s *DNSService) SetMaxAttempts(attempts int) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	s.mu.Lock()
+	s.maxAttempts = attempts
+	s.mu.Unlock()
 }
 
 func (s *DNSService) getNextResolver() string {
@@ -105,6 +120,49 @@ func (s *DNSService) getNextResolver() string {
 	res := s.Resolvers[s.currentIndex]
 	s.currentIndex = (s.currentIndex + 1) % len(s.Resolvers)
 	return res
+}
+
+func (s *DNSService) resolverCandidates() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.Resolvers) == 0 {
+		return nil
+	}
+	limit := s.maxAttempts
+	if limit > len(s.Resolvers) {
+		limit = len(s.Resolvers)
+	}
+	now := time.Now()
+	candidates := make([]string, 0, limit)
+	degraded := make([]string, 0, limit)
+	for offset := range len(s.Resolvers) {
+		resolver := s.Resolvers[(s.currentIndex+offset)%len(s.Resolvers)]
+		if until := s.unhealthyUntil[resolver]; until.After(now) {
+			degraded = append(degraded, resolver)
+		} else {
+			candidates = append(candidates, resolver)
+		}
+	}
+	candidates = append(candidates, degraded...)
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+	s.currentIndex = (s.currentIndex + 1) % len(s.Resolvers)
+	return candidates
+}
+
+func (s *DNSService) recordResolverResult(resolver string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err == nil {
+		delete(s.failures, resolver)
+		delete(s.unhealthyUntil, resolver)
+		return
+	}
+	s.failures[resolver]++
+	if s.failures[resolver] >= 2 {
+		s.unhealthyUntil[resolver] = time.Now().Add(30 * time.Second)
+	}
 }
 
 func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
@@ -374,7 +432,26 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 }
 
 func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isReverse bool) ([]string, error) {
-	resolver := s.getNextResolver()
+	candidates := s.resolverCandidates()
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no dns resolvers configured")
+	}
+	var errors []string
+	for _, resolver := range candidates {
+		result, err := s.queryResolver(ctx, resolver, target, qtype, isReverse)
+		s.recordResolverResult(resolver, err)
+		if err == nil {
+			return result, nil
+		}
+		errors = append(errors, resolver+": "+err.Error())
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+	}
+	return nil, fmt.Errorf("all resolvers failed: %s", strings.Join(errors, "; "))
+}
+
+func (s *DNSService) queryResolver(ctx context.Context, resolver, target string, qtype uint16, isReverse bool) ([]string, error) {
 
 	m := new(dns.Msg)
 	queryName := target
@@ -417,6 +494,9 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 	}
 	if in == nil {
 		return nil, fmt.Errorf("no response from resolver")
+	}
+	if in.Rcode != dns.RcodeSuccess && in.Rcode != dns.RcodeNameError {
+		return nil, fmt.Errorf("resolver returned %s", dns.RcodeToString[in.Rcode])
 	}
 
 	var results []string

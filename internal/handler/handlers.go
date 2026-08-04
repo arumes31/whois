@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -59,18 +58,42 @@ func validateSessionToken(token, secretKey string) bool {
 }
 
 type Handler struct {
-	Storage   *storage.Storage
-	DNS       *service.DNSService
-	AppConfig *config.Config
-	Upgrader  websocket.Upgrader
-	wsMu      sync.Mutex
+	Storage     *storage.Storage
+	DNS         *service.DNSService
+	AppConfig   *config.Config
+	Upgrader    websocket.Upgrader
+	wsMu        sync.Mutex
+	targetSem   chan struct{}
+	serviceSem  chan struct{}
+	scanOptions service.ScanOptions
 }
 
 func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
+	targetConcurrency := cfg.MaxTargetConcurrency
+	if targetConcurrency < 1 {
+		targetConcurrency = 4
+	}
+	serviceConcurrency := cfg.MaxServiceConcurrency
+	if serviceConcurrency < 1 {
+		serviceConcurrency = 12
+	}
+	scanConcurrency := cfg.PortScanConcurrency
+	if scanConcurrency < 1 {
+		scanConcurrency = 32
+	}
+	maxScanPorts := cfg.PortScanMaxPorts
+	if maxScanPorts < 1 {
+		maxScanPorts = 1024
+	}
+	dnsService := service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS)
+	dnsService.SetMaxAttempts(cfg.DNSMaxAttempts)
 	h := &Handler{
-		Storage:   storage,
-		DNS:       service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS),
-		AppConfig: cfg,
+		Storage:     storage,
+		DNS:         dnsService,
+		AppConfig:   cfg,
+		targetSem:   make(chan struct{}, targetConcurrency),
+		serviceSem:  make(chan struct{}, serviceConcurrency),
+		scanOptions: service.ScanOptions{Concurrency: scanConcurrency, MaxPorts: maxScanPorts, ConnectTimeout: 2 * time.Second, BannerTimeout: time.Second},
 	}
 
 	h.Upgrader = websocket.Upgrader{
@@ -195,12 +218,13 @@ func (h *Handler) Index(c echo.Context) error {
 		httpEnabled := c.FormValue("http") != "" && h.AppConfig.EnableHTTP
 		geoEnabled := c.FormValue("geo") != "" && h.AppConfig.EnableGeo
 
-		items := strings.Split(ipsDomains, ",")
+		items := strings.FieldsFunc(ipsDomains, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' })
 		var cleanedItems []string
 		for _, item := range items {
 			trimmed := strings.TrimSpace(item)
-			if utils.IsValidTarget(trimmed) {
-				cleanedItems = append(cleanedItems, trimmed)
+			info := utils.NormalizeTarget(trimmed)
+			if info.Valid && info.Networkable && utils.IsValidTarget(info.Normalized) {
+				cleanedItems = append(cleanedItems, info.Normalized)
 			}
 		}
 
@@ -212,6 +236,12 @@ func (h *Handler) Index(c echo.Context) error {
 			wg.Add(1)
 			go func(target string) {
 				defer wg.Done()
+				select {
+				case <-c.Request().Context().Done():
+					return
+				case h.targetSem <- struct{}{}:
+					defer func() { <-h.targetSem }()
+				}
 				res := h.queryItem(c.Request().Context(), target, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
 				mu.Lock()
 				results[target] = res
@@ -354,36 +384,43 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 		}
 	}
 
-	res := model.QueryResult{}
+	res := model.QueryResult{Target: utils.EnrichTarget(ctx, item)}
 	isIP := net.ParseIP(item) != nil
 	var wg sync.WaitGroup
-
-	if whoisEnabled {
+	run := func(fn func()) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			w := service.Whois(ctx, item)
-			res.Whois = w
+			select {
+			case <-ctx.Done():
+				return
+			case h.serviceSem <- struct{}{}:
+				defer func() { <-h.serviceSem }()
+			}
+			fn()
 		}()
 	}
 
+	if whoisEnabled {
+		run(func() {
+			w := service.Whois(ctx, item)
+			res.Whois = w
+		})
+	}
+
 	if dnsEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		run(func() {
 			d, err := h.DNS.Lookup(ctx, item, isIP)
 			if err == nil {
 				res.DNS = d
 				_ = h.Storage.AddDNSHistory(ctx, item, d)
 			}
-		}()
+		})
 	}
 
 	if ctEnabled {
 		if !isIP {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			run(func() {
 				ctCacheKey := "ct:" + item
 				if cached, err := h.Storage.GetCache(ctx, ctCacheKey); err == nil {
 					var ctRes interface{}
@@ -400,39 +437,33 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 					res.CT = c
 					_ = h.Storage.SetCache(ctx, ctCacheKey, c, 1*time.Hour)
 				}
-			}()
+			})
 		} else {
 			res.CT = map[string]string{"error": "CT not applicable to IP"}
 		}
 	}
 
 	if sslEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		run(func() {
 			res.SSL = service.GetSSLInfo(ctx, item)
-		}()
+		})
 	}
 
 	if httpEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		run(func() {
 			res.HTTP = service.GetHTTPInfo(ctx, item)
-		}()
+		})
 	}
 
 	if geoEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		run(func() {
 			g, err := service.GetGeoInfo(ctx, item)
 			if err == nil {
 				res.Geo = g
 			} else {
 				res.Geo = map[string]string{"error": err.Error()}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -461,17 +492,19 @@ func (h *Handler) Scan(c echo.Context) error {
 		rawPorts = "80,443,22,21,25,3389"
 	}
 
-	var ports []int
-	for _, p := range strings.Split(rawPorts, ",") {
-		if i, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
-			ports = append(ports, i)
-		}
+	info := utils.NormalizeTarget(target)
+	if !info.Valid || !info.Networkable || !utils.IsValidTarget(info.Normalized) {
+		return c.Render(http.StatusBadRequest, "scan_result.html", map[string]interface{}{"target": target, "remote_ip": c.RealIP(), "result": service.ScanResult{Error: []string{"invalid target"}}})
+	}
+	ports, err := service.ParsePortSpec(rawPorts, h.scanOptions.MaxPorts)
+	if err != nil {
+		return c.Render(http.StatusBadRequest, "scan_result.html", map[string]interface{}{"target": info.Normalized, "remote_ip": c.RealIP(), "result": service.ScanResult{Error: []string{err.Error()}}})
 	}
 
-	res := service.ScanPorts(c.Request().Context(), target, ports)
+	res := service.ScanPortsStreamWithOptions(c.Request().Context(), info.Normalized, ports, h.scanOptions, nil)
 
 	return c.Render(http.StatusOK, "scan_result.html", map[string]interface{}{
-		"target":    target,
+		"target":    info.Normalized,
 		"remote_ip": c.RealIP(),
 		"result":    res,
 	})

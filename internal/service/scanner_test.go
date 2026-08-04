@@ -83,3 +83,29 @@ func TestScanPortsStream_LateCancel(t *testing.T) {
 
 	_ = ScanPortsStream(ctx, "127.0.0.1", ports, nil)
 }
+
+func TestParsePortSpec(t *testing.T) {
+	t.Parallel()
+	ports, err := ParsePortSpec("web,22,8000-8002,22", 32)
+	if err != nil {
+		t.Fatalf("ParsePortSpec failed: %v", err)
+	}
+	wanted := []int{22, 80, 443, 8000, 8001, 8002, 8080, 8443, 8888}
+	if len(ports) != len(wanted) {
+		t.Fatalf("got %v; want %v", ports, wanted)
+	}
+	for i := range wanted {
+		if ports[i] != wanted[i] {
+			t.Fatalf("got %v; want %v", ports, wanted)
+		}
+	}
+}
+
+func TestParsePortSpecRejectsUnsafeSelections(t *testing.T) {
+	t.Parallel()
+	for _, spec := range []string{"0", "65536", "1-100"} {
+		if _, err := ParsePortSpec(spec, 10); err == nil {
+			t.Errorf("ParsePortSpec(%q) unexpectedly succeeded", spec)
+		}
+	}
+}

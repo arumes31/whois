@@ -75,3 +75,18 @@ func TestLoadConfig(t *testing.T) {
 		t.Errorf("Expected default port 5000, got %s", cfg.Port)
 	}
 }
+
+func TestGetEnvInt(t *testing.T) {
+	t.Setenv("TEST_INT", "12")
+	if got := getEnvInt("TEST_INT", 4, 1, 20); got != 12 {
+		t.Fatalf("got %d; want 12", got)
+	}
+	t.Setenv("TEST_INT", "200")
+	if got := getEnvInt("TEST_INT", 4, 1, 20); got != 4 {
+		t.Fatalf("out-of-range value = %d; want fallback 4", got)
+	}
+	t.Setenv("TEST_INT", "bad")
+	if got := getEnvInt("TEST_INT", 4, 1, 20); got != 4 {
+		t.Fatalf("invalid value = %d; want fallback 4", got)
+	}
+}

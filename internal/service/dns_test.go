@@ -180,6 +180,36 @@ func TestDNSService_Query_Errors(t *testing.T) {
 	}
 }
 
+func TestDNSServiceResolverFailover(t *testing.T) {
+	failing := startMockDNSServer(t, dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		response.SetRcode(request, dns.RcodeServerFailure)
+		_ = w.WriteMsg(response)
+	}), "udp")
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		response.SetReply(request)
+		response.Answer = append(response.Answer, &dns.A{
+			Hdr: dns.RR_Header{Name: request.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+			A:   net.ParseIP("203.0.113.10"),
+		})
+		_ = w.WriteMsg(response)
+	})
+	healthy := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(failing+","+healthy, "")
+	service.SetMaxAttempts(2)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	result, err := service.query(ctx, "example.com", dns.TypeA, false)
+	if err != nil {
+		t.Fatalf("query did not fail over: %v", err)
+	}
+	if len(result) != 1 || result[0] != "203.0.113.10" {
+		t.Fatalf("got %v", result)
+	}
+}
+
 func TestDNSService_Trace_Success(t *testing.T) {
 	// Create a mock DNS server to simulate a referral
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {

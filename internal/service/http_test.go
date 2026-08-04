@@ -42,6 +42,37 @@ func TestGetHTTPInfo(t *testing.T) {
 	if info.Verified {
 		t.Error("Expected Verified=false for plain HTTP connection")
 	}
+	if info.FinalURL == "" || info.Timing.Total < 0 {
+		t.Fatalf("expected final URL and timing, got %#v", info)
+	}
+	if info.Score < 0 || info.Score > 100 || info.Grade == "" {
+		t.Fatalf("invalid HTTP score: %d %q", info.Score, info.Grade)
+	}
+	if len(info.SecurityChecks) == 0 {
+		t.Error("expected structured security checks")
+	}
+}
+
+func TestGetHTTPInfoRedirectChain(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+	host := strings.TrimPrefix(ts.URL, "http://")
+	info := GetHTTPInfo(context.Background(), host)
+	if info.Error != "" {
+		t.Fatalf("GetHTTPInfo failed: %s", info.Error)
+	}
+	if len(info.Redirects) != 1 || info.Redirects[0].Status != http.StatusFound {
+		t.Fatalf("unexpected redirects: %#v", info.Redirects)
+	}
+	if !strings.HasSuffix(info.FinalURL, "/final") {
+		t.Fatalf("unexpected final URL: %s", info.FinalURL)
+	}
 }
 
 func TestGetHTTPInfo_HTTPS(t *testing.T) {

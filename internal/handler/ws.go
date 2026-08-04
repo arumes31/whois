@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -150,14 +149,25 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 	Subdomains bool   `json:"subdomains"`
 	Ports      string `json:"ports"`
 }) {
+	select {
+	case <-ctx.Done():
+		return
+	case h.targetSem <- struct{}{}:
+		defer func() { <-h.targetSem }()
+	}
+	cardTarget := target
+	targetInfo := utils.EnrichTarget(ctx, target)
+	if targetInfo.Networkable {
+		target = targetInfo.Normalized
+	}
 	var wg sync.WaitGroup
-	isIP := net.ParseIP(target) != nil
+	isIP := targetInfo.Kind == "ipv4" || targetInfo.Kind == "ipv6"
 
 	// Helper to send message
 	send := func(serviceName string, data interface{}) {
 		msg := WSMessage{
 			Type:    "result",
-			Target:  target,
+			Target:  cardTarget,
 			Service: serviceName,
 			Data:    data,
 		}
@@ -170,7 +180,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 	sendLog := func(message string) {
 		msg := WSMessage{
 			Type:    "log",
-			Target:  target,
+			Target:  cardTarget,
 			Service: "system",
 			Data:    message,
 		}
@@ -180,6 +190,20 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		h.wsMu.Unlock()
 	}
 
+	send("target", targetInfo)
+	if !targetInfo.Valid || !targetInfo.Networkable || !utils.IsValidTarget(target) {
+		reason := targetInfo.Error
+		if reason == "" {
+			reason = "this target type is profile-only in provider-free mode"
+		}
+		sendLog("Target cannot be queried: " + reason)
+		msg := WSMessage{Type: "all_done", Target: cardTarget}
+		b, _ := json.Marshal(msg)
+		h.wsMu.Lock()
+		_ = ws.WriteMessage(websocket.TextMessage, b)
+		h.wsMu.Unlock()
+		return
+	}
 	sendLog("Initializing diagnostic chain for " + target)
 
 	// Shared subdomain state
@@ -226,7 +250,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 	sendDone := func(serviceName string) {
 		msg := WSMessage{
 			Type:    "done",
-			Target:  target,
+			Target:  cardTarget,
 			Service: serviceName,
 		}
 		b, _ := json.Marshal(msg)
@@ -234,11 +258,24 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		_ = ws.WriteMessage(websocket.TextMessage, b)
 		h.wsMu.Unlock()
 	}
+	acquireService := func() bool {
+		select {
+		case <-ctx.Done():
+			return false
+		case h.serviceSem <- struct{}{}:
+			return true
+		}
+	}
+	releaseService := func() { <-h.serviceSem }
 
 	if cfg.Subdomains && !isIP {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Discovering subdomains for " + target)
 
 			_ = h.DNS.DiscoverSubdomainsStream(ctx, target, nil, func(fqdn string, res map[string][]string) {
@@ -254,6 +291,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Starting traceroute to " + target)
 			var lines []string
 			service.Traceroute(ctx, target, func(line string) {
@@ -269,6 +310,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Starting recursive DNS trace for " + target)
 			res, _ := h.DNS.Trace(ctx, target)
 			send("trace", res)
@@ -281,6 +326,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Initiating ICMP ping to " + target)
 			var lines []string
 			service.Ping(ctx, target, 4, func(line string) {
@@ -296,6 +345,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Querying WHOIS records for " + target)
 			send("whois", service.Whois(ctx, target))
 			sendLog("WHOIS data retrieved for " + target)
@@ -307,6 +360,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Resolving DNS records for " + target)
 
 			dnsData := make(map[string]interface{})
@@ -345,6 +402,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Searching Certificate Transparency logs for " + target)
 			c, err := service.FetchCTSubdomains(ctx, target)
 			if err == nil {
@@ -370,6 +431,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Analyzing SSL/TLS configuration for " + target)
 			res := service.GetSSLInfo(ctx, target)
 			send("ssl", res)
@@ -385,6 +450,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Inspecting HTTP response from " + target)
 			res := service.GetHTTPInfo(ctx, target)
 			send("http", res)
@@ -400,6 +469,10 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Locating IP and ASN data for " + target)
 			g, _ := service.GetGeoInfo(ctx, target)
 			send("geo", g)
@@ -408,56 +481,28 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		}()
 	}
 
-	if cfg.Ports != "" && isIP {
+	if cfg.Ports != "" {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
 			sendLog("Starting port scan on " + target)
-			var portList []int
-			seenPorts := make(map[int]bool)
-
-			parts := strings.Split(cfg.Ports, ",")
-			for _, p := range parts {
-				p = strings.TrimSpace(p)
-				if strings.Contains(p, "-") {
-					// Range support
-					rangeParts := strings.Split(p, "-")
-					if len(rangeParts) == 2 {
-						start, err1 := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
-						end, err2 := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
-						if err1 == nil && err2 == nil {
-							if start > end {
-								start, end = end, start
-							}
-							for i := start; i <= end; i++ {
-								if !seenPorts[i] && i > 0 && i < 65536 {
-									portList = append(portList, i)
-									seenPorts[i] = true
-								}
-								if len(portList) >= 10 {
-									break
-								}
-							}
-						}
-					}
-				} else {
-					if i, err := strconv.Atoi(p); err == nil {
-						if !seenPorts[i] && i > 0 && i < 65536 {
-							portList = append(portList, i)
-							seenPorts[i] = true
-						}
-					}
-				}
-				if len(portList) >= 10 {
-					break
-				}
+			portList, parseErr := service.ParsePortSpec(cfg.Ports, h.scanOptions.MaxPorts)
+			if parseErr != nil {
+				send("portscan", map[string]string{"error": parseErr.Error()})
+				sendLog("Port scan rejected: " + parseErr.Error())
+				sendDone("portscan")
+				return
 			}
 
 			if len(portList) > 0 {
 				results := make(map[int]string)
 				var pmu sync.Mutex
 				foundOpen := false
-				service.ScanPortsStream(ctx, target, portList, func(port int, banner string, err error) {
+				service.ScanPortsStreamWithOptions(ctx, target, portList, h.scanOptions, func(port int, banner string, err error) {
 					if err == nil {
 						pmu.Lock()
 						results[port] = banner
@@ -488,7 +533,7 @@ func (h *Handler) streamQuery(ctx context.Context, ws *websocket.Conn, target st
 		// Final 'done' message for the whole card
 		msg := WSMessage{
 			Type:   "all_done",
-			Target: target,
+			Target: cardTarget,
 		}
 		b, _ := json.Marshal(msg)
 		h.wsMu.Lock()

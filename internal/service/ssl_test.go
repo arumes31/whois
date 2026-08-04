@@ -53,6 +53,15 @@ func TestGetSSLInfo_Local(t *testing.T) {
 	if info.Verified {
 		t.Error("Expected Verified=false for self-signed cert (fallback)")
 	}
+	if len(info.Chain) == 0 || info.FingerprintSHA256 == "" {
+		t.Fatalf("expected certificate chain and fingerprint: %#v", info)
+	}
+	if info.Score < 0 || info.Score > 100 || info.Grade == "" {
+		t.Fatalf("invalid TLS score: %d %q", info.Score, info.Grade)
+	}
+	if len(info.SupportedVersions) == 0 {
+		t.Error("expected at least one supported TLS version")
+	}
 }
 
 func TestGetSSLInfo_Fail(t *testing.T) {
