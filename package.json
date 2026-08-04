@@ -1,0 +1,14 @@
+{
+  "name": "whois-assets",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "minify:js": "node scripts/minify-js.mjs static"
+  },
+  "devDependencies": {
+    "terser": "5.49.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

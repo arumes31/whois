@@ -54,3 +54,7 @@ dummy.mmdb
 Thumbs.db
 desktop.ini
 .dockerignore
+graphify-out/
+docs/
+
+.claudeignore
