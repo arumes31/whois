@@ -79,7 +79,13 @@ func startMACUpdater(interval time.Duration, update func(context.Context)) {
 		for {
 			select {
 			case <-ticker.C:
+				if ctx.Err() != nil {
+					return
+				}
 				update(ctx)
+				if ctx.Err() != nil {
+					return
+				}
 			case <-ctx.Done():
 				return
 			}
