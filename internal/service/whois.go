@@ -3,9 +3,12 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"fmt"
+	"io"
 	"math/big"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -14,6 +17,7 @@ import (
 	"github.com/likexian/whois"
 	whoisparser "github.com/likexian/whois-parser"
 	"github.com/openrdap/rdap"
+	"github.com/openrdap/rdap/bootstrap"
 )
 
 type WhoisInfo struct {
@@ -39,6 +43,11 @@ var WhoisFunc = func(ctx context.Context, target string, servers ...string) (str
 var WhoisServerValidator = validateWhoisServer
 
 var RdapLookupFunc = rdapLookup
+
+const (
+	rdapTimeout          = 15 * time.Second
+	maxRDAPResponseBytes = 4 * 1024 * 1024
+)
 
 type whoisResult struct {
 	raw string
@@ -241,7 +250,7 @@ func Whois(ctx context.Context, target string) interface{} {
 
 		// FINAL FALLBACK: RDAP (Modern replacement for WHOIS)
 		if err != nil || isErrorResponse(raw) {
-			rdapRaw, rdapErr := callWithContext(ctx, func() (string, error) { return RdapLookupFunc(target) })
+			rdapRaw, rdapErr := RdapLookupFunc(ctx, target)
 			if rdapErr == nil && rdapRaw != "" {
 				raw = rdapRaw
 				err = nil
@@ -305,16 +314,109 @@ func Whois(ctx context.Context, target string) interface{} {
 	return info
 }
 
-func rdapLookup(target string) (string, error) {
-	client := &rdap.Client{}
-	domain, err := client.QueryDomain(target)
+func rdapLookup(ctx context.Context, target string) (string, error) {
+	request, err := rdapRequestForTarget(ctx, target)
+	if err != nil {
+		return "", err
+	}
+	httpClient := safeRDAPHTTPClient()
+	client := &rdap.Client{HTTP: httpClient, Bootstrap: &bootstrap.Client{HTTP: httpClient}}
+	response, err := client.Do(request)
 	if err != nil {
 		return "", err
 	}
 
-	resp := &rdap.Response{Object: domain}
-	whoisStyle := resp.ToWhoisStyleResponse()
+	whoisStyle := response.ToWhoisStyleResponse()
+	return renderRDAPWhoisStyle(whoisStyle), nil
+}
 
+func rdapRequestForTarget(ctx context.Context, target string) (*rdap.Request, error) {
+	info := utils.NormalizeTarget(target)
+	if !info.Valid || !info.Networkable {
+		return nil, fmt.Errorf("invalid RDAP target")
+	}
+	var request *rdap.Request
+	if ip := net.ParseIP(info.Host); ip != nil {
+		request = rdap.NewIPRequest(ip)
+	} else {
+		request = rdap.NewDomainRequest(info.Host)
+	}
+	request.Timeout = rdapTimeout
+	return request.WithContext(ctx), nil
+}
+
+func safeRDAPHTTPClient() *http.Client {
+	transport := &http.Transport{
+		Proxy:             nil,
+		ForceAttemptHTTP2: true,
+		TLSClientConfig:   &tls.Config{MinVersion: tls.VersionTLS12},
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			addresses, err := resolveRDAPServer(ctx, host)
+			if err != nil {
+				return nil, err
+			}
+			conn, _, err := utils.DialResolvedTarget(ctx, network, addresses, port, rdapTimeout)
+			return conn, err
+		},
+	}
+	return &http.Client{
+		Timeout:   rdapTimeout,
+		Transport: boundedRoundTripper{base: transport, maxBytes: maxRDAPResponseBytes},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("stopped after 5 RDAP redirects")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("RDAP redirect uses unsupported scheme")
+			}
+			if _, err := resolveRDAPServer(req.Context(), req.URL.Hostname()); err != nil {
+				return fmt.Errorf("unsafe RDAP redirect: %w", err)
+			}
+			return nil
+		},
+	}
+}
+
+func resolveRDAPServer(ctx context.Context, host string) ([]net.IPAddr, error) {
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve RDAP server: %w", err)
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("RDAP server resolved to no addresses")
+	}
+	for _, address := range addresses {
+		if !utils.IsPublicIP(address.IP) {
+			return nil, fmt.Errorf("RDAP server resolves to a non-public address")
+		}
+	}
+	return addresses, nil
+}
+
+type boundedRoundTripper struct {
+	base     http.RoundTripper
+	maxBytes int64
+}
+
+func (t boundedRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := t.base.RoundTrip(request)
+	if err != nil {
+		return nil, err
+	}
+	response.Body = &boundedReadCloser{Reader: io.LimitReader(response.Body, t.maxBytes), Closer: response.Body}
+	return response, nil
+}
+
+type boundedReadCloser struct {
+	io.Reader
+	io.Closer
+}
+
+func renderRDAPWhoisStyle(whoisStyle *rdap.WhoisStyleResponse) string {
 	var sb strings.Builder
 	sb.WriteString("RDAP SOURCE DATA (Converted to WHOIS Style)\n")
 	sb.WriteString(strings.Repeat("-", 40) + "\n")
@@ -324,5 +426,5 @@ func rdapLookup(target string) (string, error) {
 			fmt.Fprintf(&sb, "%s: %s\n", key, value)
 		}
 	}
-	return sb.String(), nil
+	return sb.String()
 }

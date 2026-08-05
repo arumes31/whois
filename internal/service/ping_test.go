@@ -15,9 +15,8 @@ func init() {
 }
 
 func TestPing(t *testing.T) {
-	t.Parallel()
 	found := false
-	Ping(context.Background(), "127.0.0.1", 1, func(line string) {
+	_ = Ping(context.Background(), "127.0.0.1", 1, func(line string) {
 		l := strings.ToLower(line)
 		if strings.Contains(l, "reply from") || strings.Contains(l, "64 bytes from") || strings.Contains(l, "127.0.0.1") {
 			found = true
@@ -31,7 +30,7 @@ func TestPing(t *testing.T) {
 
 func TestPing_InvalidTarget(t *testing.T) {
 	hasError := false
-	Ping(context.Background(), "invalid!target", 1, func(line string) {
+	_ = Ping(context.Background(), "invalid!target", 1, func(line string) {
 		if strings.Contains(line, "Error") {
 			hasError = true
 		}
@@ -54,7 +53,7 @@ func TestPing_Mocked(t *testing.T) {
 			return cmd
 		}
 		found := false
-		Ping(context.Background(), "1.1.1.1", 1, func(line string) {
+		_ = Ping(context.Background(), "1.1.1.1", 1, func(line string) {
 			if strings.Contains(line, "Reply") {
 				found = true
 			}
@@ -69,13 +68,28 @@ func TestPing_Mocked(t *testing.T) {
 			return exec.Command("non-existent-command-12345")
 		}
 		hasError := false
-		Ping(context.Background(), "1.1.1.1", 1, func(line string) {
+		_ = Ping(context.Background(), "1.1.1.1", 1, func(line string) {
 			if strings.Contains(line, "Error") {
 				hasError = true
 			}
 		})
 		if !hasError {
 			t.Error("Expected Error in output")
+		}
+	})
+
+	t.Run("Stderr Detail", func(t *testing.T) {
+		PingCommandRunner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+			cmd := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "--", name)
+			cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", "HELPER_STDERR=network unreachable"}
+			return cmd
+		}
+		var lines []string
+		_ = Ping(context.Background(), "1.1.1.1", 1, func(line string) {
+			lines = append(lines, line)
+		})
+		if len(lines) == 0 || !strings.Contains(strings.Join(lines, "\n"), "Error: network unreachable") {
+			t.Fatalf("ping did not surface stderr detail: %v", lines)
 		}
 	})
 }

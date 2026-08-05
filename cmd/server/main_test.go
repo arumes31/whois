@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 	"whois/internal/config"
 	"whois/internal/utils"
 )
@@ -27,7 +29,14 @@ func TestNewServer(t *testing.T) {
 	cfg.TrustedIPs = "127.0.0.1"
 	cfg.TrustProxy = false
 
-	e := NewServer(cfg)
+	e, closeServer := NewServer(cfg)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := closeServer(ctx); err != nil {
+			t.Errorf("close server: %v", err)
+		}
+	})
 	if e == nil {
 		t.Fatal("NewServer returned nil")
 	}

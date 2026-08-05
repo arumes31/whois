@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 
+	"whois/internal/utils"
+
 	"github.com/miekg/dns"
 )
 
@@ -260,6 +262,9 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 	}
 
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	resultMu.Lock()
 	defer resultMu.Unlock()
 	if successfulQueries == 0 && len(queryErrors) > 0 {
@@ -346,6 +351,9 @@ func (s *DNSService) DiscoverSubdomainsStream(ctx context.Context, domain string
 		}(sub)
 	}
 	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -430,6 +438,10 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 				}
 
 				if nsIP != "" {
+					if !utils.IsPublicIP(net.ParseIP(nsIP)) {
+						results = append(results, fmt.Sprintf("Rejected non-public glue for %s (%s)", nsName, nsIP))
+						continue
+					}
 					nextServer = nsIP + ":53"
 					found = true
 					results = append(results, fmt.Sprintf("Following referral to %s (%s)", nsName, nsIP))

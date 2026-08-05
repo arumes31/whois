@@ -68,6 +68,12 @@ func getFlagEmoji(countryCode string) string {
 }
 
 func InitializeGeoDB(licenseKey, accountID string) {
+	InitializeGeoDBContext(context.Background(), licenseKey, accountID)
+}
+
+// InitializeGeoDBContext loads the local database, optionally downloads a
+// missing copy, and starts periodic updates unless the lifecycle is canceled.
+func InitializeGeoDBContext(ctx context.Context, licenseKey, accountID string) {
 	StopGeoDBUpdater()
 
 	geoMu.Lock()
@@ -101,7 +107,7 @@ func InitializeGeoDB(licenseKey, accountID string) {
 
 	geoUpdateMu.Lock()
 	if shouldUpdate && updateURL != "" {
-		if err := downloadGeoDB(context.Background(), updateURL, path, client, accountID, licenseKey); err != nil {
+		if err := downloadGeoDB(ctx, updateURL, path, client, accountID, licenseKey); err != nil && ctx.Err() == nil {
 			utils.Log.Error("failed to download GeoIP DB", utils.Field("error", err.Error()))
 		}
 	}
@@ -109,7 +115,7 @@ func InitializeGeoDB(licenseKey, accountID string) {
 	reloadGeoDB(path)
 	geoUpdateMu.Unlock()
 
-	if testMode {
+	if testMode || ctx.Err() != nil {
 		return
 	}
 
@@ -216,6 +222,13 @@ func CloseGeoDB() {
 		_ = geoReader.Close()
 		geoReader = nil
 	}
+}
+
+// GeoDBAvailable reports whether a readable local GeoIP database is loaded.
+func GeoDBAvailable() bool {
+	geoMu.RLock()
+	defer geoMu.RUnlock()
+	return geoReader != nil
 }
 
 func ReloadGeoDB() {

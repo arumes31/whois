@@ -29,7 +29,20 @@ var (
 
 const maxOUIDownloadBytes = 32 * 1024 * 1024
 
+// MACDatabaseAvailable reports whether the local OUI database is present and
+// non-empty. Lookups remain network-free and fail closed when it is absent.
+func MACDatabaseAvailable() bool {
+	info, err := os.Stat(OUIPath)
+	return err == nil && !info.IsDir() && info.Size() > 0
+}
+
 func InitializeMACService() {
+	InitializeMACServiceContext(context.Background())
+}
+
+// InitializeMACServiceContext loads local OUI data, optionally downloads a
+// missing copy, and starts periodic updates unless the lifecycle is canceled.
+func InitializeMACServiceContext(ctx context.Context) {
 	StopMACService()
 
 	path := OUIPath
@@ -40,12 +53,12 @@ func InitializeMACService() {
 
 	// Initial download if missing
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if err := downloadOUI(context.Background(), client, ouiURL, path); err != nil {
+		if err := downloadOUI(ctx, client, ouiURL, path); err != nil && ctx.Err() == nil {
 			utils.Log.Error("failed to download OUI database", utils.Field("error", err.Error()))
 		}
 	}
 
-	if testMode {
+	if testMode || ctx.Err() != nil {
 		return
 	}
 

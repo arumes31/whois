@@ -80,6 +80,15 @@ func (h *Handler) HandleWS(c echo.Context) error {
 			utils.Field("connection", c.Request().Header.Get("Connection")))
 	}
 
+	h.wsConnMu.Lock()
+	if h.wsClosing {
+		h.wsConnMu.Unlock()
+		return echo.NewHTTPError(503, "server is shutting down")
+	}
+	h.wsWG.Add(1)
+	h.wsConnMu.Unlock()
+	defer h.wsWG.Done()
+
 	ws, err := h.Upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		utils.Log.Error("websocket upgrade failed",
@@ -90,6 +99,11 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		return err
 	}
 	h.wsConnMu.Lock()
+	if h.wsClosing {
+		h.wsConnMu.Unlock()
+		_ = ws.Close()
+		return nil
+	}
 	h.wsConns[ws] = struct{}{}
 	h.wsConnMu.Unlock()
 	defer func() {
@@ -191,7 +205,7 @@ func (h *Handler) HandleWS(c echo.Context) error {
 			case <-ctx.Done():
 				return nil
 			default:
-				payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "too many queued targets; maximum is " + strconv.Itoa(maxWSQueuedQueries)})
+				payload, _ := json.Marshal(WSMessage{Type: "error", Target: target, Service: "system", Data: "too many queued targets; maximum is " + strconv.Itoa(maxWSQueuedQueries)})
 				_ = writer.write(websocket.TextMessage, payload)
 				continue
 			}
@@ -336,9 +350,20 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			defer releaseService()
 			sendLog("Discovering subdomains for " + target)
 
-			_ = h.DNS.DiscoverSubdomainsStream(ctx, target, nil, func(fqdn string, res map[string][]string) {
+			err := h.DNS.DiscoverSubdomainsStream(ctx, target, nil, func(fqdn string, res map[string][]string) {
 				processSub(fqdn, res)
 			})
+			if err != nil {
+				send("subdomains", map[string]string{"error": err.Error()})
+			} else {
+				subMu.Lock()
+				finalResults := make(map[string]interface{}, len(subResults))
+				for name, records := range subResults {
+					finalResults[name] = records
+				}
+				subMu.Unlock()
+				send("subdomains", finalResults)
+			}
 
 			sendLog("Subdomain discovery completed for " + target)
 			sendDone("subdomains")
@@ -355,10 +380,15 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			defer releaseService()
 			sendLog("Starting traceroute to " + target)
 			var lines []string
-			service.Traceroute(ctx, target, func(line string) {
+			err := service.Traceroute(ctx, target, func(line string) {
 				lines = append(lines, line)
 				send("route", lines)
 			})
+			if err != nil {
+				send("route", map[string]interface{}{"error": err.Error(), "lines": lines})
+			} else {
+				send("route", lines)
+			}
 			sendLog("Traceroute completed for " + target)
 			sendDone("route")
 		}()
@@ -373,8 +403,12 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			}
 			defer releaseService()
 			sendLog("Starting recursive DNS trace for " + target)
-			res, _ := h.DNS.Trace(ctx, target)
-			send("trace", res)
+			res, err := h.DNS.Trace(ctx, target)
+			if err != nil {
+				send("trace", map[string]interface{}{"error": err.Error(), "lines": res})
+			} else {
+				send("trace", res)
+			}
 			sendLog("DNS trace completed for " + target)
 			sendDone("trace")
 		}()
@@ -390,10 +424,15 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			defer releaseService()
 			sendLog("Initiating ICMP ping to " + target)
 			var lines []string
-			service.Ping(ctx, target, 4, func(line string) {
+			err := service.Ping(ctx, target, 4, func(line string) {
 				lines = append(lines, line)
 				send("ping", lines)
 			})
+			if err != nil {
+				send("ping", map[string]interface{}{"error": err.Error(), "lines": lines})
+			} else {
+				send("ping", lines)
+			}
 			sendLog("Ping sequence finished for " + target)
 			sendDone("ping")
 		}()
@@ -448,6 +487,7 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 				sendLog("DNS Error: " + err.Error())
 			} else {
 				dmu.Lock()
+				send("dns", dnsData)
 				_ = h.Storage.AddDNSHistory(ctx, target, dnsData)
 				dmu.Unlock()
 			}
@@ -533,7 +573,7 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 				return
 			}
 			defer releaseService()
-			sendLog("Locating IP and ASN data for " + target)
+			sendLog("Looking up local GeoIP location data for " + target)
 			g, err := service.GetGeoInfo(ctx, target)
 			if err != nil {
 				send("geo", map[string]string{"error": err.Error()})
@@ -565,25 +605,21 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 
 			results := make(map[int]string)
 			var pmu sync.Mutex
-			foundOpen := false
-			service.ScanPortsStreamWithOptions(ctx, target, portList, h.scanOptions, func(port int, banner string, err error) {
+			scanResult := service.ScanPortsStreamWithOptions(ctx, target, portList, h.scanOptions, func(port int, banner string, err error) {
 				if err == nil {
 					pmu.Lock()
 					results[port] = banner
-					foundOpen = true
 					// Create a copy for sending to avoid race condition during Marshal
 					msgData := make(map[int]string)
 					for k, v := range results {
 						msgData[k] = v
 					}
 					pmu.Unlock()
-					send("portscan", msgData)
+					send("portscan", service.ScanResult{Open: msgData})
 					sendLog("Port " + strconv.Itoa(port) + " is OPEN")
 				}
 			})
-			if !foundOpen {
-				send("portscan", results)
-			}
+			send("portscan", scanResult)
 			sendLog("Port scan completed for " + target)
 			sendDone("portscan")
 		}()

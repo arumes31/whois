@@ -104,15 +104,25 @@ func (s *Storage) GetHistoryWithDiffs(ctx context.Context, item string) ([]model
 
 		// Pretty print JSON for better diff
 		var currentObj, previousObj interface{}
-		_ = json.Unmarshal([]byte(currentRaw), &currentObj)
-		_ = json.Unmarshal([]byte(previousRaw), &previousObj)
+		if err := json.Unmarshal([]byte(currentRaw), &currentObj); err != nil {
+			return nil, nil, fmt.Errorf("decode current DNS history result: %w", err)
+		}
+		if err := json.Unmarshal([]byte(previousRaw), &previousObj); err != nil {
+			return nil, nil, fmt.Errorf("decode previous DNS history result: %w", err)
+		}
 
 		// Normalize to reduce noise from reordered arrays
 		currentObj = normalizeData(currentObj)
 		previousObj = normalizeData(previousObj)
 
-		currentPretty, _ := json.MarshalIndent(currentObj, "", "  ")
-		previousPretty, _ := json.MarshalIndent(previousObj, "", "  ")
+		currentPretty, err := json.MarshalIndent(currentObj, "", "  ")
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode current DNS history result: %w", err)
+		}
+		previousPretty, err := json.MarshalIndent(previousObj, "", "  ")
+		if err != nil {
+			return nil, nil, fmt.Errorf("encode previous DNS history result: %w", err)
+		}
 
 		edits := myers.ComputeEdits(span.URIFromPath("previous"), string(previousPretty), string(currentPretty))
 		diff := fmt.Sprint(gotextdiff.ToUnified("previous", "current", string(previousPretty), edits))
@@ -135,11 +145,19 @@ type HistoryMetadata struct {
 func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interface{}) error {
 	// Normalize input data before saving to ensure consistent comparison
 	// Marshal and Unmarshal to ensure we have a generic interface{} structure to normalize
-	resBytes, _ := json.Marshal(result)
+	resBytes, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("encode DNS history result: %w", err)
+	}
 	var obj interface{}
-	_ = json.Unmarshal(resBytes, &obj)
+	if err := json.Unmarshal(resBytes, &obj); err != nil {
+		return fmt.Errorf("normalize DNS history result: %w", err)
+	}
 	normalizedObj := normalizeData(obj)
-	resBytes, _ = json.Marshal(normalizedObj)
+	resBytes, err = json.Marshal(normalizedObj)
+	if err != nil {
+		return fmt.Errorf("encode normalized DNS history result: %w", err)
+	}
 	resStr := string(resBytes)
 
 	// Fetch metadata or versioning info if needed
@@ -161,7 +179,10 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Result:    resStr,
 	}
-	entryBytes, _ := json.Marshal(entry)
+	entryBytes, err := json.Marshal(entry)
+	if err != nil {
+		return fmt.Errorf("encode DNS history entry: %w", err)
+	}
 
 	utils.Log.Info("redis history update", utils.Field("item", item))
 	pipe := s.Client.Pipeline()
@@ -192,7 +213,10 @@ func (s *Storage) GetCache(ctx context.Context, key string) (string, error) {
 }
 
 func (s *Storage) SetCache(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
-	val, _ := json.Marshal(value)
+	val, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("encode cache value: %w", err)
+	}
 	utils.Log.Debug("redis cache set", utils.Field("key", key), utils.Field("exp", expiration.String()))
 	return s.Client.Set(ctx, key, val, expiration).Err()
 }

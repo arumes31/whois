@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -39,6 +40,33 @@ func startMockDNSServer(t *testing.T, handler dns.Handler, network string) strin
 	go func() { _ = server.ActivateAndServe() }()
 	t.Cleanup(func() { _ = server.Shutdown() })
 	return l.Addr().String()
+}
+
+func listenTCPAndUDP(t *testing.T) (net.Listener, net.PacketConn, string) {
+	t.Helper()
+	var lastErr error
+	const (
+		firstPort = 10000
+		portCount = 20000
+	)
+	start := int(time.Now().UnixNano() % portCount)
+	for offset := range portCount {
+		port := firstPort + (start+offset)%portCount
+		resolverAddr := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+		tcpListener, err := net.Listen("tcp", resolverAddr)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		packetConn, err := net.ListenPacket("udp", resolverAddr)
+		if err == nil {
+			return tcpListener, packetConn, resolverAddr
+		}
+		lastErr = err
+		_ = tcpListener.Close()
+	}
+	t.Fatalf("listen on a shared TCP/UDP port after retries: %v", lastErr)
+	return nil, nil, ""
 }
 
 func TestDNSService_Lookup(t *testing.T) {
@@ -547,16 +575,7 @@ func TestDNSService_Query_Truncated(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	tcpListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen for TCP: %v", err)
-	}
-	resolverAddr := tcpListener.Addr().String()
-	packetConn, err := net.ListenPacket("udp", resolverAddr)
-	if err != nil {
-		_ = tcpListener.Close()
-		t.Fatalf("listen for UDP: %v", err)
-	}
+	tcpListener, packetConn, resolverAddr := listenTCPAndUDP(t)
 
 	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler}
 	tcpServer := &dns.Server{Listener: tcpListener, Handler: handler}
@@ -635,4 +654,50 @@ func TestDNSService_Trace_NoNS(t *testing.T) {
 
 func TestDNSService_Trace_TooLong(t *testing.T) {
 	// Not easy to test without many referrals, but logic is simple
+}
+
+func TestDNSServiceStreamsPropagateCancellation(t *testing.T) {
+	service := NewDNSService("192.0.2.53:53", "")
+	service.SetMaxAttempts(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if err := service.LookupStream(ctx, "example.com", false, func(string, interface{}) {}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("LookupStream error = %v; want context cancellation", err)
+	}
+	if err := service.DiscoverSubdomainsStream(ctx, "example.com", []string{"www"}, func(string, map[string][]string) {}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("DiscoverSubdomainsStream error = %v; want context cancellation", err)
+	}
+}
+
+func TestDNSServiceTraceRejectsNonPublicGlue(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		response.SetReply(request)
+		name := request.Question[0].Name
+		response.Ns = append(response.Ns, &dns.NS{
+			Hdr: dns.RR_Header{Name: name, Rrtype: dns.TypeNS, Class: dns.ClassINET, Ttl: 60},
+			Ns:  "ns1.private.example.",
+		})
+		response.Extra = append(response.Extra, &dns.A{
+			Hdr: dns.RR_Header{Name: "ns1.private.example.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+			A:   net.ParseIP("127.0.0.1"),
+		})
+		_ = w.WriteMsg(response)
+	})
+	root := startMockDNSServer(t, handler, "udp")
+	originalRoots := RootServers
+	RootServers = []string{root}
+	t.Cleanup(func() { RootServers = originalRoots })
+
+	results, err := NewDNSService("", "").Trace(context.Background(), "example.com")
+	if err != nil {
+		t.Fatalf("Trace failed: %v", err)
+	}
+	for _, line := range results {
+		if strings.Contains(line, "Rejected non-public glue") {
+			return
+		}
+	}
+	t.Fatalf("Trace did not report rejected private glue: %v", results)
 }

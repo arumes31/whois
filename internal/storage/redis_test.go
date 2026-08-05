@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 	"whois/internal/model"
@@ -98,6 +99,18 @@ func TestStorage_Cache(t *testing.T) {
 	}
 }
 
+func TestStorage_SetCacheRejectsUnencodableValueBeforeMutation(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+
+	if err := s.SetCache(ctx, "invalid-cache", math.NaN(), time.Minute); err == nil {
+		t.Fatal("SetCache accepted an unencodable value")
+	}
+	if _, err := s.GetCache(ctx, "invalid-cache"); err != redis.Nil {
+		t.Fatalf("cache lookup error = %v, want redis.Nil after rejected value", err)
+	}
+}
+
 func TestStorage_DNSHistory(t *testing.T) {
 	s := setupMiniredis(t)
 	ctx := context.Background()
@@ -170,6 +183,53 @@ func TestStorage_DNSHistory(t *testing.T) {
 	}
 	if !foundNoChanges {
 		t.Error("Expected 'No changes' in diffs")
+	}
+}
+
+func TestStorage_AddDNSHistoryRejectsUnencodableValueBeforeMutation(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const target = "invalid-history.example"
+
+	if err := s.AddDNSHistory(ctx, target, map[string]interface{}{"value": math.NaN()}); err == nil {
+		t.Fatal("AddDNSHistory accepted an unencodable value")
+	}
+	history, err := s.GetDNSHistory(ctx, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("history entries = %d, want 0 after rejected value", len(history))
+	}
+	tracked, err := s.Client.SCard(ctx, dnsHistoryTargetsKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracked != 0 {
+		t.Fatalf("tracked targets = %d, want 0 after rejected value", tracked)
+	}
+}
+
+func TestStorage_GetHistoryWithDiffsReturnsMalformedResultError(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const target = "malformed-history.example"
+	entries := []model.HistoryEntry{
+		{Timestamp: "new", Result: "not-json"},
+		{Timestamp: "old", Result: `{"A":["192.0.2.1"]}`},
+	}
+	for _, entry := range entries {
+		encoded, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Client.RPush(ctx, "dns_history:"+target, encoded).Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, _, err := s.GetHistoryWithDiffs(ctx, target); err == nil {
+		t.Fatal("GetHistoryWithDiffs accepted malformed result JSON")
 	}
 }
 

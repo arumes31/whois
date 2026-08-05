@@ -17,7 +17,7 @@
                         <p class="text-white small mb-0">Inspect domains and IPs across the enabled diagnostic modules</p>
                     </div>
                     <div class="d-flex gap-2">
-                        <button type="button" onclick="clearResults()" class="btn btn-sm btn-outline-secondary" aria-label="Clear all scan results and target input">
+                        <button type="button" onclick="clearResults()" class="btn btn-sm btn-outline-secondary" aria-label="RESET and clear all scan results and target input">
                             <svg style="width:12px;height:12px;margin-right:4px;fill:currentColor"
                                 viewBox="0 0 512 512">
                                 <path
@@ -102,13 +102,13 @@
                                 </svg>HTTP</label>
                         </div>
                         <div class="feature-toggle">
-                            <input type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}>
+                            <input type="checkbox" id="cfg-geo" {{ if and .config.EnableGeo .geo_available }}checked{{ end }} {{ if not .geo_available }}disabled aria-describedby="geoUnavailableHelp"{{ end }}>
                             <label for="cfg-geo"><svg
                                     style="width:12px;height:12px;margin-right:4px;fill:currentColor;opacity:0.2"
                                     viewBox="0 0 512 512">
                                     <path
                                         d="M57.7 193l9.4 16.4c8.3 14.5 21.9 25.2 38 29.8L163 255.7c17.2 4.9 29 20.6 29 38.5v39.9c0 11 6.2 21 16 25.9s16 14.9 16 25.9v39c0 15.6 14.9 26.9 29.9 22.6c16.1-4.6 28.6-17.5 32.7-33.8l2.8-11.2c4.2-16.9 15.2-31.4 30.3-40l8.1-4.6c15-8.5 24.2-24.5 24.2-41.7v-8.3c0-12.7-5.1-24.9-14.1-33.9l-3.9-3.9c-9-9-21.2-14.1-33.9-14.1H257c-11.1 0-22.1-2.9-31.8-8.4l-34.5-19.7c-4.3-2.5-7.6-6.5-9.2-11.2l-3.2-9.6c-1.1-3.3-3.1-6.2-5.8-8.5L142 171.2c-7.9-6.7-11.7-17.3-9.9-27.6l3.2-18.8c1.7-10.2-1.7-20.4-9.3-27.3l-3.6-3.3c-15.9-14.4-40-13-54.2 3.3L13 161.5C3 173 1.3 189.3 8.8 202.5l4.1 7.1c7.1 12.3 18.1 22.2 31.3 28l13.5 6zM497 273.9c4.9-18.2 1.3-37.5-9.8-52.5l-7.1-9.4c-23.4-31.2-64.1-41.3-99.2-24.4l-30 14.4c-15.6 7.5-25.6 23.3-25.6 40.7v57.4c0 16.9 9.1 32.6 24 41.2l62.7 36c13.2 7.6 27.3 12.7 42 15.1l15 2.5c10.3 1.7 20.4-2.1 27-9.8l14.9-17.6c12.7-14.9 15.3-35.6 6.9-53.1l-1.1-2.4zM256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z" />
-                                </svg>GEO/ASN</label>
+                                </svg>GEO LOCATION</label>
                         </div>
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}>
@@ -169,6 +169,7 @@
                         </div>
                     </div>
                     <div id="portsHelp" class="field-help mt-2" hidden>Presets: common, web, mail, database, remote. Ranges such as 8000-8010 are supported.</div>
+                    {{ if not .geo_available }}<div id="geoUnavailableHelp" class="field-help mt-2">Geo location is unavailable until a local GeoLite2 City database is installed.</div>{{ end }}
                 </div>
             </div>
         </div>
@@ -201,13 +202,13 @@
     <!-- Quick Tools & Side Info -->
     <div class="col-xl-4">
         <div class="glass-panel border-nordic mb-4 p-4">
-            <h5 class="fw-bold mb-3">
+            <h2 class="h5 fw-bold mb-3">
                 <svg style="width:16px;height:16px;margin-right:8px;fill:#ffc107" viewBox="0 0 512 512">
                     <path
                         d="M448 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V128H320c-17.7 0-32 14.3-32 32s14.3 32 32 32h64v32H224c-17.7 0-32 14.3-32 32s14.3 32 32 32h32v64c0 17.7 14.3 32 32 32s32-14.3 32-32V320h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H320V224h64c17.7 0 32-14.3 32-32s-14.3-32-32-32H352V32h96z" />
                 </svg>
                 QUICK TOOLS
-            </h5>
+            </h2>
             <div class="list-group list-group-flush bg-transparent">
                 <button type="button" onclick="openTool('dns')"
                     class="list-group-item bg-transparent text-white border-secondary py-3 d-flex justify-content-between align-items-center">
@@ -220,7 +221,7 @@
                             d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z" />
                     </svg>
                 </button>
-                <button type="button" onclick="openTool('mac')"
+                <button type="button" onclick="openTool('mac')" {{ if not .mac_available }}disabled aria-describedby="macUnavailableHelp"{{ end }}
                     class="list-group-item bg-transparent text-white border-secondary py-3 d-flex justify-content-between align-items-center">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#ffc107" viewBox="0 0 512 512">
                             <path
@@ -231,6 +232,7 @@
                             d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z" />
                     </svg>
                 </button>
+                {{ if not .mac_available }}<p id="macUnavailableHelp" class="field-help px-3 mt-2">Install a local OUI database to enable MAC vendor lookup.</p>{{ end }}
                 <a href="/metrics" target="_blank" rel="noopener" aria-label="System metrics (opens in a new tab)"
                     class="list-group-item bg-transparent text-white border-0 py-3 d-flex justify-content-between align-items-center">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 640 512">
@@ -246,13 +248,13 @@
         </div>
 
         <div class="glass-panel border-nordic mb-4 p-3">
-            <h6 class="text-white small border-bottom border-secondary pb-2 mb-3">
+            <h3 class="h6 text-white small border-bottom border-secondary pb-2 mb-3">
                 <svg style="width:14px;height:14px;margin-right:8px;fill:#0dcaf0" viewBox="0 0 448 512">
                     <path
                         d="M160 80c0-26.5 21.5-48 48-48h32c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H208c-26.5 0-48-21.5-48-48V80zM0 272c0-26.5 21.5-48 48-48H80c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V272zM368 224c26.5 0 48 21.5 48 48V432c0 26.5-21.5 48-48 48H336c-26.5 0-48-21.5-48-48V272c0-26.5 21.5-48 48-48h32z" />
                 </svg>
                 SYSTEM STATISTICS
-            </h6>
+            </h3>
             <div class="row text-center">
                 <div class="col-6 border-end border-secondary border-border-opacity-10">
                     <div class="h4 mb-0 text-nordic-blue fw-bold">{{ .stats.MonitoredCount }}</div>
@@ -267,13 +269,13 @@
 
         <div class="glass-panel border-nordic mb-4 h-100 p-3"
             style="min-height: 400px; display: flex; flex-direction: column;">
-            <h6 class="text-white small border-bottom border-secondary pb-2 mb-3">
+            <h3 class="h6 text-white small border-bottom border-secondary pb-2 mb-3">
                 <svg style="width:14px;height:14px;margin-right:8px;fill:#ff4d4d" viewBox="0 0 512 512">
                     <path
                         d="M192 128a64 64 0 1 0 128 0 64 64 0 1 0 -128 0zm157.6 12c-8.3-14-19-26.8-31.3-38.1c-13.1-12.1-28.1-21.8-44.3-28.6c-5.9-2.5-12.5-3.8-19.2-3.8s-13.3 1.3-19.2 3.8c-16.2 6.8-31.2 16.5-44.3 28.6c-12.3 11.3-23 24.1-31.3 38.1c-13.1 22.1-19.7 47.1-19.7 73.1c0 33.7 11.4 69.4 31.7 98.2c18.8 26.6 44.2 44.7 72.2 53.9c6.3 2.1 13 3.2 19.8 3.2s13.5-1.1 19.8-3.2c28-9.2 53.4-27.3 72.2-53.9c20.3-28.8 31.7-64.5 31.7-98.2c0-26-6.6-51-19.7-73.1zM352 128c0 53-43 96-96 96s-96-43-96-96s43-96 96-96s96 43 96 96zm128 0c0 123.7-100.3 224-224 224S32 251.7 32 128S132.3-96 256-96s224 100.3 224 224zM256 448c-17.7 0-32 14.3-32 32s14.3 32 32 32s32-14.3 32-32s-14.3-32-32-32z" />
                 </svg>
                 LIVE ACTIVITY
-            </h6>
+            </h3>
             <div id="liveLog" class="flex-grow-1 font-monospace" role="log" aria-live="polite" aria-relevant="additions"
                 style="font-size: 0.7rem; overflow-y: auto; max-height: 600px;">
                 <div class="text-white italic">Waiting for scan data...</div>
@@ -336,7 +338,7 @@
                     <summary><span class="status-indicator" data-status="pending"><svg
                                 style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512">
                                 <path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z" />
-                            </svg></span>LOCATION & ASN</summary>
+                            </svg></span>GEO LOCATION</summary>
                 </details>
             </div>
             <div class="service-section" data-service="whois">
@@ -433,6 +435,7 @@
     const pingCharts = new Map();
     const ignoredTargets = new Set();
     const maxQueuedMessages = 50;
+    const maxQueryTargets = 25;
     let reconnectTimer;
     let reconnectAttempts = 0;
     let heartbeatTimer;
@@ -568,6 +571,24 @@
                 return;
             }
             if (msg.type === 'heartbeat') return; // Ignore heartbeat responses
+            if (msg.type === 'error') {
+                const message = typeof msg.data === 'string' ? msg.data : 'The server rejected a diagnostic request.';
+                const target = typeof msg.target === 'string' && msg.target ? msg.target : 'SYSTEM';
+                appendLog(target, message);
+                announce(message);
+                if (target !== 'SYSTEM') {
+                    const card = getTargetCard(target);
+                    const badge = card?.querySelector('.status-badge');
+                    const bar = card?.querySelector('.progress-bar');
+                    if (badge) {
+                        badge.textContent = 'FAILED';
+                        badge.className = 'badge bg-danger-dim text-danger status-badge';
+                    }
+                    if (bar) bar.style.width = '100%';
+                    activeScans.delete(target);
+                }
+                return;
+            }
             const supportedTypes = new Set(['log', 'result', 'done', 'all_done']);
             const needsService = msg.type === 'result' || msg.type === 'done';
             if (!supportedTypes.has(msg.type) || typeof msg.target !== 'string' || (needsService && typeof msg.service !== 'string')) {
@@ -704,29 +725,39 @@
             input.focus();
             return;
         }
+        if (targets.length > maxQueryTargets) {
+            error.textContent = `Enter no more than ${maxQueryTargets} targets at a time.`;
+            input.setAttribute('aria-invalid', 'true');
+            input.focus();
+            return;
+        }
+
+        const config = {
+            whois: document.getElementById('cfg-whois').checked,
+            dns: document.getElementById('cfg-dns').checked,
+            ssl: document.getElementById('cfg-ssl').checked,
+            http: document.getElementById('cfg-http').checked,
+            geo: document.getElementById('cfg-geo').checked,
+            ct: document.getElementById('cfg-ct').checked,
+            ping: document.getElementById('cfg-ping').checked,
+            trace: document.getElementById('cfg-trace').checked,
+            route: document.getElementById('cfg-route').checked,
+            subdomains: document.getElementById('cfg-subdomains').checked,
+            portscan: document.getElementById('cfg-portscan').checked,
+            ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
+        };
+        const enabledServices = Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
+        if (enabledServices === 0) {
+            error.textContent = 'Select at least one diagnostic module.';
+            announce(error.textContent);
+            return;
+        }
         error.textContent = '';
         input.removeAttribute('aria-invalid');
         announce(`Starting diagnostics for ${targets.length} ${targets.length === 1 ? 'target' : 'targets'}.`);
 
         targets.forEach(t => {
             ignoredTargets.delete(t);
-            const config = {
-                whois: document.getElementById('cfg-whois').checked,
-                dns: document.getElementById('cfg-dns').checked,
-                ssl: document.getElementById('cfg-ssl').checked,
-                http: document.getElementById('cfg-http').checked,
-                geo: document.getElementById('cfg-geo').checked,
-                ct: document.getElementById('cfg-ct').checked,
-                ping: document.getElementById('cfg-ping').checked,
-                trace: document.getElementById('cfg-trace').checked,
-                route: document.getElementById('cfg-route').checked,
-                subdomains: document.getElementById('cfg-subdomains').checked,
-                portscan: document.getElementById('cfg-portscan').checked,
-                ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
-            };
-
-            const enabledServices = Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
-
             createCard(t);
             activeScans.set(t, {
                 total: enabledServices,
@@ -862,6 +893,11 @@
         if (msg.type === 'done') {
             const scan = activeScans.get(msg.target);
             if (scan) {
+                const section = getTargetCard(msg.target)?.querySelector(`[data-service="${msg.service}"]`);
+                if (section?.querySelector('.skeleton-wrapper')) {
+                    const label = String(msg.service || 'service').replace(/_/g, ' ').toUpperCase();
+                    section.innerHTML = DOMPurify.sanitize(`<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>${escapeHTML(label)}</summary><div class="p-2 text-white small">No results returned.</div></details>`);
+                }
                 scan.completed++;
                 updateProgressBar(msg.target);
                 const hasFailure = scan.failures.has(msg.service);
@@ -890,6 +926,12 @@
                 statusBadge.classList.add(problemCount > 0 ? 'bg-danger-dim' : 'bg-success-dim', problemCount > 0 ? 'text-danger' : 'text-success');
                 card.querySelector('.streaming-indicator').style.display = 'none';
                 card.setAttribute('aria-busy', 'false');
+
+                card.querySelectorAll('.service-section').forEach(section => {
+                    if (!section.querySelector('.skeleton-wrapper')) return;
+                    const label = String(section.dataset.service || 'service').replace(/_/g, ' ').toUpperCase();
+                    section.innerHTML = DOMPurify.sanitize(`<details><summary><span class="status-indicator" data-status="skipped">${statusIcons.pending}</span>${escapeHTML(label)}</summary><div class="p-2 text-white small">This module did not run for the target.</div></details>`);
+                });
 
                 // Do not claim success for modules that never returned a result.
                 card.querySelectorAll('.status-indicator[data-status="running"], .status-indicator[data-status="pending"]').forEach(el => {
@@ -941,7 +983,7 @@
             case 'geo':
                 if (data && !data.error) {
                     const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${escapeHTML(data.country_emoji)}</span>` : '';
-                    html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>${flag} LOCATION & ASN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Geographic location, ISP, and Autonomous System Number (ASN) data"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>${flag} GEO LOCATION <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Country, region, city, timezone, and coordinates from the installed local database"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex align-items-center mb-2">
                                 <svg style="width:16px;height:16px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 384 512"><path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/></svg>
@@ -953,8 +995,8 @@
                             <div class="d-flex align-items-center mb-2">
                                 <svg style="width:16px;height:16px;margin-right:12px;fill:#0dcaf0" viewBox="0 0 640 512"><path d="M640 352c0 35.3-28.7 64-64 64H512V320H640v32zm-192 64H320V320H448v96zm-192 0H64c-35.3 0-64-28.7-64-64V320H192v96zm448-160H0V160c0-35.3 28.7-64 64-64H576c35.3 0 64 28.7 64 64V256zM64 128c-17.7 0-32 14.3-32 32s14.3 32 32 32H224c17.7 0 32-14.3 32-32V160c0-17.7-14.3-32-32-32H32zM64 192h32v32H64V192zm96 0h32v32h-32V192zM64 288h32v32H64V288zm96 0h32v32h-32V288z"/></svg>
                                 <div>
-                                    <div class="fw-bold">${escapeHTML(data.as) || 'Unknown AS'}</div>
-                                    <div class="text-white" style="font-size:0.65rem;">IP: ${escapeHTML(data.query)}</div>
+                                    <div class="fw-bold">IP address</div>
+                                    <div class="text-white" style="font-size:0.65rem;">${escapeHTML(data.query)}</div>
                                 </div>
                             </div>
                             <div class="mt-2 pt-2 border-top border-secondary border-opacity-10">
@@ -962,7 +1004,7 @@
                             </div>
                         </div></details>`;
                 } else {
-                    html = `<details><summary>LOCATION & ASN</summary><div class="p-2 text-white small">Geo data unavailable</div></details>`;
+                    html = `<details><summary>GEO LOCATION</summary><div class="p-2 text-white small">Geo data unavailable</div></details>`;
                 }
                 break;
             case 'subdomains':
@@ -986,33 +1028,46 @@
                 }
                 break;
             case 'portscan':
-                if (data && Object.keys(data).length > 0) {
-                    html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>PORT SCAN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Open ports and service banners"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                const structuredScan = data && typeof data === 'object' && !Array.isArray(data)
+                    && ['open', 'closed', 'filtered', 'error'].some(key => Object.hasOwn(data, key));
+                const openPorts = structuredScan ? (data.open || {}) : (data || {});
+                const closedPorts = Array.isArray(data?.closed) ? data.closed : [];
+                const filteredPorts = Array.isArray(data?.filtered) ? data.filtered : [];
+                const scanErrors = Array.isArray(data?.error) ? data.error : (data?.error ? [data.error] : []);
+                if (Object.keys(openPorts).length > 0 || closedPorts.length > 0 || filteredPorts.length > 0 || scanErrors.length > 0) {
+                    const scanFailed = scanErrors.length > 0;
+                    html = `<details open><summary><span class="status-indicator" data-status="${scanFailed ? 'error' : 'success'}">${scanFailed ? statusIcons.error : statusIcons.success}</span>PORT SCAN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Open, closed, and filtered port results"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2">
 `;
-                    for (const [port, banner] of Object.entries(data)) {
+                    for (const [port, banner] of Object.entries(openPorts)) {
                         html += `<div class="d-flex justify-content-between align-items-center mb-1 small clickable-record" onclick="copyToClipboard(this)">
-                                <span class="badge bg-danger-dim text-danger" style="width: 60px;">${escapeHTML(port)}</span>
+                                <span class="badge bg-success-dim text-success" style="width: 60px;">${escapeHTML(port)}</span>
                                 <span class="text-info font-monospace flex-grow-1 ms-2" style="font-size: 0.65rem;">${escapeHTML(banner) || 'Open (No Banner)'}</span>
                              </div>`;
                     }
+                    if (closedPorts.length > 0) html += `<div class="text-white small mt-2"><strong>Closed:</strong> ${escapeHTML(closedPorts.join(', '))}</div>`;
+                    if (filteredPorts.length > 0) html += `<div class="text-warning small mt-2"><strong>Filtered/unreachable:</strong> ${escapeHTML(filteredPorts.join(', '))}</div>`;
+                    if (scanErrors.length > 0) html += `<div class="text-danger small mt-2"><strong>Errors:</strong> ${escapeHTML(scanErrors.join('; '))}</div>`;
                     html += `</div></details>`;
                 } else {
                     html = `<details><summary>PORT SCAN</summary><div class="p-2 text-white small">No open ports found</div></details>`;
                 }
                 break;
             case 'ping':
-                const latencies = data.map(line => {
+                const pingLines = Array.isArray(data) ? data : (Array.isArray(data?.lines) ? data.lines : []);
+                const pingFailed = resultHasError(data);
+                const latencies = pingLines.map(line => {
                     const match = line.match(/time=([0-9.]+)/);
                     return match ? parseFloat(match[1]) : null;
                 }).filter(v => v !== null);
 
                 const pingCanvasId = `chart-ping-${encodeURIComponent(String(msg.target)).replace(/%/g, '')}`;
-                html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network latency and packet round-trip time (ICMP Echo Request)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                html = `<details open><summary><span class="status-indicator" data-status="${pingFailed ? 'error' : 'success'}">${pingFailed ? statusIcons.error : statusIcons.success}</span>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network latency and packet round-trip time (ICMP Echo Request)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <div class="mt-2" style="height: 40px; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 2px;">
                         <canvas id="${pingCanvasId}" style="width: 100%; height: 100%;"></canvas>
                     </div>
-                    <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(data.join('\n'))}</code></pre>
+                    ${pingFailed ? `<div class="text-danger small mt-2">${escapeHTML(data.error)}</div>` : ''}
+                    <pre class="p-2 mt-1 rounded bg-dark ${pingFailed ? 'text-danger' : 'text-success'} clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(pingLines.join('\n'))}</code></pre>
                     </details>`;
 
                 // Render Sparkline
@@ -1056,13 +1111,19 @@
                 }, 0);
                 break;
             case 'route':
-                html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of network hops and routing paths to the target"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
-                    <pre class="p-2 mt-1 rounded bg-dark text-info clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(data.join('\n'))}</code></pre>
+                const routeLines = Array.isArray(data) ? data : (Array.isArray(data?.lines) ? data.lines : []);
+                const routeFailed = resultHasError(data);
+                html = `<details><summary><span class="status-indicator" data-status="${routeFailed ? 'error' : 'success'}">${routeFailed ? statusIcons.error : statusIcons.success}</span>TRACEROUTE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of network hops and routing paths to the target"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    ${routeFailed ? `<div class="p-2 text-danger small">${escapeHTML(data.error)}</div>` : ''}
+                    <pre class="p-2 mt-1 rounded bg-dark ${routeFailed ? 'text-danger' : 'text-info'} clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(routeLines.join('\n'))}</code></pre>
                     </details>`;
                 break;
             case 'trace':
-                html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>DNS TRACE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Full recursive DNS resolution path starting from the Root Servers"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
-                    <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${escapeHTML(data.join('\n'))}</code></pre>
+                const traceLines = Array.isArray(data) ? data : (Array.isArray(data?.lines) ? data.lines : []);
+                const traceFailed = resultHasError(data);
+                html = `<details><summary><span class="status-indicator" data-status="${traceFailed ? 'error' : 'success'}">${traceFailed ? statusIcons.error : statusIcons.success}</span>DNS TRACE <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Full recursive DNS resolution path starting from the Root Servers"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    ${traceFailed ? `<div class="p-2 text-danger small">${escapeHTML(data.error)}</div>` : ''}
+                    <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${escapeHTML(traceLines.join('\n'))}</code></pre>
                     </details>`;
                 break;
             case 'dns':
@@ -1502,7 +1563,7 @@
             Object.keys(config).forEach(key => {
                 const el = document.getElementById('cfg-' + key);
                 if (el) {
-                    if (el.type === 'checkbox') el.checked = config[key];
+                    if (el.type === 'checkbox') el.checked = el.disabled ? false : Boolean(config[key]);
                     else el.value = config[key];
                 }
             });
@@ -1559,7 +1620,7 @@
         modal.show();
 
         try {
-            const resp = await fetch(`/history/${encodeURIComponent(target)}`);
+            const resp = await fetch(`/history?item=${encodeURIComponent(target)}`);
             const data = await resp.json();
 
             if (data.error) {

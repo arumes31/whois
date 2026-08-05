@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -367,7 +368,10 @@ func TestHandleWSRejectsTooManyTargets(t *testing.T) {
 	e := echo.New()
 	h := NewHandler(storage.NewStorage("localhost", "6379"), &config.Config{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = h.HandleWS(e.NewContext(r, w))
+		c := e.NewContext(r, w)
+		if err := h.HandleWS(c); err != nil {
+			e.HTTPErrorHandler(err, c)
+		}
 	}))
 	defer srv.Close()
 
@@ -417,5 +421,39 @@ func TestHandleWSEnforcesReadLimit(t *testing.T) {
 	}
 	if _, _, err := ws.ReadMessage(); err == nil {
 		t.Fatal("oversized websocket request did not close the connection")
+	}
+}
+
+func TestHandlerCloseWaitsForWebSocketsAndRejectsNewConnections(t *testing.T) {
+	e := echo.New()
+	h := NewHandler(storage.NewStorage("localhost", "6379"), &config.Config{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := e.NewContext(r, w)
+		if err := h.HandleWS(c); err != nil {
+			e.HTTPErrorHandler(err, c)
+		}
+	}))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer func() { _ = ws.Close() }()
+
+	h.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := h.WaitForClose(ctx); err != nil {
+		t.Fatalf("wait for websocket shutdown: %v", err)
+	}
+
+	_, response, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err == nil {
+		t.Fatal("new websocket connection succeeded after handler shutdown")
+	}
+	if response == nil || response.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("new websocket response = %#v, want HTTP %d", response, http.StatusServiceUnavailable)
 	}
 }

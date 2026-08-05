@@ -246,6 +246,15 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 	legacy := make(map[string]string, len(headers))
 	issues := make([]string, 0)
 	score := 100
+	if resp.Request == nil || resp.Request.URL == nil || resp.Request.URL.Scheme != "https" {
+		score -= 30
+		issues = append(issues, "connection is not protected by HTTPS")
+		checks = append(checks, model.SecurityCheck{
+			Name: "Transport security", Status: "missing", Guidance: "serve the site over HTTPS and redirect HTTP requests",
+		})
+	} else {
+		checks = append(checks, model.SecurityCheck{Name: "Transport security", Status: "pass", Value: "HTTPS"})
+	}
 	for _, header := range headers {
 		value, status := resp.Header.Get(header.name), "pass"
 		legacy[header.name] = value
