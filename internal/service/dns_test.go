@@ -547,15 +547,15 @@ func TestDNSService_Query_Truncated(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	tcpListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("listen for UDP: %v", err)
-	}
-	resolverAddr := packetConn.LocalAddr().String()
-	tcpListener, err := net.Listen("tcp", resolverAddr)
-	if err != nil {
-		_ = packetConn.Close()
 		t.Fatalf("listen for TCP: %v", err)
+	}
+	resolverAddr := tcpListener.Addr().String()
+	packetConn, err := net.ListenPacket("udp", resolverAddr)
+	if err != nil {
+		_ = tcpListener.Close()
+		t.Fatalf("listen for UDP: %v", err)
 	}
 
 	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler}

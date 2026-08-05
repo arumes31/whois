@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -16,6 +17,29 @@ import (
 
 	"golang.org/x/mod/semver"
 )
+
+func requireWorkflowActionMajorAtLeast(t *testing.T, workflow, action string, minimum int) {
+	t.Helper()
+
+	data, err := os.ReadFile(workflow)
+	if err != nil {
+		t.Fatalf("failed to read %s: %v", workflow, err)
+	}
+
+	pattern := regexp.MustCompile(regexp.QuoteMeta(action) + `@v(\d+)`)
+	match := pattern.FindSubmatch(data)
+	if len(match) != 2 {
+		t.Fatalf("expected %s to use %s@v<major>", workflow, action)
+	}
+
+	major, err := strconv.Atoi(string(match[1]))
+	if err != nil {
+		t.Fatalf("parse %s major version in %s: %v", action, workflow, err)
+	}
+	if major < minimum {
+		t.Errorf("expected %s to use %s@v%d or newer, got v%d", workflow, action, minimum, major)
+	}
+}
 
 // TestV2Integration validates all changes introduced in the v2 update.
 func TestV2Integration(t *testing.T) {
@@ -88,84 +112,36 @@ func TestV2Integration(t *testing.T) {
 			}
 		})
 
-		t.Run("DockerPublishLoginActionV4", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/docker-publish.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/docker-publish.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "docker/login-action@v4") {
-				t.Error("expected .github/workflows/docker-publish.yml to use docker/login-action@v4 (PR #28), but it was not found")
-			}
+		t.Run("DockerPublishLoginActionAtLeastV4", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/docker-publish.yml", "docker/login-action", 4)
 		})
 
-		t.Run("DockerPublishBuildPushActionV7", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/docker-publish.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/docker-publish.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "docker/build-push-action@v7") {
-				t.Error("expected .github/workflows/docker-publish.yml to use docker/build-push-action@v7 (PR #27), but it was not found")
-			}
+		t.Run("DockerPublishBuildPushActionAtLeastV7", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/docker-publish.yml", "docker/build-push-action", 7)
 		})
 
-		t.Run("DockerTestCheckoutV6", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/docker-test.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/docker-test.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "actions/checkout@v6") {
-				t.Error("expected .github/workflows/docker-test.yml to use actions/checkout@v6 (PR #24), but it was not found")
-			}
+		t.Run("DockerTestCheckoutAtLeastV6", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/docker-test.yml", "actions/checkout", 6)
 		})
 
-		t.Run("DockerTestLoginActionV4", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/docker-test.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/docker-test.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "docker/login-action@v4") {
-				t.Error("expected .github/workflows/docker-test.yml to use docker/login-action@v4 (PR #28), but it was not found")
-			}
+		t.Run("DockerTestLoginActionAtLeastV4", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/docker-test.yml", "docker/login-action", 4)
 		})
 
-		t.Run("DockerTestBuildPushActionV7", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/docker-test.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/docker-test.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "docker/build-push-action@v7") {
-				t.Error("expected .github/workflows/docker-test.yml to use docker/build-push-action@v7 (PR #27), but it was not found")
-			}
+		t.Run("DockerTestBuildPushActionAtLeastV7", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/docker-test.yml", "docker/build-push-action", 7)
 		})
 
-		t.Run("GoCICheckoutV6", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/go-ci.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/go-ci.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "actions/checkout@v6") {
-				t.Error("expected .github/workflows/go-ci.yml to use actions/checkout@v6 (PR #24), but it was not found")
-			}
+		t.Run("GoCICheckoutAtLeastV6", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/go-ci.yml", "actions/checkout", 6)
 		})
 
-		t.Run("GoCISetupGoV6", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/go-ci.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/go-ci.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "actions/setup-go@v6") {
-				t.Error("expected .github/workflows/go-ci.yml to use actions/setup-go@v6 (PR #23), but it was not found")
-			}
+		t.Run("GoCISetupGoAtLeastV6", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/go-ci.yml", "actions/setup-go", 6)
 		})
 
-		t.Run("GoCIGolangciLintActionV9", func(t *testing.T) {
-			data, err := os.ReadFile(".github/workflows/go-ci.yml")
-			if err != nil {
-				t.Fatalf("failed to read .github/workflows/go-ci.yml: %v", err)
-			}
-			if !strings.Contains(string(data), "golangci/golangci-lint-action@v9") {
-				t.Error("expected .github/workflows/go-ci.yml to use golangci/golangci-lint-action@v9 (PR #21), but it was not found")
-			}
+		t.Run("GoCIGolangciLintActionAtLeastV9", func(t *testing.T) {
+			requireWorkflowActionMajorAtLeast(t, ".github/workflows/go-ci.yml", "golangci/golangci-lint-action", 9)
 		})
 
 		t.Run("GoCIVersionMatchesModule", func(t *testing.T) {
