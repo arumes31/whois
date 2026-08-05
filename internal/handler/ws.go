@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -83,7 +84,7 @@ func (h *Handler) HandleWS(c echo.Context) error {
 	h.wsConnMu.Lock()
 	if h.wsClosing {
 		h.wsConnMu.Unlock()
-		return echo.NewHTTPError(503, "server is shutting down")
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "server is shutting down")
 	}
 	h.wsWG.Add(1)
 	h.wsConnMu.Unlock()
