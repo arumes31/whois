@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -320,6 +321,45 @@ func TestHandleWSKeepsReadingWhileTargetWaitsForCapacity(t *testing.T) {
 	}
 	if message.Type != "error" || message.Service != "system" {
 		t.Fatalf("got %#v, want system error", message)
+	}
+}
+
+func TestHandleWSBoundsQueuedTargets(t *testing.T) {
+	e := echo.New()
+	h := NewHandler(storage.NewStorage("localhost", "6379"), &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
+	h.targetSem <- struct{}{}
+	defer func() { <-h.targetSem }()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = h.HandleWS(e.NewContext(r, w))
+	}))
+	defer srv.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+	ws, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer func() { _ = ws.Close() }()
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+
+	targets := make([]string, maxWSQueuedQueries)
+	for i := range targets {
+		targets[i] = fmt.Sprintf("target-%d.example", i)
+	}
+	if err := ws.WriteJSON(map[string]interface{}{"targets": targets}); err != nil {
+		t.Fatalf("write queued targets: %v", err)
+	}
+	if err := ws.WriteJSON(map[string]interface{}{"targets": []string{"overflow.example"}}); err != nil {
+		t.Fatalf("write overflow target: %v", err)
+	}
+
+	var message WSMessage
+	if err := ws.ReadJSON(&message); err != nil {
+		t.Fatalf("read queue bound response: %v", err)
+	}
+	if message.Type != "error" || !strings.Contains(fmt.Sprint(message.Data), "too many queued targets") {
+		t.Fatalf("got %#v, want queued-target limit error", message)
 	}
 }
 

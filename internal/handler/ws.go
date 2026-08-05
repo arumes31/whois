@@ -41,6 +41,7 @@ const (
 	maxWSMessageBytes   = 64 << 10
 	maxWSTargets        = 25
 	maxWSActiveQueries  = 4
+	maxWSQueuedQueries  = 25
 	maxCTResolveTargets = 100
 	wsWriteWait         = 10 * time.Second
 )
@@ -110,6 +111,7 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		activeLimit = globalLimit
 	}
 	activeQueries := make(chan struct{}, activeLimit)
+	querySlots := make(chan struct{}, maxWSQueuedQueries)
 
 	// Heartbeat configuration
 	pingPeriod := 30 * time.Second
@@ -184,9 +186,19 @@ func (h *Handler) HandleWS(c echo.Context) error {
 				continue
 			}
 			seenTargets[identity] = struct{}{}
+			select {
+			case querySlots <- struct{}{}:
+			case <-ctx.Done():
+				return nil
+			default:
+				payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "too many queued targets; maximum is " + strconv.Itoa(maxWSQueuedQueries)})
+				_ = writer.write(websocket.TextMessage, payload)
+				continue
+			}
 			queryWG.Add(1)
 			go func(target string, queryConfig wsQueryConfig) {
 				defer queryWG.Done()
+				defer func() { <-querySlots }()
 				select {
 				case <-ctx.Done():
 					return
