@@ -680,7 +680,7 @@
         const color = getTargetColor(target);
         const escapedTarget = escapeHTML(target);
         const escapedMessage = escapeHTML(message);
-        entry.innerHTML = `<span class="text-white opacity-50">[${time}]</span> <span style="color: ${color}; font-weight: bold;">${escapedTarget}</span>: <span class="text-white">${escapedMessage}</span>`;
+        entry.innerHTML = DOMPurify.sanitize(`<span class="text-white opacity-50">[${time}]</span> <span style="color: ${color}; font-weight: bold;">${escapedTarget}</span>: <span class="text-white">${escapedMessage}</span>`);
         log.appendChild(entry);
         log.scrollTop = log.scrollHeight;
 
@@ -803,11 +803,11 @@
             if (enabled) {
                 const section = card.querySelector(`[data-service="${service}"]`);
                 if (section) {
-                    section.innerHTML = `
+                    section.innerHTML = DOMPurify.sanitize(`
                     <div class="skeleton-wrapper p-2">
                         <div class="skeleton mb-2" style="height: 12px; width: 40%"></div>
                         <div class="skeleton" style="height: 8px; width: 80%"></div>
-                    </div>`;
+                    </div>`);
                 }
             }
         }
@@ -935,7 +935,7 @@
             }
             case 'geo':
                 if (data && !data.error) {
-                    const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${data.country_emoji}</span>` : '';
+                    const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${escapeHTML(data.country_emoji)}</span>` : '';
                     html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>${flag} LOCATION & ASN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Geographic location, ISP, and Autonomous System Number (ASN) data"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex align-items-center mb-2">
@@ -1002,18 +1002,17 @@
                     return match ? parseFloat(match[1]) : null;
                 }).filter(v => v !== null);
 
+                const pingCanvasId = `chart-ping-${encodeURIComponent(String(msg.target)).replace(/%/g, '')}`;
                 html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network latency and packet round-trip time (ICMP Echo Request)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <div class="mt-2" style="height: 40px; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 2px;">
-                        <canvas id="chart-ping-${msg.target.replace(/\./g, '-')}" style="width: 100%; height: 100%;"></canvas>
+                        <canvas id="${pingCanvasId}" style="width: 100%; height: 100%;"></canvas>
                     </div>
                     <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(data.join('\n'))}</code></pre>
                     </details>`;
 
-                section.innerHTML = html;
-
                 // Render Sparkline
                 setTimeout(() => {
-                    const canvasId = `chart-ping-${msg.target.replace(/\./g, '-')}`;
+                    const canvasId = pingCanvasId;
                     const canvas = document.getElementById(canvasId);
                     if (!canvas) return;
 
@@ -1200,7 +1199,7 @@
                 break;
         }
 
-        section.innerHTML = html;
+        section.innerHTML = DOMPurify.sanitize(html);
 
         const renderedStatus = section.querySelector('.status-indicator')?.getAttribute('data-status');
         if (scan && renderedStatus === 'error' && !scan.failures.has(msg.service)) {
@@ -1260,6 +1259,7 @@
             record.setAttribute('role', 'button');
             record.setAttribute('tabindex', '0');
             record.setAttribute('aria-label', 'Copy value');
+            record.addEventListener('click', () => copyToClipboard(record));
             record.addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
@@ -1614,7 +1614,7 @@
             });
 
             html += `</div></div>`;
-            body.innerHTML = html;
+            body.innerHTML = DOMPurify.sanitize(html);
         } catch (e) {
             body.innerHTML = `<div class="alert bg-danger-dim text-danger border-0">Failed to fetch history data.</div>`;
         }

@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"whois/internal/model"
@@ -100,32 +101,72 @@ func doHTTPProbe(ctx context.Context, targetURL string, insecure bool) (*httpPro
 		return nil, fmt.Errorf("invalid target url")
 	}
 	probe := &httpProbe{verified: u.Scheme == "https" && !insecure}
-	var dnsStart, connectStart, tlsStart, requestStart time.Time
+	var traceMu sync.Mutex
+	var traceTiming model.HTTPTiming
+	var dnsStart, tlsStart time.Time
+	connectStarts := make(map[string]time.Time)
+	var dnsDone, connectDone, tlsDone bool
+	var remoteIP string
+	var requestStart time.Time
 	trace := &httptrace.ClientTrace{
-		DNSStart: func(httptrace.DNSStartInfo) { dnsStart = time.Now() },
+		DNSStart: func(httptrace.DNSStartInfo) {
+			traceMu.Lock()
+			if dnsStart.IsZero() {
+				dnsStart = time.Now()
+			}
+			traceMu.Unlock()
+		},
 		DNSDone: func(httptrace.DNSDoneInfo) {
-			if !dnsStart.IsZero() {
-				probe.timing.DNS = time.Since(dnsStart).Milliseconds()
+			traceMu.Lock()
+			if !dnsDone && !dnsStart.IsZero() {
+				traceTiming.DNS = time.Since(dnsStart).Milliseconds()
+				dnsDone = true
 			}
+			traceMu.Unlock()
 		},
-		ConnectStart: func(_, _ string) { connectStart = time.Now() },
-		ConnectDone: func(_, _ string, _ error) {
-			if !connectStart.IsZero() {
-				probe.timing.Connect = time.Since(connectStart).Milliseconds()
+		ConnectStart: func(network, address string) {
+			traceMu.Lock()
+			connectStarts[network+"\x00"+address] = time.Now()
+			traceMu.Unlock()
+		},
+		ConnectDone: func(network, address string, connectErr error) {
+			traceMu.Lock()
+			key := network + "\x00" + address
+			started := connectStarts[key]
+			delete(connectStarts, key)
+			if !connectDone && connectErr == nil && !started.IsZero() {
+				traceTiming.Connect = time.Since(started).Milliseconds()
+				connectDone = true
 			}
+			traceMu.Unlock()
 		},
-		TLSHandshakeStart: func() { tlsStart = time.Now() },
+		TLSHandshakeStart: func() {
+			traceMu.Lock()
+			if tlsStart.IsZero() {
+				tlsStart = time.Now()
+			}
+			traceMu.Unlock()
+		},
 		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
-			if !tlsStart.IsZero() {
-				probe.timing.TLS = time.Since(tlsStart).Milliseconds()
+			traceMu.Lock()
+			if !tlsDone && !tlsStart.IsZero() {
+				traceTiming.TLS = time.Since(tlsStart).Milliseconds()
+				tlsDone = true
 			}
+			traceMu.Unlock()
 		},
 		GotConn: func(info httptrace.GotConnInfo) {
 			if host, _, splitErr := net.SplitHostPort(info.Conn.RemoteAddr().String()); splitErr == nil {
-				probe.remoteIP = host
+				traceMu.Lock()
+				remoteIP = host
+				traceMu.Unlock()
 			}
 		},
-		GotFirstResponseByte: func() { probe.timing.TTFB = time.Since(requestStart).Milliseconds() },
+		GotFirstResponseByte: func() {
+			traceMu.Lock()
+			traceTiming.TTFB = time.Since(requestStart).Milliseconds()
+			traceMu.Unlock()
+		},
 	}
 	req, err := http.NewRequestWithContext(httptrace.WithClientTrace(ctx, trace), http.MethodGet, u.String(), nil)
 	if err != nil {
@@ -154,8 +195,14 @@ func doHTTPProbe(ctx context.Context, targetURL string, insecure bool) (*httpPro
 			return nil
 		},
 	}
+	// The transport resolves, validates, and pins every destination (including
+	// redirects) before dialing, so user input cannot reach a disallowed network.
 	requestStart = time.Now()
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // lgtm[go/request-forgery]
+	traceMu.Lock()
+	probe.timing = traceTiming
+	probe.remoteIP = remoteIP
+	traceMu.Unlock()
 	probe.timing.Total = time.Since(requestStart).Milliseconds()
 	if err != nil {
 		return probe, err
@@ -174,7 +221,7 @@ func safeHTTPTransport(insecure bool) *http.Transport {
 	return &http.Transport{
 		Proxy:             nil,
 		ForceAttemptHTTP2: true,
-		TLSClientConfig:   &tls.Config{InsecureSkipVerify: insecure, MinVersion: tls.VersionTLS10}, // #nosec G402 -- diagnostic fallback, surfaced as unverified
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: insecure, MinVersion: tls.VersionTLS12}, // #nosec G402 -- diagnostic fallback, surfaced as unverified
 		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
 			if err != nil {

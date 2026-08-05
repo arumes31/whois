@@ -72,7 +72,7 @@ async function findTemplateFiles(directory) {
 
 async function minifyInlineScripts(file) {
   const source = await readFile(file, "utf8");
-  const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script>/gi;
+  const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
   let output = "";
   let cursor = 0;
   let count = 0;
