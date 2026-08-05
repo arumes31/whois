@@ -176,6 +176,57 @@ func TestInspectHTTPSecurityRejectsInvalidPresentHeaders(t *testing.T) {
 	}
 }
 
+func TestInspectHTTPSecurityPenalizesPlainHTTP(t *testing.T) {
+	response := &http.Response{
+		Header: http.Header{
+			"Content-Security-Policy":   []string{"default-src 'self'"},
+			"Permissions-Policy":        []string{"geolocation=()"},
+			"X-Content-Type-Options":    []string{"nosniff"},
+			"X-Frame-Options":           []string{"DENY"},
+			"Referrer-Policy":           []string{"no-referrer"},
+			"Strict-Transport-Security": []string{"max-age=31536000"},
+		},
+		Request: &http.Request{URL: &url.URL{Scheme: "http", Host: "example.com"}},
+	}
+	checks, _, issues, score := inspectHTTPSecurity(response, "")
+	if score > 70 {
+		t.Fatalf("plain HTTP score = %d; want at most 70", score)
+	}
+	foundIssue := false
+	for _, issue := range issues {
+		if strings.Contains(issue, "not protected by HTTPS") {
+			foundIssue = true
+		}
+	}
+	if !foundIssue {
+		t.Fatalf("plain HTTP issue missing: %v", issues)
+	}
+	if len(checks) == 0 || checks[0].Name != "Transport security" || checks[0].Status != "missing" {
+		t.Fatalf("transport security check missing: %#v", checks)
+	}
+}
+
+func TestInspectHTTPSecurityHandlesMissingRequest(t *testing.T) {
+	response := &http.Response{Header: make(http.Header)}
+	checks, _, issues, score := inspectHTTPSecurity(response, `<img src="http://example.com/image.png">`)
+	if score < 0 || score > 70 {
+		t.Fatalf("missing-request score = %d, want a bounded non-HTTPS score", score)
+	}
+	if len(checks) == 0 || checks[0].Name != "Transport security" || checks[0].Status != "missing" {
+		t.Fatalf("missing-request transport check = %#v", checks)
+	}
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue, "not protected by HTTPS") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing-request issues = %v, want transport warning", issues)
+	}
+}
+
 func TestGetHTTPInfo_Fail(t *testing.T) {
 	info := GetHTTPInfo(context.Background(), "localhost:1")
 	if info.Error == "" {

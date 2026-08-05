@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"html/template"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"whois/internal/config"
@@ -40,7 +43,7 @@ func main() {
 	utils.SetAllowLoopbackIPs(cfg.AllowLoopbackIPs)
 	utils.SetAllowLinkLocalIPs(cfg.AllowLinkLocalIPs)
 
-	e := NewServer(cfg)
+	e, closeServer := NewServer(cfg)
 
 	// Start server
 	go func() {
@@ -57,15 +60,22 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := e.Shutdown(ctx); err != nil {
-		e.Logger.Fatal(err)
+		utils.Log.Error("HTTP shutdown did not complete cleanly", utils.Field("error", err.Error()))
+	}
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cleanupCancel()
+	if err := closeServer(cleanupCtx); err != nil {
+		utils.Log.Error("application cleanup did not complete cleanly", utils.Field("error", err.Error()))
 	}
 }
 
-func NewServer(cfg *config.Config) *echo.Echo {
+func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	// Dependencies
 	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
 	h := handler.NewHandler(store, cfg)
 	sched := service.NewScheduler(store, cfg.DNSServers, cfg.BootstrapDNS)
+	appCtx, appCancel := context.WithCancel(context.Background())
+	var initializerWG sync.WaitGroup
 
 	// Load local lookup data without generating startup traffic. Operators can
 	// explicitly opt into remote database downloads and periodic updates.
@@ -74,9 +84,17 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	}
 	if cfg.AutoUpdateDatabases {
 		if cfg.EnableGeo {
-			go service.InitializeGeoDB(cfg.MaxMindLicenseKey, cfg.MaxMindAccountID)
+			initializerWG.Add(1)
+			go func() {
+				defer initializerWG.Done()
+				service.InitializeGeoDBContext(appCtx, cfg.MaxMindLicenseKey, cfg.MaxMindAccountID)
+			}()
 		}
-		go service.InitializeMACService()
+		initializerWG.Add(1)
+		go func() {
+			defer initializerWG.Done()
+			service.InitializeMACServiceContext(appCtx)
+		}()
 	}
 	sched.Start()
 
@@ -112,13 +130,8 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	e.Server.IdleTimeout = 60 * time.Second
 	e.Server.MaxHeaderBytes = 1 << 20
 	e.Server.RegisterOnShutdown(func() {
+		appCancel()
 		h.Close()
-		service.StopGeoDBUpdater()
-		service.StopMACService()
-		sched.Cron.Stop()
-		if closer, ok := store.Client.(interface{ Close() error }); ok {
-			_ = closer.Close()
-		}
 	})
 
 	// Prometheus endpoint with IP restriction
@@ -236,6 +249,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	e.POST("/login", h.Login)
 	e.GET("/scanner", h.Scanner)
 	e.POST("/scan", h.Scan)
+	e.GET("/history", h.GetHistory)
 	e.GET("/history/:item", h.GetHistory)
 
 	// Protected
@@ -246,7 +260,57 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	g.POST("/config/update-geo", h.UpdateGeoDB)
 	g.GET("/logout", h.Logout)
 
-	return e
+	var closeOnce sync.Once
+	closeDone := make(chan struct{})
+	var closeErr error
+	closeServer := func(ctx context.Context) error {
+		closeOnce.Do(func() {
+			appCancel()
+			h.Close()
+
+			if err := h.WaitForClose(ctx); err != nil {
+				closeErr = errors.Join(closeErr, fmt.Errorf("wait for websocket handlers: %w", err))
+			}
+
+			initializersDone := make(chan struct{})
+			go func() {
+				initializerWG.Wait()
+				close(initializersDone)
+			}()
+			select {
+			case <-initializersDone:
+			case <-ctx.Done():
+				closeErr = errors.Join(closeErr, fmt.Errorf("wait for database initializers: %w", ctx.Err()))
+			}
+
+			service.StopGeoDBUpdater()
+			service.StopMACService()
+			service.CloseGeoDB()
+
+			cronDone := sched.Cron.Stop()
+			select {
+			case <-cronDone.Done():
+			case <-ctx.Done():
+				closeErr = errors.Join(closeErr, fmt.Errorf("wait for scheduler: %w", ctx.Err()))
+			}
+
+			if closer, ok := store.Client.(interface{ Close() error }); ok {
+				if err := closer.Close(); err != nil {
+					closeErr = errors.Join(closeErr, fmt.Errorf("close storage: %w", err))
+				}
+			}
+			close(closeDone)
+		})
+
+		select {
+		case <-closeDone:
+			return closeErr
+		case <-ctx.Done():
+			return errors.Join(closeErr, ctx.Err())
+		}
+	}
+
+	return e, closeServer
 }
 
 func parseTrustedNetworks(entries string) []*net.IPNet {

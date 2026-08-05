@@ -9,10 +9,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -29,6 +31,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/labstack/echo/v4"
+	"github.com/miekg/dns"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -69,9 +72,77 @@ func setupMiniredisStorage(t *testing.T) *storage.Storage {
 	return &storage.Storage{Client: client}
 }
 
+func startEmptyDNSServer(t *testing.T) string {
+	t.Helper()
+	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{})
+	server := &dns.Server{
+		PacketConn: packetConn,
+		NotifyStartedFunc: func() {
+			close(started)
+		},
+		Handler: dns.HandlerFunc(func(writer dns.ResponseWriter, request *dns.Msg) {
+			response := new(dns.Msg)
+			response.SetReply(request)
+			_ = writer.WriteMsg(response)
+		}),
+	}
+	go func() {
+		_ = server.ActivateAndServe()
+	}()
+	<-started
+	t.Cleanup(func() { _ = server.Shutdown() })
+	return packetConn.LocalAddr().String()
+}
+
 type setTrackingRedisClient struct {
 	storage.RedisClient
 	setCalls int
+}
+
+type failingMonitoredRedisClient struct {
+	storage.RedisClient
+	err       error
+	operation string
+}
+
+func (c *failingMonitoredRedisClient) RPush(ctx context.Context, key string, values ...interface{}) *redis.IntCmd {
+	if c.operation != "add" {
+		return c.RedisClient.RPush(ctx, key, values...)
+	}
+	cmd := redis.NewIntCmd(ctx)
+	cmd.SetErr(c.err)
+	return cmd
+}
+
+func (c *failingMonitoredRedisClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd {
+	if c.operation != "add" {
+		return c.RedisClient.Eval(ctx, script, keys, args...)
+	}
+	cmd := redis.NewCmd(ctx)
+	cmd.SetErr(c.err)
+	return cmd
+}
+
+func (c *failingMonitoredRedisClient) LRem(ctx context.Context, key string, count int64, value interface{}) *redis.IntCmd {
+	if c.operation != "remove" {
+		return c.RedisClient.LRem(ctx, key, count, value)
+	}
+	cmd := redis.NewIntCmd(ctx)
+	cmd.SetErr(c.err)
+	return cmd
+}
+
+func (c *failingMonitoredRedisClient) LRange(ctx context.Context, key string, start, stop int64) *redis.StringSliceCmd {
+	if c.operation != "list" {
+		return c.RedisClient.LRange(ctx, key, start, stop)
+	}
+	cmd := redis.NewStringSliceCmd(ctx)
+	cmd.SetErr(c.err)
+	return cmd
 }
 
 func (c *setTrackingRedisClient) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
@@ -127,6 +198,150 @@ func TestQueryItemDoesNotCacheCanceledResult(t *testing.T) {
 
 	if client.setCalls != 0 {
 		t.Fatalf("cache Set calls = %d, want 0 for canceled query", client.setCalls)
+	}
+}
+
+func TestQueryItemPreservesDNSError(t *testing.T) {
+	oldLookup := service.DNSLookupFunc
+	service.DNSLookupFunc = func(context.Context, string, bool) (map[string]interface{}, error) {
+		return nil, errors.New("resolver unavailable")
+	}
+	t.Cleanup(func() { service.DNSLookupFunc = oldLookup })
+
+	store := setupMiniredisStorage(t)
+	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
+	result := h.queryItem(context.Background(), "127.0.0.1", true, false, false, false, false, false)
+
+	if got := result.DNS["error"]; got != "resolver unavailable" {
+		t.Fatalf("DNS error = %v, want resolver unavailable", got)
+	}
+	history, err := store.GetDNSHistory(context.Background(), "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("DNS history entries = %d, want 0 after failed lookup", len(history))
+	}
+}
+
+func TestQueryItemRetriesDNSAfterTransientFailure(t *testing.T) {
+	oldLookup := service.DNSLookupFunc
+	calls := 0
+	service.DNSLookupFunc = func(context.Context, string, bool) (map[string]interface{}, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("resolver unavailable")
+		}
+		return map[string]interface{}{"A": []string{"192.0.2.10"}}, nil
+	}
+	t.Cleanup(func() { service.DNSLookupFunc = oldLookup })
+
+	store := setupMiniredisStorage(t)
+	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
+	first := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false)
+	if first.DNS["error"] == nil {
+		t.Fatalf("first DNS result = %#v, want transient error", first.DNS)
+	}
+	second := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false)
+	if calls != 2 {
+		t.Fatalf("DNS lookup calls = %d, want 2 after transient failure", calls)
+	}
+	if second.DNS["error"] != nil || second.DNS["A"] == nil {
+		t.Fatalf("second DNS result = %#v, want recovered A record", second.DNS)
+	}
+}
+
+func TestConfigCanonicalizesAndValidatesMonitoredTargets(t *testing.T) {
+	e, _ := setupTestEcho()
+	store := setupMiniredisStorage(t)
+	h := NewHandler(store, &config.Config{})
+
+	request := func(action, item string) error {
+		form := url.Values{"action": {action}, "item": {item}}
+		req := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(form.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		return h.Config(e.NewContext(req, httptest.NewRecorder()))
+	}
+
+	if err := request("add", "EXAMPLE.COM."); err != nil {
+		t.Fatalf("add canonical target: %v", err)
+	}
+	items, err := store.GetMonitoredItems(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0] != "example.com" {
+		t.Fatalf("monitored items = %v, want [example.com]", items)
+	}
+	if err := request("add", "https://example.com:443/path"); err != nil {
+		t.Fatalf("add duplicate canonical target: %v", err)
+	}
+	items, err = store.GetMonitoredItems(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("duplicate add produced monitored items %v", items)
+	}
+
+	err = request("add", "invalid!target")
+	httpError, ok := err.(*echo.HTTPError)
+	if !ok || httpError.Code != http.StatusBadRequest {
+		t.Fatalf("invalid target error = %v, want HTTP 400", err)
+	}
+	items, err = store.GetMonitoredItems(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("invalid target mutated monitored items: %v", items)
+	}
+
+	if err := store.AddMonitoredItem(context.Background(), "legacy invalid target"); err != nil {
+		t.Fatal(err)
+	}
+	if err := request("remove", "legacy invalid target"); err != nil {
+		t.Fatalf("remove legacy target: %v", err)
+	}
+	if err := request("remove", "example.com"); err != nil {
+		t.Fatalf("remove canonical target: %v", err)
+	}
+	items, err = store.GetMonitoredItems(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("monitored items after remove = %v, want empty", items)
+	}
+}
+
+func TestConfigSurfacesStorageErrors(t *testing.T) {
+	e := echo.New()
+	storageErr := errors.New("redis unavailable")
+	for _, operation := range []string{"add", "remove"} {
+		t.Run(operation, func(t *testing.T) {
+			store := setupMiniredisStorage(t)
+			store.Client = &failingMonitoredRedisClient{RedisClient: store.Client, err: storageErr, operation: operation}
+			h := NewHandler(store, &config.Config{})
+			form := url.Values{"action": {operation}, "item": {"example.com"}}
+			req := httptest.NewRequest(http.MethodPost, "/config", strings.NewReader(form.Encode()))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+			err := h.Config(e.NewContext(req, httptest.NewRecorder()))
+			httpError, ok := err.(*echo.HTTPError)
+			if !ok || httpError.Code != http.StatusInternalServerError || !errors.Is(httpError.Internal, storageErr) {
+				t.Fatalf("Config POST error = %v, want HTTP 500 wrapping storage error", err)
+			}
+		})
+	}
+
+	store := setupMiniredisStorage(t)
+	store.Client = &failingMonitoredRedisClient{RedisClient: store.Client, err: storageErr, operation: "list"}
+	h := NewHandler(store, &config.Config{})
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
+	err := h.Config(e.NewContext(req, httptest.NewRecorder()))
+	httpError, ok := err.(*echo.HTTPError)
+	if !ok || httpError.Code != http.StatusInternalServerError || !errors.Is(httpError.Internal, storageErr) {
+		t.Fatalf("Config GET error = %v, want HTTP 500 wrapping storage error", err)
 	}
 }
 
@@ -337,6 +552,24 @@ func TestHandlers(t *testing.T) {
 		diffs := resp["diffs"].([]interface{})
 		if len(diffs) != 1 {
 			t.Errorf("Expected 1 diff, got %d", len(diffs))
+		}
+
+		req = httptest.NewRequest(http.MethodGet, "/history?item="+url.QueryEscape("https://TEST-HISTORY.com:443/path"), nil)
+		rec = httptest.NewRecorder()
+		if err := h.GetHistory(e.NewContext(req, rec)); err != nil {
+			t.Fatalf("GetHistory canonical URL lookup failed: %v", err)
+		}
+		if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "1.2.3.5") {
+			t.Fatalf("canonical history lookup returned %d: %s", rec.Code, rec.Body.String())
+		}
+
+		req = httptest.NewRequest(http.MethodGet, "/history?item=not%20a%20target", nil)
+		rec = httptest.NewRecorder()
+		if err := h.GetHistory(e.NewContext(req, rec)); err != nil {
+			t.Fatalf("GetHistory invalid-target response failed: %v", err)
+		}
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("invalid history target returned %d, want 400", rec.Code)
 		}
 	})
 
@@ -563,6 +796,10 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("DNSLookup HTMX UX No Records", func(t *testing.T) {
+		originalDNS := h.DNS
+		h.DNS = service.NewDNSService(startEmptyDNSServer(t), "")
+		t.Cleanup(func() { h.DNS = originalDNS })
+
 		f := url.Values{}
 		f.Add("domain", "nonexistent.test")
 		f.Add("type", "AAAA")

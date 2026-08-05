@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,11 +14,15 @@ import (
 func TestTraceroute_Cancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	Traceroute(ctx, "8.8.8.8", func(line string) {})
+	if err := Traceroute(ctx, "8.8.8.8", func(line string) {}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled traceroute error = %v, want context.Canceled", err)
+	}
 }
 
 func TestTraceroute_InvalidTarget(t *testing.T) {
-	Traceroute(context.Background(), "invalid!target", func(line string) {})
+	if err := Traceroute(context.Background(), "invalid!target", func(line string) {}); err == nil {
+		t.Fatal("invalid target returned nil error")
+	}
 }
 
 // Mocking exec.Command via helper process
@@ -34,9 +39,12 @@ func TestTraceroute_Success(t *testing.T) {
 	}
 
 	lines := 0
-	Traceroute(context.Background(), "example.com", func(line string) {
+	err := Traceroute(context.Background(), "example.com", func(line string) {
 		lines++
 	})
+	if err != nil {
+		t.Fatalf("mocked traceroute failed: %v", err)
+	}
 	if lines == 0 {
 		t.Error("Expected output from traceroute")
 	}
@@ -51,11 +59,14 @@ func TestTraceroute_ErrorStart(t *testing.T) {
 	}
 
 	failed := false
-	Traceroute(context.Background(), "example.com", func(line string) {
+	err := Traceroute(context.Background(), "example.com", func(line string) {
 		if strings.Contains(line, "Failed to start") {
 			failed = true
 		}
 	})
+	if err == nil {
+		t.Fatal("command-start failure returned nil error")
+	}
 	if !failed {
 		t.Error("Expected start failure")
 	}
@@ -74,11 +85,14 @@ func TestTraceroute_Stderr(t *testing.T) {
 	}
 
 	hasError := false
-	Traceroute(context.Background(), "example.com", func(line string) {
+	err := Traceroute(context.Background(), "example.com", func(line string) {
 		if strings.Contains(line, "Error: Permission denied") {
 			hasError = true
 		}
 	})
+	if err == nil {
+		t.Fatal("stderr-only traceroute returned nil error")
+	}
 	if !hasError {
 		t.Error("Expected stderr output")
 	}
@@ -98,16 +112,47 @@ func TestTracerouteDrainsStdoutAndStderrConcurrently(t *testing.T) {
 	defer cancel()
 	started := time.Now()
 	foundHop := false
-	Traceroute(ctx, "example.com", func(line string) {
+	err := Traceroute(ctx, "example.com", func(line string) {
 		if strings.Contains(line, "1.1.1.1") {
 			foundHop = true
 		}
 	})
+	if err != nil {
+		t.Fatalf("concurrent output traceroute failed: %v", err)
+	}
 	if elapsed := time.Since(started); elapsed >= 9*time.Second {
 		t.Fatalf("traceroute blocked while draining process output for %v", elapsed)
 	}
 	if !foundHop {
 		t.Fatal("traceroute lost stdout while draining a full stderr pipe")
+	}
+}
+
+func TestTracerouteAppliesOperationTimeout(t *testing.T) {
+	oldRunner := CommandRunner
+	defer func() { CommandRunner = oldRunner }()
+
+	CommandRunner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestHelperProcess", "--", name)
+		cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", "HELPER_BLOCK=1"}
+		return cmd
+	}
+
+	start := time.Now()
+	timedOut := false
+	err := tracerouteWithTimeout(context.Background(), "8.8.8.8", 50*time.Millisecond, func(line string) {
+		if strings.Contains(line, "timed out") {
+			timedOut = true
+		}
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("bounded traceroute error = %v, want context.DeadlineExceeded", err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("bounded traceroute took %v", elapsed)
+	}
+	if !timedOut {
+		t.Fatal("bounded traceroute did not report its timeout")
 	}
 }
 
@@ -126,6 +171,12 @@ func TestHelperProcess(t *testing.T) {
 			_, _ = fmt.Fprintln(os.Stderr, strings.Repeat("x", 1024))
 		}
 		_, _ = fmt.Fprintln(os.Stdout, "1 hop  1.1.1.1  1ms")
+	}
+	if os.Getenv("HELPER_LONG_STDOUT") == "1" {
+		_, _ = fmt.Fprint(os.Stdout, strings.Repeat("x", 2*1024*1024))
+	}
+	if os.Getenv("HELPER_BLOCK") == "1" {
+		time.Sleep(10 * time.Second)
 	}
 	os.Exit(0)
 }

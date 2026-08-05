@@ -12,7 +12,7 @@ A network diagnostic dashboard for WHOIS, DNS, HTTP/TLS inspection, GeoIP, port 
 
 ## 🚀 Core Capabilities
 
-- 🔍 **Multi-Vector LOOKUP:** Comprehensive analysis including WHOIS data, advanced DNS resolution (A, AAAA, MX, NS, TXT, SPF, DMARC), and GeoIP geolocation.
+- 🔍 **Multi-Vector LOOKUP:** Comprehensive analysis including WHOIS data, advanced DNS resolution (A, AAAA, MX, NS, TXT, SPF, DMARC), and local GeoIP location data when installed.
 - 🌐 **Subdomain Discovery:** Uses multi-source Certificate Transparency (CT) logs (Certspotter primary, crt.sh fallback) with real-time incremental streaming.
 - 🛡️ **Security Port Scanner:** Specialized tool for open port detection and service banner grabbing with localized security controls.
 - 🧭 **Provider-Free Target Intelligence:** Normalizes pasted URLs, detects domains/IPv4/IPv6/CIDRs/ASNs, classifies private, reserved, documentation, CGNAT, and bogon ranges, and performs reverse DNS locally.
@@ -160,7 +160,7 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 #### 🔍 Diagnostic Features
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `ENABLE_GEO` | Enable GeoIP and ASN lookup features | `true` |
+| `ENABLE_GEO` | Enable local GeoIP city/location lookups when a database is installed | `true` |
 | `AUTO_UPDATE_DATABASES` | Download and periodically refresh GeoIP/OUI databases; keep disabled for offline startup | `false` |
 | `ENABLE_DNS` | Enable authoritative DNS record retrieval | `true` |
 | `ENABLE_WHOIS` | Enable WHOIS and RDAP data retrieval | `true` |

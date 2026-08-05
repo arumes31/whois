@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"math"
+	"sync"
 	"testing"
 	"time"
 	"whois/internal/model"
@@ -66,6 +68,50 @@ func TestStorage_Basic(t *testing.T) {
 	}
 }
 
+func TestStorage_AddMonitoredItemIfAbsentIsAtomic(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const item = "example.com"
+
+	var wg sync.WaitGroup
+	results := make(chan bool, 32)
+	errors := make(chan error, 32)
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			added, err := s.AddMonitoredItemIfAbsent(ctx, item)
+			results <- added
+			errors <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errors)
+
+	addedCount := 0
+	for added := range results {
+		if added {
+			addedCount++
+		}
+	}
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("atomic add failed: %v", err)
+		}
+	}
+	if addedCount != 1 {
+		t.Fatalf("successful inserts = %d, want 1", addedCount)
+	}
+	items, err := s.GetMonitoredItems(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0] != item {
+		t.Fatalf("monitored items = %v, want [%s]", items, item)
+	}
+}
+
 func TestStorage_Cache(t *testing.T) {
 	s := setupMiniredis(t)
 	ctx := context.Background()
@@ -95,6 +141,18 @@ func TestStorage_Cache(t *testing.T) {
 	_, err = s.GetCache(ctx, "non-existent")
 	if err != redis.Nil {
 		t.Errorf("expected redis.Nil for cache miss, got %v", err)
+	}
+}
+
+func TestStorage_SetCacheRejectsUnencodableValueBeforeMutation(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+
+	if err := s.SetCache(ctx, "invalid-cache", math.NaN(), time.Minute); err == nil {
+		t.Fatal("SetCache accepted an unencodable value")
+	}
+	if _, err := s.GetCache(ctx, "invalid-cache"); err != redis.Nil {
+		t.Fatalf("cache lookup error = %v, want redis.Nil after rejected value", err)
 	}
 }
 
@@ -170,6 +228,53 @@ func TestStorage_DNSHistory(t *testing.T) {
 	}
 	if !foundNoChanges {
 		t.Error("Expected 'No changes' in diffs")
+	}
+}
+
+func TestStorage_AddDNSHistoryRejectsUnencodableValueBeforeMutation(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const target = "invalid-history.example"
+
+	if err := s.AddDNSHistory(ctx, target, map[string]interface{}{"value": math.NaN()}); err == nil {
+		t.Fatal("AddDNSHistory accepted an unencodable value")
+	}
+	history, err := s.GetDNSHistory(ctx, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("history entries = %d, want 0 after rejected value", len(history))
+	}
+	tracked, err := s.Client.SCard(ctx, dnsHistoryTargetsKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracked != 0 {
+		t.Fatalf("tracked targets = %d, want 0 after rejected value", tracked)
+	}
+}
+
+func TestStorage_GetHistoryWithDiffsReturnsMalformedResultError(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const target = "malformed-history.example"
+	entries := []model.HistoryEntry{
+		{Timestamp: "new", Result: "not-json"},
+		{Timestamp: "old", Result: `{"A":["192.0.2.1"]}`},
+	}
+	for _, entry := range entries {
+		encoded, err := json.Marshal(entry)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Client.RPush(ctx, "dns_history:"+target, encoded).Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, _, err := s.GetHistoryWithDiffs(ctx, target); err == nil {
+		t.Fatal("GetHistoryWithDiffs accepted malformed result JSON")
 	}
 }
 

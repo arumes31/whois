@@ -246,10 +246,20 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 	legacy := make(map[string]string, len(headers))
 	issues := make([]string, 0)
 	score := 100
+	isHTTPS := resp.Request != nil && resp.Request.URL != nil && resp.Request.URL.Scheme == "https"
+	if !isHTTPS {
+		score -= 30
+		issues = append(issues, "connection is not protected by HTTPS")
+		checks = append(checks, model.SecurityCheck{
+			Name: "Transport security", Status: "missing", Guidance: "serve the site over HTTPS and redirect HTTP requests",
+		})
+	} else {
+		checks = append(checks, model.SecurityCheck{Name: "Transport security", Status: "pass", Value: "HTTPS"})
+	}
 	for _, header := range headers {
 		value, status := resp.Header.Get(header.name), "pass"
 		legacy[header.name] = value
-		if header.name == "Strict-Transport-Security" && resp.Request.URL.Scheme != "https" {
+		if header.name == "Strict-Transport-Security" && !isHTTPS {
 			status = "not-applicable"
 			if value == "" {
 				legacy[header.name] = "Not applicable on HTTP"
@@ -270,7 +280,7 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 		issues = append(issues, "content security policy allows unsafe script execution")
 		checks = append(checks, model.SecurityCheck{Name: "CSP quality", Status: "warning", Value: csp, Guidance: "remove unsafe-inline and unsafe-eval where possible"})
 	}
-	if resp.Request.URL.Scheme == "https" && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") && mixedContentPattern.MatchString(body) {
+	if isHTTPS && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") && mixedContentPattern.MatchString(body) {
 		score -= 8
 		issues = append(issues, "response may contain mixed HTTP content")
 	}
@@ -279,7 +289,7 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 		issues = append(issues, cors)
 	}
 	for _, cookie := range resp.Cookies() {
-		if resp.Request.URL.Scheme == "https" && !cookie.Secure {
+		if isHTTPS && !cookie.Secure {
 			score -= 5
 			issues = append(issues, "cookie "+cookie.Name+" is missing the Secure attribute")
 		}

@@ -3,8 +3,11 @@ package service
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +15,7 @@ import (
 	"whois/internal/utils"
 
 	"github.com/likexian/whois"
+	"github.com/openrdap/rdap"
 )
 
 func init() {
@@ -83,11 +87,11 @@ func TestRDAPLookup(t *testing.T) {
 	oldRdap := RdapLookupFunc
 	defer func() { RdapLookupFunc = oldRdap }()
 
-	RdapLookupFunc = func(target string) (string, error) {
+	RdapLookupFunc = func(context.Context, string) (string, error) {
 		return "Mock RDAP Data", nil
 	}
 
-	res, err := RdapLookupFunc("google.com")
+	res, err := RdapLookupFunc(context.Background(), "google.com")
 	if err != nil {
 		t.Fatalf("RDAP lookup failed: %v", err)
 	}
@@ -185,7 +189,7 @@ func TestWhois_Mocked(t *testing.T) {
 			}
 			return "error", nil
 		}
-		RdapLookupFunc = func(target string) (string, error) {
+		RdapLookupFunc = func(context.Context, string) (string, error) {
 			return "Mock RDAP Data for IANA Failure", nil
 		}
 
@@ -212,7 +216,7 @@ func TestWhois_Mocked(t *testing.T) {
 			}
 			return "error", nil
 		}
-		RdapLookupFunc = func(target string) (string, error) {
+		RdapLookupFunc = func(context.Context, string) (string, error) {
 			return "Mock RDAP Data for Referral Failure", nil
 		}
 
@@ -311,5 +315,71 @@ func TestWhoisPinnedDialerPinsInitialAndReferralAddresses(t *testing.T) {
 		if resolvedHosts[i] != wantHosts[i] {
 			t.Fatalf("resolved hosts = %v; want %v", resolvedHosts, wantHosts)
 		}
+	}
+}
+
+func TestRDAPRequestUsesCallerContextAndTargetKind(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	domainRequest, err := rdapRequestForTarget(ctx, "example.com")
+	if err != nil {
+		t.Fatalf("domain RDAP request failed: %v", err)
+	}
+	if domainRequest.Type != rdap.DomainRequest || domainRequest.Query != "example.com" {
+		t.Fatalf("unexpected domain request: %#v", domainRequest)
+	}
+	if !errors.Is(domainRequest.Context().Err(), context.Canceled) {
+		t.Fatalf("domain request did not preserve caller context: %v", domainRequest.Context().Err())
+	}
+
+	ipRequest, err := rdapRequestForTarget(context.Background(), "8.8.8.8")
+	if err != nil {
+		t.Fatalf("IP RDAP request failed: %v", err)
+	}
+	if ipRequest.Type != rdap.IPRequest || ipRequest.Query != "8.8.8.8" {
+		t.Fatalf("unexpected IP request: %#v", ipRequest)
+	}
+}
+
+func TestResolveRDAPServerRejectsPrivateAddress(t *testing.T) {
+	if _, err := resolveRDAPServer(context.Background(), "127.0.0.1"); err == nil {
+		t.Fatal("RDAP resolver accepted a private address")
+	}
+}
+
+type whoisRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn whoisRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return fn(request)
+}
+
+func TestBoundedRoundTripperCapsResponseBody(t *testing.T) {
+	const limit = 8
+	transport := boundedRoundTripper{
+		maxBytes: limit,
+		base: whoisRoundTripFunc(func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(strings.Repeat("x", 32))),
+				Header:     make(http.Header),
+			}, nil
+		}),
+	}
+	request, err := http.NewRequest(http.MethodGet, "https://rdap.example/domain/example.com", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := transport.RoundTrip(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != limit {
+		t.Fatalf("bounded body length = %d; want %d", len(body), limit)
 	}
 }

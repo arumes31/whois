@@ -89,6 +89,8 @@ type Handler struct {
 	scanOptions service.ScanOptions
 	wsConnMu    sync.Mutex
 	wsConns     map[*websocket.Conn]struct{}
+	wsWG        sync.WaitGroup
+	wsClosing   bool
 }
 
 func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
@@ -217,6 +219,7 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 // not own, allowing their query contexts and goroutines to unwind.
 func (h *Handler) Close() {
 	h.wsConnMu.Lock()
+	h.wsClosing = true
 	connections := make([]*websocket.Conn, 0, len(h.wsConns))
 	for connection := range h.wsConns {
 		connections = append(connections, connection)
@@ -224,6 +227,22 @@ func (h *Handler) Close() {
 	h.wsConnMu.Unlock()
 	for _, connection := range connections {
 		_ = connection.Close()
+	}
+}
+
+// WaitForClose waits for all WebSocket handlers and their query goroutines to
+// finish after Close has signaled the hijacked connections.
+func (h *Handler) WaitForClose(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		h.wsWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 }
 
@@ -319,18 +338,22 @@ func (h *Handler) Index(c echo.Context) error {
 			"auto_expand":   true,
 			"stats":         stats,
 			"config":        h.AppConfig,
+			"geo_available": service.GeoDBAvailable(),
+			"mac_available": service.MACDatabaseAvailable(),
 			"current_path":  c.Request().URL.Path,
 			"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
 		})
 	}
 
 	return c.Render(http.StatusOK, "index.html", map[string]interface{}{
-		"auto_expand":  false,
-		"real_ip":      realIP,
-		"stats":        stats,
-		"config":       h.AppConfig,
-		"current_path": c.Request().URL.Path,
-		"csrf":         c.Get(middleware.DefaultCSRFConfig.ContextKey),
+		"auto_expand":   false,
+		"real_ip":       realIP,
+		"stats":         stats,
+		"config":        h.AppConfig,
+		"geo_available": service.GeoDBAvailable(),
+		"mac_available": service.MACDatabaseAvailable(),
+		"current_path":  c.Request().URL.Path,
+		"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
 
@@ -465,6 +488,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	hostTarget := targetInfo.Host
 	endpointTarget := targetInfo.Normalized
 	httpTarget := item
+	cacheable := true
 	var wg sync.WaitGroup
 	run := func(fn func()) {
 		wg.Add(1)
@@ -490,10 +514,13 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	if dnsEnabled {
 		run(func() {
 			d, err := h.DNS.Lookup(ctx, hostTarget, isIP)
-			if err == nil {
-				res.DNS = d
-				_ = h.Storage.AddDNSHistory(ctx, hostTarget, d)
+			if err != nil {
+				res.DNS = model.DNSResult{"error": err.Error()}
+				cacheable = false
+				return
 			}
+			res.DNS = d
+			_ = h.Storage.AddDNSHistory(ctx, hostTarget, d)
 		})
 	}
 
@@ -546,7 +573,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	}
 
 	wg.Wait()
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && cacheable {
 		_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
 	}
 	return res
@@ -686,15 +713,33 @@ func (h *Handler) Config(c echo.Context) error {
 	if c.Request().Method == http.MethodPost {
 		action := c.FormValue("action")
 		item := strings.TrimSpace(c.FormValue("item"))
-		if action == "add" && item != "" {
-			_ = h.Storage.AddMonitoredItem(ctx, item)
-		} else if action == "remove" && item != "" {
-			_ = h.Storage.RemoveMonitoredItem(ctx, item)
+
+		var err error
+		switch action {
+		case "add":
+			target := utils.NormalizeTarget(item)
+			if !target.Valid || !target.Networkable || target.Host == "" || !utils.IsValidTarget(target.Host) {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid monitored target")
+			}
+			_, err = h.Storage.AddMonitoredItemIfAbsent(ctx, target.Host)
+		case "remove":
+			if item == "" {
+				return echo.NewHTTPError(http.StatusBadRequest, "invalid monitored target")
+			}
+			err = h.Storage.RemoveMonitoredItem(ctx, item)
+		default:
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid monitoring action")
+		}
+		if err != nil {
+			return echo.NewHTTPError(http.StatusInternalServerError, "unable to update monitored targets").SetInternal(err)
 		}
 		return c.Redirect(http.StatusFound, "/config")
 	}
 
-	items, _ := h.Storage.GetMonitoredItems(ctx)
+	items, err := h.Storage.GetMonitoredItems(ctx)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusInternalServerError, "unable to load monitored targets").SetInternal(err)
+	}
 	return c.Render(http.StatusOK, "config.html", map[string]interface{}{
 		"monitored": items,
 		"real_ip":   realIP,
@@ -715,7 +760,15 @@ func (h *Handler) Logout(c echo.Context) error {
 }
 
 func (h *Handler) GetHistory(c echo.Context) error {
-	item := c.Param("item")
+	item := strings.TrimSpace(c.QueryParam("item"))
+	if item == "" {
+		item = strings.TrimSpace(c.Param("item"))
+	}
+	target := utils.NormalizeTarget(item)
+	if !target.Valid || target.Host == "" || (target.Kind != model.TargetKindDomain && target.Kind != model.TargetKindIPv4 && target.Kind != model.TargetKindIPv6) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid DNS history target"})
+	}
+	item = target.Host
 	entries, diffs, err := h.Storage.GetHistoryWithDiffs(c.Request().Context(), item)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
