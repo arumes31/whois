@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"whois/internal/utils"
@@ -142,6 +144,111 @@ func TestDNSService_LookupStream(t *testing.T) {
 	})
 }
 
+func TestDNSService_LookupStreamDoesNotDiscoverSubdomains(t *testing.T) {
+	var queryCount atomic.Int32
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		queryCount.Add(1)
+		response := new(dns.Msg)
+		response.SetReply(request)
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	if err := service.LookupStream(context.Background(), "example.com", false, func(string, interface{}) {}); err != nil {
+		t.Fatalf("LookupStream failed: %v", err)
+	}
+	const recordQueries = 12 // Eleven standard record types plus DMARC.
+	if got := queryCount.Load(); got != recordQueries {
+		t.Fatalf("LookupStream made %d DNS queries, want %d without subdomain discovery", got, recordQueries)
+	}
+}
+
+func TestDNSServiceLookupTypeQueriesOnlyRequestedType(t *testing.T) {
+	var queryCount atomic.Int32
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		queryCount.Add(1)
+		response := new(dns.Msg)
+		response.SetReply(request)
+		if request.Question[0].Qtype == dns.TypeAAAA {
+			response.Answer = append(response.Answer, &dns.AAAA{
+				Hdr:  dns.RR_Header{Name: request.Question[0].Name, Rrtype: dns.TypeAAAA, Class: dns.ClassINET, Ttl: 60},
+				AAAA: net.ParseIP("2001:db8::1"),
+			})
+		}
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	records, err := service.LookupType(context.Background(), "example.com", "aaaa", false)
+	if err != nil {
+		t.Fatalf("LookupType failed: %v", err)
+	}
+	if len(records) != 1 || records[0] != "2001:db8::1" {
+		t.Fatalf("LookupType returned %v", records)
+	}
+	if got := queryCount.Load(); got != 1 {
+		t.Fatalf("LookupType made %d queries, want 1", got)
+	}
+	if _, err := service.LookupType(context.Background(), "example.com", "BOGUS", false); err == nil {
+		t.Fatal("LookupType accepted an unsupported record type")
+	}
+}
+
+func TestDNSService_LookupStreamReturnsAggregateFailure(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		response.SetRcode(request, dns.RcodeServerFailure)
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	err := service.LookupStream(context.Background(), "example.com", false, func(string, interface{}) {})
+	if err == nil {
+		t.Fatal("LookupStream returned nil after every resolver query failed")
+	}
+	if !strings.Contains(err.Error(), "A lookup") || !strings.Contains(err.Error(), "DMARC lookup") {
+		t.Fatalf("aggregate error did not preserve individual lookup failures: %v", err)
+	}
+}
+
+func TestDNSService_LookupStreamPreservesPartialResults(t *testing.T) {
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		if request.Question[0].Qtype == dns.TypeA {
+			response.SetReply(request)
+			response.Answer = append(response.Answer, &dns.A{
+				Hdr: dns.RR_Header{Name: request.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+				A:   net.ParseIP("203.0.113.10"),
+			})
+		} else {
+			response.SetRcode(request, dns.RcodeServerFailure)
+		}
+		_ = w.WriteMsg(response)
+	})
+	addr := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(addr, "")
+	service.SetMaxAttempts(1)
+
+	gotA := false
+	err := service.LookupStream(context.Background(), "example.com", false, func(recordType string, _ interface{}) {
+		if recordType == "A" {
+			gotA = true
+		}
+	})
+	if err != nil {
+		t.Fatalf("LookupStream rejected a partial success: %v", err)
+	}
+	if !gotA {
+		t.Fatal("LookupStream did not emit its successful A result")
+	}
+}
+
 func TestDNSService_DiscoverSubdomainsStream(t *testing.T) {
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
 		m := new(dns.Msg)
@@ -177,6 +284,56 @@ func TestDNSService_Query_Errors(t *testing.T) {
 	_, err = s.query(ctx, "invalid-ip", dns.TypePTR, true)
 	if err == nil {
 		t.Error("Expected error for invalid IP in reverse query")
+	}
+}
+
+func TestDNSServiceResolverFailover(t *testing.T) {
+	failing := startMockDNSServer(t, dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		response.SetRcode(request, dns.RcodeServerFailure)
+		_ = w.WriteMsg(response)
+	}), "udp")
+	handler := dns.HandlerFunc(func(w dns.ResponseWriter, request *dns.Msg) {
+		response := new(dns.Msg)
+		response.SetReply(request)
+		response.Answer = append(response.Answer, &dns.A{
+			Hdr: dns.RR_Header{Name: request.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+			A:   net.ParseIP("203.0.113.10"),
+		})
+		_ = w.WriteMsg(response)
+	})
+	healthy := startMockDNSServer(t, handler, "udp")
+	service := NewDNSService(failing+","+healthy, "")
+	service.SetMaxAttempts(2)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	result, err := service.query(ctx, "example.com", dns.TypeA, false)
+	if err != nil {
+		t.Fatalf("query did not fail over: %v", err)
+	}
+	if len(result) != 1 || result[0] != "203.0.113.10" {
+		t.Fatalf("got %v", result)
+	}
+}
+
+func TestDNSServiceCancellationDoesNotPenalizeResolver(t *testing.T) {
+	service := NewDNSService("192.0.2.53:53", "")
+	service.SetMaxAttempts(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := service.query(ctx, "example.com", dns.TypeA, false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("query error = %v; want context cancellation", err)
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if len(service.failures) != 0 {
+		t.Fatalf("caller cancellation recorded resolver failures: %v", service.failures)
+	}
+	if len(service.unhealthyUntil) != 0 {
+		t.Fatalf("caller cancellation degraded resolvers: %v", service.unhealthyUntil)
 	}
 }
 
@@ -390,23 +547,27 @@ func TestDNSService_Query_Truncated(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	// Use fixed port but randomized for this test specifically if needed,
-	// but here we can just use the same port for both UDP and TCP on localhost.
-	l, _ := net.Listen("tcp", "127.0.0.1:0")
-	tcpAddr := l.Addr().String()
-	_ = l.Close() // Close so dns.Server can bind
+	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for UDP: %v", err)
+	}
+	resolverAddr := packetConn.LocalAddr().String()
+	tcpListener, err := net.Listen("tcp", resolverAddr)
+	if err != nil {
+		_ = packetConn.Close()
+		t.Fatalf("listen for TCP: %v", err)
+	}
 
-	server := &dns.Server{Addr: tcpAddr, Net: "udp", Handler: handler}
-	go func() { _ = server.ListenAndServe() }()
-	defer func() { _ = server.Shutdown() }()
+	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler}
+	tcpServer := &dns.Server{Listener: tcpListener, Handler: handler}
+	go func() { _ = udpServer.ActivateAndServe() }()
+	go func() { _ = tcpServer.ActivateAndServe() }()
+	t.Cleanup(func() {
+		_ = udpServer.Shutdown()
+		_ = tcpServer.Shutdown()
+	})
 
-	serverTCP := &dns.Server{Addr: tcpAddr, Net: "tcp", Handler: handler}
-	go func() { _ = serverTCP.ListenAndServe() }()
-	defer func() { _ = serverTCP.Shutdown() }()
-
-	time.Sleep(100 * time.Millisecond)
-
-	s := NewDNSService(tcpAddr, "")
+	s := NewDNSService(resolverAddr, "")
 	res, err := s.query(context.Background(), "example.com", dns.TypeA, false)
 	if err != nil {
 		t.Fatalf("Truncated query failed: %v", err)

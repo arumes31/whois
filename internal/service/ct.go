@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,6 +16,11 @@ var (
 	CRTURL             = "https://crt.sh/"
 	CertspotterURL     = "https://api.certspotter.com/v1/issuances"
 	SubdomainCenterURL = "https://api.subdomain.center/"
+)
+
+const (
+	maxCTResponseBytes = 5 << 20
+	maxCTSubdomains    = 1000
 )
 
 func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface{}, error) {
@@ -52,10 +58,10 @@ func FetchCTSubdomains(ctx context.Context, domain string) (map[string]interface
 	}
 
 	if len(allErrors) > 0 {
-		return nil, fmt.Errorf("All CT sources failed: %s", strings.Join(allErrors, "; "))
+		return nil, fmt.Errorf("all CT sources failed: %s", strings.Join(allErrors, "; "))
 	}
 
-	return nil, fmt.Errorf("No subdomains found from any source")
+	return nil, fmt.Errorf("no subdomains found from any source")
 }
 
 func fetchSubdomainCenter(ctx context.Context, domain string) (map[string]interface{}, error) {
@@ -85,12 +91,15 @@ func fetchSubdomainCenter(ctx context.Context, domain string) (map[string]interf
 	}
 
 	var data []string
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxCTResponseBytes)).Decode(&data); err != nil {
 		return nil, err
 	}
 
 	subdomains := make(map[string]interface{})
 	for _, sub := range data {
+		if len(subdomains) >= maxCTSubdomains {
+			break
+		}
 		sub = strings.TrimSpace(sub)
 		sub = strings.TrimPrefix(sub, "*.")
 		if sub != "" && sub != domain && strings.HasSuffix(sub, "."+domain) {
@@ -125,19 +134,22 @@ func fetchCertspotter(ctx context.Context, domain string) (map[string]interface{
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Certspotter error: %d", resp.StatusCode)
+		return nil, fmt.Errorf("certspotter error: %d", resp.StatusCode)
 	}
 
 	var data []struct {
 		DNSNames []string `json:"dns_names"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxCTResponseBytes)).Decode(&data); err != nil {
 		return nil, err
 	}
 
 	subdomains := make(map[string]interface{})
 	for _, entry := range data {
 		for _, name := range entry.DNSNames {
+			if len(subdomains) >= maxCTSubdomains {
+				break
+			}
 			name = strings.TrimPrefix(name, "*.")
 			if name != domain && strings.HasSuffix(name, "."+domain) {
 				subdomains[name] = map[string]interface{}{}
@@ -177,13 +189,16 @@ func fetchCrtSh(ctx context.Context, domain string) (map[string]interface{}, err
 	var data []struct {
 		NameValue string `json:"name_value"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, fmt.Errorf("Invalid JSON from crt.sh: %v", err)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxCTResponseBytes)).Decode(&data); err != nil {
+		return nil, fmt.Errorf("invalid JSON from crt.sh: %v", err)
 	}
 
 	subdomains := make(map[string]interface{})
 	for _, entry := range data {
 		for _, sub := range strings.Split(entry.NameValue, "\n") {
+			if len(subdomains) >= maxCTSubdomains {
+				break
+			}
 			sub = strings.TrimSpace(sub)
 			sub = strings.TrimPrefix(sub, "*.")
 			if sub != "" && sub != domain && strings.HasSuffix(sub, "."+domain) {
@@ -193,7 +208,7 @@ func fetchCrtSh(ctx context.Context, domain string) (map[string]interface{}, err
 	}
 
 	if len(subdomains) == 0 {
-		return nil, fmt.Errorf("No subdomains found")
+		return nil, fmt.Errorf("no subdomains found")
 	}
 
 	return subdomains, nil

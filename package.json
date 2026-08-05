@@ -3,12 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "minify:js": "node scripts/minify-js.mjs static"
+    "minify:js": "node scripts/minify-js.mjs static templates"
   },
   "devDependencies": {
+    "parse5": "^8.0.0",
     "terser": "5.49.0"
   },
   "engines": {
     "node": ">=24"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.13"
   }
 }

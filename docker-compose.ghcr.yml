@@ -1,46 +1,17 @@
+# Published-image deployment. Service settings are inherited from the local
+# Compose file so both installation paths share one security/config contract.
 services:
   web:
+    extends:
+      file: docker-compose.yml
+      service: web
     image: ghcr.io/arumes31/whois:latest
-    ports:
-      - "14400:5000"
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CONFIG_USER=${CONFIG_USER:-admin}
-      - CONFIG_PASS=${CONFIG_PASS:-admin}
-      - SECRET_KEY=${SECRET_KEY:-change-me-for-production}
-      - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
-      - MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
-      - DNS_SERVERS=${DNS_SERVERS:-https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query}
-      - BOOTSTRAP_DNS=${BOOTSTRAP_DNS:-1.1.1.1,9.9.9.9}
-      - SEO_ENABLED=${SEO_ENABLED:-false}
-      - SEO_DOMAIN=${SEO_DOMAIN}
-      - ALLOWED_DOMAIN=${ALLOWED_DOMAIN}
-      - WS_SKIP_ORIGIN_CHECK=${WS_SKIP_ORIGIN_CHECK:-false}
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    volumes:
-      - whois_data:/app/data
-    networks:
-      - app-tier
+    build: null
 
   redis:
-    image: redis:alpine
-    restart: unless-stopped
-    command: redis-server --save 60 1 --loglevel warning
-    volumes:
-      - redis_data:/data
-    networks:
-      - app-tier
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+    extends:
+      file: docker-compose.yml
+      service: redis
 
 networks:
   app-tier:

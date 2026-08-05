@@ -13,7 +13,9 @@ import (
 func TestNewServer(t *testing.T) {
 	// Setup environment
 	_ = os.Setenv("SECRET_KEY", "test-secret")
+	_ = os.Setenv("ENVIRONMENT", "development")
 	defer func() { _ = os.Unsetenv("SECRET_KEY") }()
+	defer func() { _ = os.Unsetenv("ENVIRONMENT") }()
 
 	// Change to project root so templates can be found
 	_ = os.Chdir("../../")
@@ -22,6 +24,8 @@ func TestNewServer(t *testing.T) {
 	cfg, _ := config.LoadConfig()
 	// Use invalid redis port to fail fast
 	cfg.RedisPort = "1"
+	cfg.TrustedIPs = "127.0.0.1"
+	cfg.TrustProxy = false
 
 	e := NewServer(cfg)
 	if e == nil {
@@ -37,6 +41,17 @@ func TestNewServer(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 
+	t.Run("MetricsRejectsSpoofedForwardedIP", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+		req.RemoteAddr = "198.51.100.20:1234"
+		req.Header.Set("X-Forwarded-For", "127.0.0.1")
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Fatalf("spoofed forwarding header returned %d, want 403", rec.Code)
+		}
+	})
+
 	// Test Custom Error Handler
 	t.Run("HTTPErrorHandler", func(t *testing.T) {
 		// A POST request without CSRF token will trigger a 400 Bad Request
@@ -51,4 +66,16 @@ func TestNewServer(t *testing.T) {
 			t.Error("Error page does not contain expected status code 400")
 		}
 	})
+}
+
+func TestTrustedProxyNetworksNormalizeBareAddresses(t *testing.T) {
+	networks := parseTrustedNetworks("127.0.0.1,0:0:0:0:0:0:0:1,192.0.2.0/24")
+	for _, address := range []string{"127.0.0.1", "::1", "192.0.2.10"} {
+		if !ipInNetworks(address, networks) {
+			t.Errorf("expected %s to match a trusted network", address)
+		}
+	}
+	if ipInNetworks("198.51.100.10", networks) {
+		t.Error("unexpected match for an untrusted address")
+	}
 }

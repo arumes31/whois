@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"net"
+	"net/url"
 	"strings"
+	"time"
 	"whois/internal/utils"
 
 	"github.com/likexian/whois"
@@ -20,33 +23,132 @@ type WhoisInfo struct {
 	Created   string `json:"created,omitempty"`
 }
 
-// WhoisFunc is the function type for WHOIS lookups, matching the signature of whois.Whois.
-var WhoisFunc = whois.Whois
+// WhoisFunc performs WHOIS lookups. The context-aware signature ensures that
+// connection setup uses the same caller cancellation and address policy as the
+// rest of the request.
+var WhoisFunc = func(ctx context.Context, target string, servers ...string) (string, error) {
+	dialer := &whoisPinnedDialer{
+		ctx:     ctx,
+		timeout: 8 * time.Second,
+		resolve: resolveWhoisServer,
+		dial:    utils.DialResolvedTarget,
+	}
+	return whois.NewClient().SetDialer(dialer).SetTimeout(8*time.Second).Whois(target, servers...)
+}
+
+var WhoisServerValidator = validateWhoisServer
 
 var RdapLookupFunc = rdapLookup
+
+type whoisResult struct {
+	raw string
+	err error
+}
+
+func callWithContext(ctx context.Context, lookup func() (string, error)) (string, error) {
+	result := make(chan whoisResult, 1)
+	go func() {
+		raw, err := lookup()
+		result <- whoisResult{raw: raw, err: err}
+	}()
+	select {
+	case response := <-result:
+		return response.raw, response.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func callWhois(ctx context.Context, target string, servers ...string) (string, error) {
+	for _, server := range servers {
+		if err := WhoisServerValidator(ctx, server); err != nil {
+			return "", err
+		}
+	}
+	return callWithContext(ctx, func() (string, error) { return WhoisFunc(ctx, target, servers...) })
+}
+
+func validateWhoisServer(ctx context.Context, server string) error {
+	_, err := resolveWhoisServer(ctx, server)
+	return err
+}
+
+func resolveWhoisServer(ctx context.Context, server string) ([]net.IPAddr, error) {
+	host, err := whoisServerHost(server)
+	if err != nil {
+		return nil, err
+	}
+
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve WHOIS server: %w", err)
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("WHOIS server resolved to no addresses")
+	}
+	for _, address := range addresses {
+		if !utils.IsPublicIP(address.IP) {
+			return nil, fmt.Errorf("WHOIS server resolves to a non-public address")
+		}
+	}
+	return addresses, nil
+}
+
+func whoisServerHost(server string) (string, error) {
+	server = strings.TrimSpace(server)
+	if server == "" {
+		return "", fmt.Errorf("WHOIS server is empty")
+	}
+	if strings.Contains(server, "://") {
+		parsed, err := url.Parse(server)
+		if err != nil || parsed.Hostname() == "" {
+			return "", fmt.Errorf("invalid WHOIS server")
+		}
+		server = parsed.Hostname()
+	} else if host, _, err := net.SplitHostPort(server); err == nil {
+		server = host
+	}
+	server = strings.Trim(strings.TrimSuffix(server, "."), "[]")
+	if server == "" {
+		return "", fmt.Errorf("invalid WHOIS server")
+	}
+	return server, nil
+}
+
+type whoisResolver func(context.Context, string) ([]net.IPAddr, error)
+type whoisDial func(context.Context, string, []net.IPAddr, string, time.Duration) (net.Conn, string, error)
+
+// whoisPinnedDialer preserves the hostname passed through the WHOIS protocol
+// while connecting only to the numeric addresses validated for that exact dial.
+// The library may discover referrals internally, so policy enforcement belongs
+// in the dialer and applies to both initial and referred servers.
+type whoisPinnedDialer struct {
+	ctx     context.Context
+	timeout time.Duration
+	resolve whoisResolver
+	dial    whoisDial
+}
+
+func (d *whoisPinnedDialer) Dial(network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, fmt.Errorf("invalid WHOIS address: %w", err)
+	}
+	addresses, err := d.resolve(d.ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	conn, _, err := d.dial(d.ctx, network, addresses, port, d.timeout)
+	return conn, err
+}
 
 func Whois(ctx context.Context, target string) interface{} {
 	if !utils.IsValidTarget(target) {
 		return "Error: invalid target for WHOIS"
 	}
 
-	// Try primary lookup with context support via goroutine
-	type whoisResult struct {
-		raw string
-		err error
-	}
-	ch := make(chan whoisResult, 1)
-	go func() {
-		raw, err := WhoisFunc(target)
-		ch <- whoisResult{raw: raw, err: err}
-	}()
-
-	var raw string
-	var err error
-	select {
-	case res := <-ch:
-		raw, err = res.raw, res.err
-	case <-ctx.Done():
+	raw, err := callWhois(ctx, target)
+	if ctx.Err() != nil {
 		return fmt.Sprintf("WHOIS error: %v", ctx.Err())
 	}
 
@@ -103,7 +205,7 @@ func Whois(ctx context.Context, target string) interface{} {
 			}
 
 			for _, s := range shuffled {
-				rRaw, rErr := WhoisFunc(target, s)
+				rRaw, rErr := callWhois(ctx, target, s)
 				if rErr == nil && !isErrorResponse(rRaw) {
 					raw = rRaw
 					err = nil
@@ -114,7 +216,7 @@ func Whois(ctx context.Context, target string) interface{} {
 
 		// Still no good result? Try recursive IANA lookup
 		if err != nil || isErrorResponse(raw) {
-			ianaRaw, ianaErr := WhoisFunc(target, "whois.iana.org")
+			ianaRaw, ianaErr := callWhois(ctx, target, "whois.iana.org")
 			if ianaErr == nil {
 				lines := strings.Split(ianaRaw, "\n")
 				for _, line := range lines {
@@ -124,7 +226,7 @@ func Whois(ctx context.Context, target string) interface{} {
 						if len(rParts) > 1 {
 							server := strings.TrimSpace(rParts[1])
 							if server != "" {
-								ianaResultRaw, ianaResultErr := WhoisFunc(target, server)
+								ianaResultRaw, ianaResultErr := callWhois(ctx, target, server)
 								if ianaResultErr == nil && !isErrorResponse(ianaResultRaw) {
 									raw = ianaResultRaw
 									err = nil
@@ -139,7 +241,7 @@ func Whois(ctx context.Context, target string) interface{} {
 
 		// FINAL FALLBACK: RDAP (Modern replacement for WHOIS)
 		if err != nil || isErrorResponse(raw) {
-			rdapRaw, rdapErr := RdapLookupFunc(target)
+			rdapRaw, rdapErr := callWithContext(ctx, func() (string, error) { return RdapLookupFunc(target) })
 			if rdapErr == nil && rdapRaw != "" {
 				raw = rdapRaw
 				err = nil
@@ -160,7 +262,7 @@ func Whois(ctx context.Context, target string) interface{} {
 				if len(parts) > 1 {
 					refServer := strings.TrimSpace(parts[1])
 					if refServer != "" {
-						refRaw, refErr := WhoisFunc(target, refServer)
+						refRaw, refErr := callWhois(ctx, target, refServer)
 						if refErr == nil && len(refRaw) > len(raw)/2 {
 							raw = refRaw
 						}
@@ -219,7 +321,7 @@ func rdapLookup(target string) (string, error) {
 	for _, key := range whoisStyle.KeyDisplayOrder {
 		values := whoisStyle.Data[key]
 		for _, value := range values {
-			sb.WriteString(fmt.Sprintf("%s: %s\n", key, value))
+			fmt.Fprintf(&sb, "%s: %s\n", key, value)
 		}
 	}
 	return sb.String(), nil

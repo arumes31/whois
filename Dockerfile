@@ -22,10 +22,12 @@ COPY data ./data
 COPY entrypoint.sh ./entrypoint.sh
 
 # Ensure user can read templates, static, and data, and entrypoint is executable
-RUN chown -R whoisuser:whoisgroup /app && chmod +x ./entrypoint.sh
+RUN sed -i 's/\r$//' ./entrypoint.sh \
+    && chown -R whoisuser:whoisgroup /app \
+    && chmod +x ./entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health || exit 1
+  CMD wget --no-verbose --tries=1 --spider http://localhost:5000/livez || exit 1
 
 EXPOSE 5000
 ENTRYPOINT ["./entrypoint.sh"]

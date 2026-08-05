@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,46 +32,92 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 )
 
-func generateSessionToken(secretKey string) string {
+const (
+	maxBulkUploadBytes = 2 * 1024 * 1024
+	maxQueryTargets    = 25
+	sessionTTL         = 12 * time.Hour
+)
+
+func generateSessionToken(secretKey string) (string, error) {
+	if secretKey == "" {
+		return "", fmt.Errorf("session secret is empty")
+	}
 	entropy := make([]byte, 16)
-	_, _ = rand.Read(entropy)
+	if _, err := rand.Read(entropy); err != nil {
+		return "", fmt.Errorf("generate session entropy: %w", err)
+	}
 	entropyHex := hex.EncodeToString(entropy)
+	issuedAt := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	payload := entropyHex + "." + issuedAt
 
 	mac := hmac.New(sha256.New, []byte(secretKey))
-	mac.Write([]byte(entropyHex))
+	_, _ = mac.Write([]byte(payload))
 	signature := hex.EncodeToString(mac.Sum(nil))
 
-	return entropyHex + "." + signature
+	return payload + "." + signature, nil
 }
 
 func validateSessionToken(token, secretKey string) bool {
 	parts := strings.Split(token, ".")
-	if len(parts) != 2 {
+	if len(parts) != 3 || secretKey == "" {
 		return false
 	}
-	entropyHex := parts[0]
-	signature := parts[1]
+	issuedAtUnix, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return false
+	}
+	issuedAt := time.Unix(issuedAtUnix, 0)
+	now := time.Now()
+	if issuedAt.After(now.Add(time.Minute)) || now.Sub(issuedAt) > sessionTTL {
+		return false
+	}
 
 	mac := hmac.New(sha256.New, []byte(secretKey))
-	mac.Write([]byte(entropyHex))
+	_, _ = mac.Write([]byte(parts[0] + "." + parts[1]))
 	expectedSignature := hex.EncodeToString(mac.Sum(nil))
 
-	return subtle.ConstantTimeCompare([]byte(signature), []byte(expectedSignature)) == 1
+	return subtle.ConstantTimeCompare([]byte(parts[2]), []byte(expectedSignature)) == 1
 }
 
 type Handler struct {
-	Storage   *storage.Storage
-	DNS       *service.DNSService
-	AppConfig *config.Config
-	Upgrader  websocket.Upgrader
-	wsMu      sync.Mutex
+	Storage     *storage.Storage
+	DNS         *service.DNSService
+	AppConfig   *config.Config
+	Upgrader    websocket.Upgrader
+	targetSem   chan struct{}
+	serviceSem  chan struct{}
+	scanOptions service.ScanOptions
+	wsConnMu    sync.Mutex
+	wsConns     map[*websocket.Conn]struct{}
 }
 
 func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
+	targetConcurrency := cfg.MaxTargetConcurrency
+	if targetConcurrency < 1 {
+		targetConcurrency = 4
+	}
+	serviceConcurrency := cfg.MaxServiceConcurrency
+	if serviceConcurrency < 1 {
+		serviceConcurrency = 12
+	}
+	scanConcurrency := cfg.PortScanConcurrency
+	if scanConcurrency < 1 {
+		scanConcurrency = 32
+	}
+	maxScanPorts := cfg.PortScanMaxPorts
+	if maxScanPorts < 1 {
+		maxScanPorts = 1024
+	}
+	dnsService := service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS)
+	dnsService.SetMaxAttempts(cfg.DNSMaxAttempts)
 	h := &Handler{
-		Storage:   storage,
-		DNS:       service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS),
-		AppConfig: cfg,
+		Storage:     storage,
+		DNS:         dnsService,
+		AppConfig:   cfg,
+		targetSem:   make(chan struct{}, targetConcurrency),
+		serviceSem:  make(chan struct{}, serviceConcurrency),
+		scanOptions: service.ScanOptions{Concurrency: scanConcurrency, MaxPorts: maxScanPorts, ConnectTimeout: 2 * time.Second, BannerTimeout: time.Second},
+		wsConns:     make(map[*websocket.Conn]struct{}),
 	}
 
 	h.Upgrader = websocket.Upgrader{
@@ -166,6 +213,20 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 	return h
 }
 
+// Close terminates hijacked WebSocket connections that net/http shutdown does
+// not own, allowing their query contexts and goroutines to unwind.
+func (h *Handler) Close() {
+	h.wsConnMu.Lock()
+	connections := make([]*websocket.Conn, 0, len(h.wsConns))
+	for connection := range h.wsConns {
+		connections = append(connections, connection)
+	}
+	h.wsConnMu.Unlock()
+	for _, connection := range connections {
+		_ = connection.Close()
+	}
+}
+
 // === Middleware ===
 func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -195,12 +256,24 @@ func (h *Handler) Index(c echo.Context) error {
 		httpEnabled := c.FormValue("http") != "" && h.AppConfig.EnableHTTP
 		geoEnabled := c.FormValue("geo") != "" && h.AppConfig.EnableGeo
 
-		items := strings.Split(ipsDomains, ",")
+		items := strings.FieldsFunc(ipsDomains, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' })
+		if len(items) > maxQueryTargets {
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "too many targets; maximum is 25")
+		}
 		var cleanedItems []string
+		seenItems := make(map[string]struct{})
 		for _, item := range items {
 			trimmed := strings.TrimSpace(item)
-			if utils.IsValidTarget(trimmed) {
-				cleanedItems = append(cleanedItems, trimmed)
+			info := utils.NormalizeTarget(trimmed)
+			if info.Valid && info.Networkable && utils.IsValidTarget(info.Normalized) {
+				identity := info.Scheme + "|" + info.Normalized
+				if _, exists := seenItems[identity]; !exists {
+					if len(cleanedItems) >= maxQueryTargets {
+						return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "too many targets; maximum is 25")
+					}
+					cleanedItems = append(cleanedItems, trimmed)
+					seenItems[identity] = struct{}{}
+				}
 			}
 		}
 
@@ -212,6 +285,12 @@ func (h *Handler) Index(c echo.Context) error {
 			wg.Add(1)
 			go func(target string) {
 				defer wg.Done()
+				select {
+				case <-c.Request().Context().Done():
+					return
+				case h.targetSem <- struct{}{}:
+					defer func() { <-h.targetSem }()
+				}
 				res := h.queryItem(c.Request().Context(), target, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
 				mu.Lock()
 				results[target] = res
@@ -261,7 +340,7 @@ func (h *Handler) BulkUpload(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "No file uploaded"})
 	}
 
-	if file.Size > 2*1024*1024 {
+	if file.Size > maxBulkUploadBytes {
 		return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "File too large (max 2MB)"})
 	}
 
@@ -322,26 +401,52 @@ func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult
 	c.Response().WriteHeader(http.StatusOK)
 
 	writer := csv.NewWriter(c.Response().Writer)
-	defer writer.Flush()
+	if err := writer.Write([]string{"Item", "Type", "Data"}); err != nil {
+		return err
+	}
 
-	_ = writer.Write([]string{"Item", "Type", "Data"})
-
-	for item, data := range results {
-		if data.Whois != nil {
-			if w, ok := data.Whois.(string); ok {
-				_ = writer.Write([]string{item, "WHOIS", w})
+	items := make([]string, 0, len(results))
+	for item := range results {
+		items = append(items, item)
+	}
+	sort.Strings(items)
+	for _, item := range items {
+		data := results[item]
+		rows := []struct {
+			name string
+			data interface{}
+		}{
+			{"Target", data.Target}, {"WHOIS", data.Whois}, {"DNS", data.DNS},
+			{"CT", data.CT}, {"SSL", data.SSL}, {"HTTP", data.HTTP}, {"Geo", data.Geo},
+		}
+		for _, row := range rows {
+			if row.data == nil {
+				continue
+			}
+			var value string
+			if text, ok := row.data.(string); ok {
+				value = text
+			} else {
+				encoded, err := json.Marshal(row.data)
+				if err != nil {
+					return fmt.Errorf("encode %s result: %w", row.name, err)
+				}
+				value = string(encoded)
+			}
+			if err := writer.Write([]string{spreadsheetSafe(item), row.name, spreadsheetSafe(value)}); err != nil {
+				return err
 			}
 		}
-		if data.DNS != nil {
-			dnsBytes, _ := json.Marshal(data.DNS)
-			_ = writer.Write([]string{item, "DNS", string(dnsBytes)})
-		}
-		if data.CT != nil {
-			ctBytes, _ := json.Marshal(data.CT)
-			_ = writer.Write([]string{item, "CT", string(ctBytes)})
-		}
 	}
-	return nil
+	writer.Flush()
+	return writer.Error()
+}
+
+func spreadsheetSafe(value string) string {
+	if value != "" && strings.ContainsRune("=+-@\t\r", rune(value[0])) {
+		return "'" + value
+	}
+	return value
 }
 
 func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled bool) model.QueryResult {
@@ -354,37 +459,48 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 		}
 	}
 
-	res := model.QueryResult{}
-	isIP := net.ParseIP(item) != nil
+	targetInfo := utils.EnrichTarget(ctx, item)
+	res := model.QueryResult{Target: targetInfo}
+	isIP := targetInfo.Kind == model.TargetKindIPv4 || targetInfo.Kind == model.TargetKindIPv6
+	hostTarget := targetInfo.Host
+	endpointTarget := targetInfo.Normalized
+	httpTarget := item
 	var wg sync.WaitGroup
-
-	if whoisEnabled {
+	run := func(fn func()) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			w := service.Whois(ctx, item)
-			res.Whois = w
+			select {
+			case <-ctx.Done():
+				return
+			case h.serviceSem <- struct{}{}:
+				defer func() { <-h.serviceSem }()
+			}
+			fn()
 		}()
+	}
+
+	if whoisEnabled {
+		run(func() {
+			w := service.Whois(ctx, hostTarget)
+			res.Whois = w
+		})
 	}
 
 	if dnsEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			d, err := h.DNS.Lookup(ctx, item, isIP)
+		run(func() {
+			d, err := h.DNS.Lookup(ctx, hostTarget, isIP)
 			if err == nil {
 				res.DNS = d
-				_ = h.Storage.AddDNSHistory(ctx, item, d)
+				_ = h.Storage.AddDNSHistory(ctx, hostTarget, d)
 			}
-		}()
+		})
 	}
 
 	if ctEnabled {
-		if !isIP {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ctCacheKey := "ct:" + item
+		if targetInfo.Kind == model.TargetKindDomain {
+			run(func() {
+				ctCacheKey := "ct:" + hostTarget
 				if cached, err := h.Storage.GetCache(ctx, ctCacheKey); err == nil {
 					var ctRes interface{}
 					if json.Unmarshal([]byte(cached), &ctRes) == nil {
@@ -393,50 +509,46 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 					}
 				}
 
-				c, err := service.FetchCTSubdomains(ctx, item)
+				c, err := service.FetchCTSubdomains(ctx, hostTarget)
 				if err != nil {
 					res.CT = map[string]string{"error": err.Error()}
 				} else {
 					res.CT = c
 					_ = h.Storage.SetCache(ctx, ctCacheKey, c, 1*time.Hour)
 				}
-			}()
+			})
 		} else {
 			res.CT = map[string]string{"error": "CT not applicable to IP"}
 		}
 	}
 
 	if sslEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			res.SSL = service.GetSSLInfo(ctx, item)
-		}()
+		run(func() {
+			res.SSL = service.GetSSLInfo(ctx, endpointTarget)
+		})
 	}
 
 	if httpEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			res.HTTP = service.GetHTTPInfo(ctx, item)
-		}()
+		run(func() {
+			res.HTTP = service.GetHTTPInfo(ctx, httpTarget)
+		})
 	}
 
 	if geoEnabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			g, err := service.GetGeoInfo(ctx, item)
+		run(func() {
+			g, err := service.GetGeoInfo(ctx, hostTarget)
 			if err == nil {
 				res.Geo = g
 			} else {
 				res.Geo = map[string]string{"error": err.Error()}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
-	_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
+	if ctx.Err() == nil {
+		_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
+	}
 	return res
 }
 
@@ -461,40 +573,39 @@ func (h *Handler) Scan(c echo.Context) error {
 		rawPorts = "80,443,22,21,25,3389"
 	}
 
-	var ports []int
-	for _, p := range strings.Split(rawPorts, ",") {
-		if i, err := strconv.Atoi(strings.TrimSpace(p)); err == nil {
-			ports = append(ports, i)
-		}
+	info := utils.NormalizeTarget(target)
+	if !info.Valid || !info.Networkable || !utils.IsValidTarget(info.Normalized) {
+		return c.Render(http.StatusBadRequest, "scan_result.html", map[string]interface{}{"target": target, "remote_ip": c.RealIP(), "result": service.ScanResult{Error: []string{"invalid target"}}})
+	}
+	ports, err := service.ParsePortSpec(rawPorts, h.scanOptions.MaxPorts)
+	if err != nil {
+		return c.Render(http.StatusBadRequest, "scan_result.html", map[string]interface{}{"target": info.Normalized, "remote_ip": c.RealIP(), "result": service.ScanResult{Error: []string{err.Error()}}})
 	}
 
-	res := service.ScanPorts(c.Request().Context(), target, ports)
+	res := service.ScanPortsStreamWithOptions(c.Request().Context(), info.Normalized, ports, h.scanOptions, nil)
 
 	return c.Render(http.StatusOK, "scan_result.html", map[string]interface{}{
-		"target":    target,
+		"target":    info.Normalized,
 		"remote_ip": c.RealIP(),
 		"result":    res,
 	})
 }
 
 func (h *Handler) DNSLookup(c echo.Context) error {
-	domain := c.FormValue("domain")
+	domain := strings.TrimSpace(c.FormValue("domain"))
 	rtype := strings.ToUpper(c.FormValue("type"))
 	if rtype == "" {
 		rtype = "A"
 	}
 
-	isIP := net.ParseIP(domain) != nil
-	d, err := h.DNS.Lookup(c.Request().Context(), domain, isIP)
-	if err != nil {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", html.EscapeString(err.Error())))
+	targetInfo := utils.NormalizeTarget(domain)
+	if !targetInfo.Valid || !targetInfo.Networkable {
+		return c.HTML(http.StatusBadRequest, "<div class='alert alert-danger'>Error: invalid DNS target</div>")
 	}
-
-	var results []string
-	if val, ok := d[rtype]; ok {
-		if list, ok := val.([]string); ok {
-			results = list
-		}
+	isIP := targetInfo.Kind == model.TargetKindIPv4 || targetInfo.Kind == model.TargetKindIPv6
+	results, err := h.DNS.LookupType(c.Request().Context(), targetInfo.Host, rtype, isIP)
+	if err != nil {
+		return c.HTML(http.StatusBadRequest, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", html.EscapeString(err.Error())))
 	}
 
 	if len(results) == 0 {
@@ -545,9 +656,11 @@ func (h *Handler) Login(c echo.Context) error {
 		if user != "" && envUser != "" && pass != "" && envPass != "" &&
 			subtle.ConstantTimeCompare([]byte(user), []byte(envUser)) == 1 &&
 			subtle.ConstantTimeCompare([]byte(pass), []byte(envPass)) == 1 {
-			// Generate a simple secure token (In production, use JWT or Redis-backed sessions)
-			// For this hardening, we'll use a hash of the credentials + secret
-			token := generateSessionToken(os.Getenv("SECRET_KEY"))
+			token, err := generateSessionToken(os.Getenv("SECRET_KEY"))
+			if err != nil {
+				utils.Log.Error("failed to generate config session", utils.Field("error", err.Error()))
+				return echo.NewHTTPError(http.StatusInternalServerError, "Unable to create session")
+			}
 			c.SetCookie(&http.Cookie{
 				Name:     "session_id",
 				Value:    token,
@@ -555,6 +668,8 @@ func (h *Handler) Login(c echo.Context) error {
 				HttpOnly: true,
 				Secure:   true, // Recommended for HTTPS
 				SameSite: http.SameSiteLaxMode,
+				MaxAge:   int(sessionTTL.Seconds()),
+				Expires:  time.Now().Add(sessionTTL),
 			})
 			return c.Redirect(http.StatusFound, "/config")
 		}
@@ -666,6 +781,10 @@ func (h *Handler) Health(c echo.Context) error {
 		"status": "ok",
 		"redis":  "connected",
 	})
+}
+
+func (h *Handler) Liveness(c echo.Context) error {
+	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) UpdateGeoDB(c echo.Context) error {

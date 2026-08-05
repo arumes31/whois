@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -15,11 +16,14 @@ import (
 )
 
 type DNSService struct {
-	Resolvers    []string
-	Bootstrap    []string
-	httpClient   *http.Client
-	currentIndex int
-	mu           sync.Mutex
+	Resolvers      []string
+	Bootstrap      []string
+	httpClient     *http.Client
+	currentIndex   int
+	mu             sync.Mutex
+	maxAttempts    int
+	failures       map[string]int
+	unhealthyUntil map[string]time.Time
 }
 
 func NewDNSService(resolvers string, bootstrap string) *DNSService {
@@ -93,23 +97,82 @@ func NewDNSService(resolvers string, bootstrap string) *DNSService {
 	}
 
 	return &DNSService{
-		Resolvers:  resList,
-		Bootstrap:  bootList,
-		httpClient: &http.Client{Transport: transport, Timeout: 10 * time.Second},
+		Resolvers:      resList,
+		Bootstrap:      bootList,
+		httpClient:     &http.Client{Transport: transport, Timeout: 10 * time.Second},
+		maxAttempts:    3,
+		failures:       make(map[string]int),
+		unhealthyUntil: make(map[string]time.Time),
 	}
 }
 
-func (s *DNSService) getNextResolver() string {
+func (s *DNSService) SetMaxAttempts(attempts int) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	s.mu.Lock()
+	s.maxAttempts = attempts
+	s.mu.Unlock()
+}
+
+func (s *DNSService) resolverCandidates() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res := s.Resolvers[s.currentIndex]
+	if len(s.Resolvers) == 0 {
+		return nil
+	}
+	limit := s.maxAttempts
+	if limit > len(s.Resolvers) {
+		limit = len(s.Resolvers)
+	}
+	now := time.Now()
+	candidates := make([]string, 0, limit)
+	degraded := make([]string, 0, limit)
+	for offset := range len(s.Resolvers) {
+		resolver := s.Resolvers[(s.currentIndex+offset)%len(s.Resolvers)]
+		if until := s.unhealthyUntil[resolver]; until.After(now) {
+			degraded = append(degraded, resolver)
+		} else {
+			candidates = append(candidates, resolver)
+		}
+	}
+	candidates = append(candidates, degraded...)
+	if len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
 	s.currentIndex = (s.currentIndex + 1) % len(s.Resolvers)
-	return res
+	return candidates
+}
+
+func (s *DNSService) recordResolverResult(resolver string, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err == nil {
+		delete(s.failures, resolver)
+		delete(s.unhealthyUntil, resolver)
+		return
+	}
+	s.failures[resolver]++
+	if s.failures[resolver] >= 2 {
+		s.unhealthyUntil[resolver] = time.Now().Add(30 * time.Second)
+	}
 }
 
 func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 5) // Limit to 5 concurrent queries per target
+	var resultMu sync.Mutex
+	var queryErrors []error
+	successfulQueries := 0
+	recordResult := func(name string, err error) {
+		resultMu.Lock()
+		defer resultMu.Unlock()
+		if err != nil {
+			queryErrors = append(queryErrors, fmt.Errorf("%s lookup: %w", name, err))
+			return
+		}
+		successfulQueries++
+	}
 
 	if isIP {
 		// Reverse Lookup
@@ -125,10 +188,9 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 			}
 
 			r, err := s.query(ctx, target, dns.TypePTR, true)
+			recordResult("PTR", err)
 			if err == nil && len(r) > 0 {
 				callback("PTR", r)
-			} else {
-				callback("PTR", []string{})
 			}
 		}()
 	} else {
@@ -156,6 +218,7 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 				}
 
 				r, err := s.query(ctx, target, t, false)
+				recordResult(name, err)
 				if err == nil && len(r) > 0 {
 					callback(name, r)
 
@@ -189,24 +252,43 @@ func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool,
 			}
 
 			r, err := s.query(ctx, "_dmarc."+target, dns.TypeTXT, false)
+			recordResult("DMARC", err)
 			if err == nil && len(r) > 0 {
 				callback("DMARC", r)
-			}
-		}()
-
-		// Well-known subdomains (run concurrently with other lookups)
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			res := s.DiscoverSubdomains(ctx, target, nil)
-			if len(res) > 0 {
-				callback("Subdomains", res)
 			}
 		}()
 	}
 
 	wg.Wait()
+	resultMu.Lock()
+	defer resultMu.Unlock()
+	if successfulQueries == 0 && len(queryErrors) > 0 {
+		return fmt.Errorf("dns lookup failed: %w", errors.Join(queryErrors...))
+	}
 	return nil
+}
+
+// LookupType resolves exactly one supported DNS record type. It is used by the
+// focused lookup tool so a single A query does not fan out into a full profile.
+func (s *DNSService) LookupType(ctx context.Context, target, recordType string, isIP bool) ([]string, error) {
+	recordType = strings.ToUpper(strings.TrimSpace(recordType))
+	types := map[string]uint16{
+		"A": dns.TypeA, "AAAA": dns.TypeAAAA, "CNAME": dns.TypeCNAME,
+		"NS": dns.TypeNS, "TXT": dns.TypeTXT, "MX": dns.TypeMX,
+		"CAA": dns.TypeCAA, "SOA": dns.TypeSOA, "SRV": dns.TypeSRV,
+		"DS": dns.TypeDS, "DNSKEY": dns.TypeDNSKEY, "PTR": dns.TypePTR,
+	}
+	queryType, ok := types[recordType]
+	if !ok {
+		return nil, fmt.Errorf("unsupported DNS record type %q", recordType)
+	}
+	if isIP != (queryType == dns.TypePTR) {
+		if isIP {
+			return nil, fmt.Errorf("only PTR lookups apply to IP addresses")
+		}
+		return nil, fmt.Errorf("PTR lookups require an IP address")
+	}
+	return s.query(ctx, target, queryType, isIP)
 }
 
 // DiscoverSubdomains performs a brute-force search for common subdomains
@@ -374,7 +456,27 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 }
 
 func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isReverse bool) ([]string, error) {
-	resolver := s.getNextResolver()
+	candidates := s.resolverCandidates()
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no dns resolvers configured")
+	}
+	var resolverErrors []string
+	for _, resolver := range candidates {
+		result, err := s.queryResolver(ctx, resolver, target, qtype, isReverse)
+		if err == nil {
+			s.recordResolverResult(resolver, nil)
+			return result, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		s.recordResolverResult(resolver, err)
+		resolverErrors = append(resolverErrors, resolver+": "+err.Error())
+	}
+	return nil, fmt.Errorf("all resolvers failed: %s", strings.Join(resolverErrors, "; "))
+}
+
+func (s *DNSService) queryResolver(ctx context.Context, resolver, target string, qtype uint16, isReverse bool) ([]string, error) {
 
 	m := new(dns.Msg)
 	queryName := target
@@ -417,6 +519,9 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 	}
 	if in == nil {
 		return nil, fmt.Errorf("no response from resolver")
+	}
+	if in.Rcode != dns.RcodeSuccess && in.Rcode != dns.RcodeNameError {
+		return nil, fmt.Errorf("resolver returned %s", dns.RcodeToString[in.Rcode])
 	}
 
 	var results []string

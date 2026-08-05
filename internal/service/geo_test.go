@@ -5,14 +5,17 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"fmt"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 	"whois/internal/utils"
+
+	"github.com/oschwald/geoip2-golang"
 )
 
 func init() {
@@ -21,50 +24,76 @@ func init() {
 }
 
 func TestGetGeoInfo(t *testing.T) {
-	// Mock the API fallback
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintln(w, `{"status":"success", "query":"8.8.8.8", "country":"United States"}`)
-	}))
-	defer ts.Close()
-
-	originalURL := GeoAPIURL
-	GeoAPIURL = ts.URL + "/"
-	defer func() { GeoAPIURL = originalURL }()
-
 	tests := []struct {
-		target string
+		name       string
+		target     string
+		resolvedIP string
 	}{
-		{"8.8.8.8"},
-		{"1.1.1.1"},
+		{name: "IP address bypasses resolver", target: "8.8.8.8", resolvedIP: "8.8.8.8"},
+		{name: "hostname resolves before lookup", target: "example.test", resolvedIP: "203.0.113.10"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.target, func(t *testing.T) {
-			res, err := GetGeoInfo(context.Background(), tt.target)
+		t.Run(tt.name, func(t *testing.T) {
+			resolverCalls := 0
+			resolve := func(ctx context.Context, host string) ([]net.IPAddr, error) {
+				resolverCalls++
+				if host != tt.target {
+					t.Fatalf("resolver target = %q, want %q", host, tt.target)
+				}
+				return []net.IPAddr{{IP: net.ParseIP(tt.resolvedIP)}}, nil
+			}
+			lookup := func(ip net.IP) (*geoip2.City, error) {
+				if got := ip.String(); got != tt.resolvedIP {
+					t.Fatalf("GeoIP lookup address = %q, want %q", got, tt.resolvedIP)
+				}
+				record := &geoip2.City{}
+				record.Country.Names = map[string]string{"en": "Example Country"}
+				record.Country.IsoCode = "AT"
+				record.City.Names = map[string]string{"en": "Vienna"}
+				record.Postal.Code = "1010"
+				record.Location.TimeZone = "Europe/Vienna"
+				return record, nil
+			}
+
+			res, err := getGeoInfo(context.Background(), tt.target, resolve, lookup)
 			if err != nil {
 				t.Fatalf("GetGeoInfo failed: %v", err)
 			}
-			if res.Query != tt.target && tt.target == "8.8.8.8" {
-				t.Errorf("Expected query %s, got %s", tt.target, res.Query)
+			if res.Query != tt.target || res.CountryCode != "AT" || res.City != "Vienna" || res.Zip != "1010" {
+				t.Fatalf("unexpected GeoIP result: %+v", res)
+			}
+			if tt.target == tt.resolvedIP && resolverCalls != 0 {
+				t.Fatalf("literal IP unexpectedly used resolver %d times", resolverCalls)
+			}
+			if tt.target != tt.resolvedIP && resolverCalls != 1 {
+				t.Fatalf("hostname resolver calls = %d, want 1", resolverCalls)
 			}
 		})
 	}
 }
 
 func TestInitializeGeoDB(t *testing.T) {
+	StopGeoDBUpdater()
+	geoMu.Lock()
 	oldClient := GeoHTTPClient
-	defer func() { GeoHTTPClient = oldClient }()
+	oldTestMode := GeoTestMode
+	oldPath := geoPath
 	GeoHTTPClient = &http.Client{
 		Transport: &mockGeoTransport{},
 	}
-
 	GeoTestMode = true
-	oldPath := geoPath
 	geoPath = "test_init_geo.mmdb"
+	geoMu.Unlock()
 	defer func() {
+		StopGeoDBUpdater()
+		geoMu.Lock()
+		GeoHTTPClient = oldClient
+		GeoTestMode = oldTestMode
 		geoPath = oldPath
+		geoMu.Unlock()
 		_ = os.Remove("test_init_geo.mmdb")
+		ReloadGeoDB()
 	}()
 
 	// Test with no keys (public mirror fallback)
@@ -74,9 +103,17 @@ func TestInitializeGeoDB(t *testing.T) {
 	InitializeGeoDB("testkey", "testaccount")
 }
 
-type mockGeoTransport struct{}
+type mockGeoTransport struct {
+	called chan<- struct{}
+}
 
 func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.called != nil {
+		select {
+		case t.called <- struct{}{}:
+		default:
+		}
+	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(bytes.NewReader([]byte("fake mmdb"))),
@@ -84,30 +121,68 @@ func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 }
 
 func TestInitializeGeoDB_Background(t *testing.T) {
-	GeoTestMode = false
+	StopGeoDBUpdater()
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	updated := make(chan struct{}, 1)
+	geoMu.Lock()
+	oldPath := geoPath
+	oldTestMode := GeoTestMode
 	oldInterval := GeoUpdateInterval
+	oldClient := GeoHTTPClient
+	geoPath = path
+	GeoTestMode = false
 	GeoUpdateInterval = 10 * time.Millisecond
-
-	// Mock update server
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("fake mmdb"))
-	}))
-	defer ts.Close()
+	GeoHTTPClient = &http.Client{Transport: &mockGeoTransport{called: updated}}
+	geoMu.Unlock()
 
 	// Set mod time to > 72h ago
-	_ = os.WriteFile(geoPath, []byte("old"), 0644)
+	_ = os.WriteFile(path, []byte("old"), 0644)
 	oldTime := time.Now().Add(-100 * time.Hour)
-	_ = os.Chtimes(geoPath, oldTime, oldTime)
+	_ = os.Chtimes(path, oldTime, oldTime)
 
 	defer func() {
-		GeoTestMode = true
+		StopGeoDBUpdater()
+		geoMu.Lock()
+		GeoTestMode = oldTestMode
 		GeoUpdateInterval = oldInterval
-		_ = os.Remove(geoPath)
+		GeoHTTPClient = oldClient
+		geoPath = oldPath
+		geoMu.Unlock()
+		ReloadGeoDB()
 	}()
 
 	InitializeGeoDB("test", "test")
-	time.Sleep(50 * time.Millisecond) // Let it tick
+	select {
+	case <-updated:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for GeoIP background update")
+	}
+}
+
+func TestGeoDBUpdater_StopCancelsInFlightUpdate(t *testing.T) {
+	StopGeoDBUpdater()
+	started := make(chan struct{})
+	finished := make(chan struct{})
+
+	startGeoDBUpdater(time.Millisecond, func(ctx context.Context) {
+		close(started)
+		<-ctx.Done()
+		close(finished)
+	})
+	t.Cleanup(StopGeoDBUpdater)
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for GeoIP updater to start")
+	}
+
+	StopGeoDBUpdater()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("GeoIP updater did not finish after cancellation")
+	}
 }
 
 func TestCloseGeoDB(t *testing.T) {
@@ -123,52 +198,83 @@ func TestGetGeoInfo_ReaderError(t *testing.T) {
 	oldPath := geoPath
 	geoPath = "dummy.mmdb"
 	geoMu.Unlock()
+	defer func() {
+		geoMu.Lock()
+		geoPath = oldPath
+		geoMu.Unlock()
+		ReloadGeoDB()
+	}()
 
 	ReloadGeoDB()
 
-	// This should fallback to API since reader is nil on reload error
-	_, _ = GetGeoInfo(context.Background(), "8.8.8.8")
+	if _, err := GetGeoInfo(context.Background(), "8.8.8.8"); !errors.Is(err, errGeoDBUnavailable) {
+		t.Fatalf("expected local database unavailable error, got %v", err)
+	}
 
-	geoMu.Lock()
-	geoPath = oldPath
-	geoMu.Unlock()
 }
 
 func TestGetGeoInfo_ErrorPaths(t *testing.T) {
-	t.Run("Invalid Host", func(t *testing.T) {
-		_, err := GetGeoInfo(context.Background(), "invalid host with spaces")
-		if err == nil {
-			t.Error("Expected error for invalid host")
-		}
+	resolverErr := errors.New("resolver failed")
+	_, err := getGeoInfo(context.Background(), "invalid host", func(context.Context, string) ([]net.IPAddr, error) {
+		return nil, resolverErr
+	}, func(net.IP) (*geoip2.City, error) {
+		t.Fatal("lookup called after resolver error")
+		return nil, nil
 	})
+	if !errors.Is(err, resolverErr) {
+		t.Fatalf("expected resolver error, got %v", err)
+	}
 
-	t.Run("API Error", func(t *testing.T) {
-		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"fail", "message":"invalid query"}`))
-		}))
-		defer ts.Close()
-
-		// We can't easily override the URL in GetGeoInfo without refactoring,
-		// but we can test the 'fail' status logic if we trigger it from the real API with an invalid IP.
-		_, _ = GetGeoInfo(context.Background(), "0.0.0.0")
+	_, err = getGeoInfo(context.Background(), "empty.test", func(context.Context, string) ([]net.IPAddr, error) {
+		return nil, nil
+	}, func(net.IP) (*geoip2.City, error) {
+		t.Fatal("lookup called without resolved addresses")
+		return nil, nil
 	})
+	if err == nil {
+		t.Fatal("expected error for hostname without addresses")
+	}
 
-	t.Run("JSON Decode Error", func(t *testing.T) {
-		// Similar to above, needs refactoring for URL override or very specific trigger.
+	_, err = getGeoInfo(context.Background(), "192.0.2.1", nil, func(net.IP) (*geoip2.City, error) {
+		return nil, errGeoRecordNotFound
 	})
+	if !errors.Is(err, errGeoRecordNotFound) {
+		t.Fatalf("expected missing record error, got %v", err)
+	}
 }
 
 func TestManualUpdateGeoDB(t *testing.T) {
+	StopGeoDBUpdater()
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	geoMu.Lock()
+	oldClient := GeoHTTPClient
+	oldPath := geoPath
+	oldLicenseKey := geoLicenseKey
+	GeoHTTPClient = &http.Client{Transport: &mockGeoTransport{}}
+	geoPath = path
+	geoMu.Unlock()
+	defer func() {
+		geoMu.Lock()
+		GeoHTTPClient = oldClient
+		geoPath = oldPath
+		geoLicenseKey = oldLicenseKey
+		geoMu.Unlock()
+		ReloadGeoDB()
+	}()
+
 	// Test error when license key missing
+	geoMu.Lock()
 	geoLicenseKey = ""
+	geoMu.Unlock()
 	err := ManualUpdateGeoDB()
 	if err == nil {
 		t.Error("Expected error when license key is empty")
 	}
 
+	geoMu.Lock()
 	geoLicenseKey = "testkey"
-	// This will fail because maxmind URL is invalid with testkey, but we want to cover the logic
+	geoMu.Unlock()
+	// The injected transport keeps this path deterministic and offline.
 	_ = ManualUpdateGeoDB()
 }
 
@@ -189,7 +295,7 @@ func TestDownloadGeoDB_Errors(t *testing.T) {
 	}
 
 	// Invalid URL
-	err = DownloadGeoDB("http://invalid-url-that-does-not-exist-12345.com")
+	err = DownloadGeoDB("://invalid-url")
 	if err == nil {
 		t.Error("Expected error for invalid URL")
 	}
@@ -207,16 +313,62 @@ func TestDownloadGeoDB_BasicAuth(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	geoMu.Lock()
+	oldPath := geoPath
+	oldAccountID := geoAccountID
+	oldLicenseKey := geoLicenseKey
+	geoPath = path
 	geoAccountID = "user"
 	geoLicenseKey = "pass"
+	geoMu.Unlock()
 	defer func() {
-		geoAccountID = ""
-		geoLicenseKey = ""
+		geoMu.Lock()
+		geoPath = oldPath
+		geoAccountID = oldAccountID
+		geoLicenseKey = oldLicenseKey
+		geoMu.Unlock()
+		ReloadGeoDB()
 	}()
 
 	err := DownloadGeoDB(ts.URL)
 	if err != nil {
 		t.Fatalf("DownloadGeoDB with basic auth failed: %v", err)
+	}
+}
+
+func TestDownloadGeoDB_MaxMindSuffixArchive(t *testing.T) {
+	var archive bytes.Buffer
+	gw := gzip.NewWriter(&archive)
+	tw := tar.NewWriter(gw)
+	content := []byte("extracted mmdb")
+	if err := tw.WriteHeader(&tar.Header{Name: "GeoLite2-City.mmdb", Size: int64(len(content))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive.Bytes())
+	}))
+	defer ts.Close()
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	if err := downloadGeoDB(context.Background(), ts.URL+"?edition_id=GeoLite2-City&suffix=tar.gz", path, ts.Client(), "", ""); err != nil {
+		t.Fatalf("downloadGeoDB failed: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("downloaded database = %q, want extracted payload %q", got, content)
 	}
 }
 
@@ -235,11 +387,16 @@ func TestExtractTarGz_Success(t *testing.T) {
 	_ = tw.Close()
 	_ = gw.Close()
 
+	geoMu.Lock()
 	oldPath := geoPath
 	geoPath = "test_extract_success.mmdb"
+	geoMu.Unlock()
 	defer func() {
+		geoMu.Lock()
 		geoPath = oldPath
+		geoMu.Unlock()
 		_ = os.Remove("test_extract_success.mmdb")
+		ReloadGeoDB()
 	}()
 
 	err := extractTarGz(bytes.NewReader(buf.Bytes()))

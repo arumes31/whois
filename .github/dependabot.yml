@@ -7,12 +7,20 @@ updates:
     schedule:
       interval: "weekly"
 
-  # Maintain dependencies for pip (requirements.txt)
-  - package-ecosystem: "pip"
+  # Maintain Go modules
+  - package-ecosystem: "gomod"
     directory: "/"
     target-branch: "main"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Maintain the JavaScript asset toolchain
+  - package-ecosystem: "npm"
+    directory: "/"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
     open-pull-requests-limit: 10
 
   # Maintain dependencies for Docker

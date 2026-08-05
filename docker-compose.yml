@@ -8,29 +8,42 @@ services:
       redis:
         condition: service_healthy
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - CONFIG_USER=${CONFIG_USER:-admin}
-      - CONFIG_PASS=${CONFIG_PASS:-admin}
-      - SECRET_KEY=${SECRET_KEY:-change-me-locally-for-security}
-      - TRUSTED_IPS=${TRUSTED_IPS:-127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10}
-      - TRUST_PROXY=${TRUST_PROXY:-true}
-      - USE_CLOUDFLARE=${USE_CLOUDFLARE:-false}
-      - ENABLE_GEO=${ENABLE_GEO:-true}
-      - ENABLE_SSL=${ENABLE_SSL:-true}
-      - ENABLE_WHOIS=${ENABLE_WHOIS:-true}
-      - ENABLE_DNS=${ENABLE_DNS:-true}
-      - ENABLE_CT=${ENABLE_CT:-true}
-      - ENABLE_HTTP=${ENABLE_HTTP:-true}
-      - MAXMIND_LICENSE_KEY=${MAXMIND_LICENSE_KEY}
-      - MAXMIND_ACCOUNT_ID=${MAXMIND_ACCOUNT_ID}
-      - DNS_SERVERS=${DNS_SERVERS:-https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query}
-      - BOOTSTRAP_DNS=${BOOTSTRAP_DNS:-1.1.1.1,9.9.9.9}
-      - SEO_ENABLED=${SEO_ENABLED:-false}
-      - SEO_DOMAIN=${SEO_DOMAIN}
-      - ALLOWED_DOMAIN=${ALLOWED_DOMAIN}
-      - WS_SKIP_ORIGIN_CHECK=${WS_SKIP_ORIGIN_CHECK:-false}
-      - PORT=5000
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      PORT: "5000"
+      CONFIG_USER: "${CONFIG_USER:?set CONFIG_USER in .env}"
+      CONFIG_PASS: "${CONFIG_PASS:?set CONFIG_PASS in .env}"
+      SECRET_KEY: "${SECRET_KEY:?set SECRET_KEY in .env}"
+      TRUSTED_IPS: "${TRUSTED_IPS:-127.0.0.1,::1}"
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-127.0.0.1/32,::1/128}"
+      TRUST_PROXY: "${TRUST_PROXY:-false}"
+      USE_CLOUDFLARE: "${USE_CLOUDFLARE:-false}"
+      CORS_ORIGINS: "${CORS_ORIGINS:-}"
+      ENVIRONMENT: "${ENVIRONMENT:-production}"
+      ALLOW_DEV_CORS: "${ALLOW_DEV_CORS:-false}"
+      ALLOW_PRIVATE_IPS: "${ALLOW_PRIVATE_IPS:-false}"
+      ALLOW_LOOPBACK_IPS: "${ALLOW_LOOPBACK_IPS:-false}"
+      ALLOW_LINK_LOCAL_IPS: "${ALLOW_LINK_LOCAL_IPS:-false}"
+      ENABLE_GEO: "${ENABLE_GEO:-true}"
+      AUTO_UPDATE_DATABASES: "${AUTO_UPDATE_DATABASES:-false}"
+      ENABLE_SSL: "${ENABLE_SSL:-true}"
+      ENABLE_WHOIS: "${ENABLE_WHOIS:-true}"
+      ENABLE_DNS: "${ENABLE_DNS:-true}"
+      ENABLE_CT: "${ENABLE_CT:-true}"
+      ENABLE_HTTP: "${ENABLE_HTTP:-true}"
+      MAXMIND_LICENSE_KEY: "${MAXMIND_LICENSE_KEY:-}"
+      MAXMIND_ACCOUNT_ID: "${MAXMIND_ACCOUNT_ID:-}"
+      DNS_SERVERS: "${DNS_SERVERS:-https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query}"
+      BOOTSTRAP_DNS: "${BOOTSTRAP_DNS:-1.1.1.1,9.9.9.9}"
+      DNS_MAX_ATTEMPTS: "${DNS_MAX_ATTEMPTS:-3}"
+      MAX_TARGET_CONCURRENCY: "${MAX_TARGET_CONCURRENCY:-4}"
+      MAX_SERVICE_CONCURRENCY: "${MAX_SERVICE_CONCURRENCY:-12}"
+      PORT_SCAN_CONCURRENCY: "${PORT_SCAN_CONCURRENCY:-32}"
+      PORT_SCAN_MAX_PORTS: "${PORT_SCAN_MAX_PORTS:-1024}"
+      SEO_ENABLED: "${SEO_ENABLED:-false}"
+      SEO_DOMAIN: "${SEO_DOMAIN:-}"
+      ALLOWED_DOMAIN: "${ALLOWED_DOMAIN:-}"
+      WS_SKIP_ORIGIN_CHECK: "${WS_SKIP_ORIGIN_CHECK:-false}"
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

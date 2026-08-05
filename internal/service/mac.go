@@ -5,16 +5,21 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
-	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"whois/internal/utils"
 )
 
 var (
-	MacVendorsURL  = "https://api.macvendors.com/%s"
+	macFileMu      sync.RWMutex
+	macUpdaterMu   sync.Mutex
+	macUpdaterStop context.CancelFunc
+	macUpdaterDone chan struct{}
 	OUIURL         = "https://standards-oui.ieee.org/oui/oui.txt"
 	OUIPath        = "data/oui.txt"
 	TestMode       = false
@@ -22,34 +27,108 @@ var (
 	MacHTTPClient  = &http.Client{Timeout: 5 * time.Minute}
 )
 
+const maxOUIDownloadBytes = 32 * 1024 * 1024
+
 func InitializeMACService() {
-	// Ensure data directory exists
-	_ = os.MkdirAll("data", 0750)
+	StopMACService()
+
+	path := OUIPath
+	ouiURL := OUIURL
+	client := MacHTTPClient
+	testMode := TestMode
+	updateInterval := UpdateInterval
 
 	// Initial download if missing
-	if _, err := os.Stat(OUIPath); os.IsNotExist(err) {
-		_ = DownloadOUI()
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if err := downloadOUI(context.Background(), client, ouiURL, path); err != nil {
+			utils.Log.Error("failed to download OUI database", utils.Field("error", err.Error()))
+		}
 	}
 
-	if TestMode {
+	if testMode {
 		return
 	}
 
-	// Start background watcher for 72h updates
+	startMACUpdater(updateInterval, func(ctx context.Context) {
+		if ctx.Err() != nil {
+			return
+		}
+		if stat, err := os.Stat(path); err == nil && time.Since(stat.ModTime()) > 72*time.Hour {
+			if err := downloadOUI(ctx, client, ouiURL, path); err != nil && ctx.Err() == nil {
+				utils.Log.Error("failed to update OUI database", utils.Field("error", err.Error()))
+			}
+		}
+	})
+}
+
+func startMACUpdater(interval time.Duration, update func(context.Context)) {
+	macUpdaterMu.Lock()
+	defer macUpdaterMu.Unlock()
+
+	stopMACUpdaterLocked()
+	if interval <= 0 {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	macUpdaterStop = cancel
+	macUpdaterDone = done
+
 	go func() {
-		ticker := time.NewTicker(UpdateInterval)
-		for range ticker.C {
-			if stat, err := os.Stat(OUIPath); err == nil {
-				if time.Since(stat.ModTime()) > 72*time.Hour {
-					_ = DownloadOUI()
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if ctx.Err() != nil {
+					return
 				}
+				update(ctx)
+				if ctx.Err() != nil {
+					return
+				}
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
 }
 
+// StopMACService stops the periodic OUI updater and waits for any in-flight
+// update to finish. It is safe to call when no updater is running.
+func StopMACService() {
+	macUpdaterMu.Lock()
+	defer macUpdaterMu.Unlock()
+	stopMACUpdaterLocked()
+}
+
+func stopMACUpdaterLocked() {
+	if macUpdaterStop == nil {
+		return
+	}
+
+	macUpdaterStop()
+	<-macUpdaterDone
+	macUpdaterStop = nil
+	macUpdaterDone = nil
+}
+
 func DownloadOUI() error {
-	resp, err := MacHTTPClient.Get(OUIURL)
+	client := MacHTTPClient
+	ouiURL := OUIURL
+	path := OUIPath
+	return downloadOUI(context.Background(), client, ouiURL, path)
+}
+
+func downloadOUI(ctx context.Context, client *http.Client, ouiURL, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ouiURL, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -59,64 +138,89 @@ func DownloadOUI() error {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	out, err := os.Create(OUIPath)
+	stagedPath, err := stageOUIDownload(path, resp.Body)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = out.Close() }()
+	defer func() { _ = os.Remove(stagedPath) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
-	_, err = io.Copy(out, resp.Body)
-	return err
+	macFileMu.Lock()
+	defer macFileMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := os.Rename(stagedPath, path); err != nil {
+		return fmt.Errorf("replace %s: %w", filepath.Base(path), err)
+	}
+	return nil
+}
+
+func stageOUIDownload(path string, source io.Reader) (string, error) {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o750); err != nil {
+		return "", err
+	}
+	placeholder, err := os.CreateTemp(directory, ".oui-stage-*")
+	if err != nil {
+		return "", err
+	}
+	stagedPath := placeholder.Name()
+	if err := placeholder.Close(); err != nil {
+		_ = os.Remove(stagedPath)
+		return "", err
+	}
+	if err := os.Remove(stagedPath); err != nil {
+		return "", err
+	}
+	if err := writeFileAtomically(stagedPath, source, maxOUIDownloadBytes); err != nil {
+		return "", err
+	}
+	return stagedPath, nil
 }
 
 func LookupMacVendor(ctx context.Context, mac string) (string, error) {
-	if !utils.IsValidMAC(mac) {
-		return "", fmt.Errorf("invalid MAC address format")
+	hardwareAddr, err := net.ParseMAC(mac)
+	if err != nil || len(hardwareAddr) < 3 {
+		return "", fmt.Errorf("invalid mac address format")
 	}
-
-	// Try local lookup first
-	if vendor, err := localOUILookup(mac); err == nil && vendor != "" {
-		return vendor, nil
-	}
-
-	u, err := url.Parse(MacVendorsURL)
-	if err != nil {
-		return "", err
-	}
-	if !strings.HasSuffix(u.Path, "/") {
-		u.Path += "/"
-	}
-	u.Path += url.PathEscape(mac)
-
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
-	if err != nil {
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 
-	resp, err := client.Do(req)
+	path := OUIPath
+
+	vendor, err := localOUILookupAt(hardwareAddr, path)
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		_ = resp.Body.Close()
-	}()
-
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode == 200 {
-		return string(body), nil
-	} else if resp.StatusCode == 404 {
+	if vendor == "" {
 		return "Vendor not found", nil
 	}
-	return "", fmt.Errorf("API Error: %d", resp.StatusCode)
+	return vendor, nil
 }
 
 func localOUILookup(mac string) (string, error) {
-	if _, err := os.Stat(OUIPath); os.IsNotExist(err) {
+	hardwareAddr, err := net.ParseMAC(mac)
+	if err != nil || len(hardwareAddr) < 3 {
+		return "", fmt.Errorf("invalid mac address format")
+	}
+	path := OUIPath
+	return localOUILookupAt(hardwareAddr, path)
+}
+
+func localOUILookupAt(hardwareAddr net.HardwareAddr, path string) (string, error) {
+	macFileMu.RLock()
+	defer macFileMu.RUnlock()
+
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return "", fmt.Errorf("OUI database missing")
 	}
 
-	file, err := os.Open(OUIPath)
+	// #nosec G304 -- path is an internal OUI database path, never request input.
+	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
@@ -124,10 +228,7 @@ func localOUILookup(mac string) (string, error) {
 		_ = file.Close()
 	}()
 
-	prefix := strings.ReplaceAll(strings.ToUpper(mac), ":", "")
-	if len(prefix) > 6 {
-		prefix = prefix[:6]
-	}
+	prefix := fmt.Sprintf("%02X%02X%02X", hardwareAddr[0], hardwareAddr[1], hardwareAddr[2])
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -138,6 +239,9 @@ func localOUILookup(mac string) (string, error) {
 				return strings.TrimSpace(parts[1]), nil
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("scan OUI database: %w", err)
 	}
 	return "", nil
 }

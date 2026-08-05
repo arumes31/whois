@@ -7,17 +7,17 @@
             <div class="glass-panel border-nordic">
                 <div class="d-flex align-items-center mb-4">
                     <div class="flex-grow-1">
-                        <h4 class="mb-0 fw-bold">
+                        <h1 class="page-title h4 mb-0 fw-bold">
                             <svg style="width:20px;height:20px;margin-right:8px;fill:#0dcaf0" viewBox="0 0 512 512">
                                 <path
                                     d="M416 0c-17.7 0-32 14.3-32 32s14.3 32 32 32h32V128H320V96c0-17.7-14.3-32-32-32s-32 14.3-32 32V384c0 17.7 14.3 32 32 32s32-14.3 32-32V352H448v64H416c-17.7 0-32 14.3-32 32s14.3 32 32 32h96c17.7 0 32-14.3 32-32s-14.3-32-32-32H480V128h32c17.7 0 32-14.3 32-32s-14.3-32-32-32H416zM32 128c-17.7 0-32 14.3-32 32V352c0 17.7 14.3 32 32 32H224c17.7 0 32-14.3 32-32V160c0-17.7-14.3-32-32-32H32zM64 192h32v32H64V192zm96 0h32v32h-32V192zM64 288h32v32H64V288zm96 0h32v32h-32V288z" />
                             </svg>
                             LOOKUP
-                        </h4>
-                        <p class="text-white small mb-0">Multi-vector diagnostic analysis for network recon</p>
+                        </h1>
+                        <p class="text-white small mb-0">Inspect domains and IPs across the enabled diagnostic modules</p>
                     </div>
                     <div class="d-flex gap-2">
-                        <button onclick="clearResults()" class="btn btn-sm btn-outline-secondary">
+                        <button type="button" onclick="clearResults()" class="btn btn-sm btn-outline-secondary" aria-label="Clear all scan results and target input">
                             <svg style="width:12px;height:12px;margin-right:4px;fill:currentColor"
                                 viewBox="0 0 512 512">
                                 <path
@@ -28,25 +28,34 @@
                     </div>
                 </div>
 
-                <div class="row g-3">
-                    <div class="col-md-9">
+                <form id="queryForm" class="row g-3" novalidate>
+                    <div class="col-md-10">
+                        <label class="form-label" for="targetInput">Targets</label>
                         <input type="text" id="targetInput" class="form-control matrix-input mb-3"
-                            placeholder="e.g. google.com, 1.1.1.1, example.org"
-                            data-tippy-content="Enter domain names or IP addresses separated by commas" required>
+                            placeholder="example.com, 1.1.1.1, https://example.org/path"
+                            aria-describedby="targetHelp targetError" autocomplete="off" autocapitalize="none"
+                            spellcheck="false" required>
+                        <div id="targetHelp" class="field-help">Separate multiple targets with commas. URLs are normalized automatically.</div>
+                        <div id="targetError" class="field-error" role="alert"></div>
                     </div>
                     <div class="col-md-2">
-                        <button onclick="startQuery()" class="btn btn-danger w-100 fw-bold h-100">
+                        <label class="form-label d-none d-md-block" aria-hidden="true">Execute</label>
+                        <button type="submit" class="btn btn-danger w-100 fw-bold query-submit">
                             <svg style="width:16px;height:16px;margin-right:8px;fill:currentColor"
                                 viewBox="0 0 512 512">
                                 <path
                                     d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352a144 144 0 1 0 0-288 144 144 0 1 0 0 288z" />
-                            </svg>RUN
+                            </svg>Run diagnostics
                         </button>
                     </div>
-                </div>
+                </form>
 
-                <div class="mt-4 pt-3 border-top border-secondary border-opacity-10">
-                    <div class="d-flex flex-wrap gap-2">
+                <div class="mt-4 pt-3 border-top border-secondary border-opacity-10" role="group" aria-labelledby="moduleLegend">
+                    <div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 mb-2">
+                        <span id="moduleLegend" class="module-legend">Diagnostic modules</span>
+                        <span class="field-help m-0">Your selection is saved locally</span>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 module-picker">
                         <div class="feature-toggle">
                             <input type="checkbox" id="cfg-whois" {{ if .config.EnableWhois }}checked{{ end }}>
                             <label for="cfg-whois"><svg
@@ -146,27 +155,47 @@
                                         d="M320 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V32zM448 160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288c0 17.7 14.3 32 32 32s32-14.3 32-32V160zM64 288c0 17.7 14.3 32 32 32s32-14.3 32-32V160c0-17.7-14.3-32-32-32s-32 14.3-32 32V288zM192 32c0-17.7-14.3-32-32-32s-32 14.3-32 32V416c0 17.7 14.3 32 32 32s32-14.3 32-32V32z" />
                                 </svg>PORTSCAN <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2"
                                     viewBox="0 0 512 512" class="help-icon"
-                                    data-tippy-content="Port scanning is only supported for direct IP addresses (skipped for domains).">
+                                    data-tippy-content="Supports domains and IPs, named presets, comma-separated ports, and inclusive ranges.">
                                     <path
                                         d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z" />
                                 </svg></label>
                         </div>
-                        <div id="portsInputWrapper" style="display:none; margin-top: -5px;">
+                        <div id="portsInputWrapper" class="ports-input" hidden>
+                            <label class="visually-hidden" for="cfg-ports">Ports or port preset</label>
                             <input type="text" id="cfg-ports" class="form-control matrix-input py-1"
-                                style="font-size: 0.7rem; width: 140px;" value="80,443,22,21,3389"
-                                placeholder="Specific ports...">
+                                value="common" list="port-presets" aria-describedby="portsHelp"
+                                placeholder="common, web, 8000-8010" autocomplete="off" spellcheck="false">
+                            <datalist id="port-presets"><option value="common"></option><option value="web"></option><option value="mail"></option><option value="database"></option><option value="remote"></option></datalist>
                         </div>
                     </div>
+                    <div id="portsHelp" class="field-help mt-2" hidden>Presets: common, web, mail, database, remote. Ranges such as 8000-8010 are supported.</div>
                 </div>
             </div>
         </div>
 
         <!-- Workspace Area -->
-        <div class="results-grid-container">
-            <div id="resultsGrid" class="results-grid">
+        <section class="results-grid-container" aria-labelledby="resultsHeading">
+            <div class="workspace-heading">
+                <div>
+                    <h2 id="resultsHeading">Diagnostic results</h2>
+                    <p id="resultsSummary">No scans in this workspace</p>
+                </div>
+                <div class="workspace-actions">
+                    <span class="shortcut-hint" aria-hidden="true"><kbd>Ctrl</kbd> + <kbd>Enter</kbd> run · <kbd>/</kbd> focus</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-result-action onclick="copyAllJSON()" disabled>Copy JSON</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-result-action onclick="exportToJSON()" disabled>JSON</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" data-result-action onclick="exportToCSV()" disabled>CSV</button>
+                </div>
+            </div>
+            <div id="emptyResults" class="empty-results">
+                <span class="empty-results__signal" aria-hidden="true"></span>
+                <strong>Workspace ready</strong>
+                <span>Enter one or more authorized targets, select the modules you need, then run diagnostics.</span>
+            </div>
+            <div id="resultsGrid" class="results-grid" aria-live="off">
                 <!-- Widgets injected here -->
             </div>
-        </div>
+        </section>
     </div>
 
     <!-- Quick Tools & Side Info -->
@@ -180,7 +209,7 @@
                 QUICK TOOLS
             </h5>
             <div class="list-group list-group-flush bg-transparent">
-                <a href="#" onclick="openTool('dns')"
+                <button type="button" onclick="openTool('dns')"
                     class="list-group-item bg-transparent text-white border-secondary py-3 d-flex justify-content-between align-items-center">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#0dcaf0" viewBox="0 0 512 512">
                             <path
@@ -190,8 +219,8 @@
                         <path
                             d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z" />
                     </svg>
-                </a>
-                <a href="#" onclick="openTool('mac')"
+                </button>
+                <button type="button" onclick="openTool('mac')"
                     class="list-group-item bg-transparent text-white border-secondary py-3 d-flex justify-content-between align-items-center">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#ffc107" viewBox="0 0 512 512">
                             <path
@@ -201,8 +230,8 @@
                         <path
                             d="M310.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-192 192c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L242.7 256 73.4 82.7c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l192 192z" />
                     </svg>
-                </a>
-                <a href="/metrics" target="_blank"
+                </button>
+                <a href="/metrics" target="_blank" rel="noopener" aria-label="System metrics (opens in a new tab)"
                     class="list-group-item bg-transparent text-white border-0 py-3 d-flex justify-content-between align-items-center">
                     <span><svg style="width:14px;height:14px;margin-right:12px;fill:#ff4d4d" viewBox="0 0 640 512">
                             <path
@@ -245,7 +274,7 @@
                 </svg>
                 LIVE ACTIVITY
             </h6>
-            <div id="liveLog" class="flex-grow-1 font-monospace"
+            <div id="liveLog" class="flex-grow-1 font-monospace" role="log" aria-live="polite" aria-relevant="additions"
                 style="font-size: 0.7rem; overflow-y: auto; max-height: 600px;">
                 <div class="text-white italic">Waiting for scan data...</div>
             </div>
@@ -254,7 +283,7 @@
 </div>
 
 <template id="resultCardTemplate">
-    <div class="result-card glass-panel" data-target="" draggable="true">
+    <article class="result-card glass-panel" data-target="" draggable="true" aria-busy="true">
         <div class="card-handle" data-tippy-content="Drag to reorder widgets">
             <div class="d-flex align-items-center gap-2">
                 <svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 320 512">
@@ -262,7 +291,7 @@
                         d="M40 352a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm160 320a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80zm0-160a40 40 0 1 0 0 80 40 40 0 1 0 0-80z" />
                 </svg>
             </div>
-            <button class="btn btn-link btn-sm text-white p-0" onclick="this.closest('.result-card').remove()"
+            <button type="button" class="btn btn-link btn-sm text-white p-0" onclick="removeResultCard(this)"
                 data-tippy-content="Close widget" aria-label="Close widget">
                 <svg style="width:12px;height:12px;fill:currentColor" viewBox="0 0 384 512">
                     <path
@@ -271,31 +300,37 @@
             </button>
         </div>
         <div class="d-flex justify-content-between align-items-start mb-3 p-3">
-            <h5 class="target-name mb-0 font-monospace text-danger"></h5>
+            <h3 class="target-name mb-0 font-monospace text-danger"></h3>
             <div class="d-flex gap-2 align-items-center">
                 <span class="badge bg-nordic-blue-dim text-nordic-blue small status-badge">pending</span>
-                <svg style="width:14px;height:14px;fill:currentColor;cursor:pointer" onclick="fetchHistory(this)"
-                    viewBox="0 0 512 512" data-tippy-content="View History">
+                <button type="button" class="card-action" onclick="fetchHistory(this)" data-tippy-content="View history" aria-label="View scan history">
+                <svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 512 512" aria-hidden="true">
                     <path
                         d="M75 75L41 109c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0L109 109c9.4-9.4 9.4-24.6 0-33.9s-24.6-9.4-33.9 0zM503 7c-9.4-9.4-24.6-9.4-33.9 0L435 41c-9.4 9.4-9.4 24.6 0 33.9s24.6 9.4 33.9 0L503 41c9.4-9.4 9.4-24.6 0-33.9zM9 403c-9.4 9.4-9.4 24.6 0 33.9l34 34c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-34-34c-9.4-9.4-24.6-9.4-33.9 0zM437 437c-9.4 9.4-9.4 24.6 0 33.9l34 34c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-34-34c-9.4-9.4-24.6-9.4-33.9 0zM256 160c-53 0-96 43-96 96s43 96 96 96s96-43 96-96s-43-96-96-96zm0 256c-88.4 0-160-71.6-160-160s71.6-160 160-160s160 71.6 160 160s-71.6 160-160 160z" />
-                </svg>
-                <svg style="width:14px;height:14px;fill:currentColor;cursor:pointer" onclick="reScanTarget(this)"
-                    viewBox="0 0 512 512" data-tippy-content="Rescan">
+                </svg></button>
+                <button type="button" class="card-action" onclick="reScanTarget(this)" data-tippy-content="Rescan target" aria-label="Rescan target">
+                <svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 512 512" aria-hidden="true">
                     <path
                         d="M105.1 202.6c7.7-21.8 20.2-42.3 37.8-59.8c62.5-62.5 163.8-62.5 226.3 0L386.3 160H336c-17.7 0-32 14.3-32 32s14.3 32 32 32H464c17.7 0 32-14.3 32-32V64c0-17.7-14.3-32-32-32s-32 14.3-32 32v51.2L414.4 97.6c-87.5-87.5-229.3-87.5-316.8 0C73.2 122 55.6 150.7 44.8 181.4c-5.9 16.7 2.9 34.9 19.5 40.8s34.9-2.9 40.8-19.5zM39 289.4c-7.7 21.8-20.2 42.3-37.8 59.8c-62.5 62.5-163.8 62.5-226.3 0l-17.1-17.1H336c17.7 0 32-14.3 32-32s-14.3-32-32-32H336c-17.7 0-32 14.3-32 32v128c0 17.7 14.3 32 32 32s32-14.3 32-32V396.8l17.1 17.1c87.5 87.5 229.3 87.5 316.8 0c24.4-24.4 42.1-53.1 52.9-83.7c5.9-16.7-2.9-34.9-19.5-40.8s-34.9 2.9-40.8 19.5z" />
-                </svg>
-                <svg style="width:14px;height:14px;fill:currentColor;cursor:pointer" onclick="copyTarget(this)"
-                    viewBox="0 0 448 512" data-tippy-content="Copy Full Result">
+                </svg></button>
+                <button type="button" class="card-action" onclick="copyTarget(this)" data-tippy-content="Copy full result" aria-label="Copy full result">
+                <svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 448 512" aria-hidden="true">
                     <path
                         d="M208 0H332.1c12.7 0 24.9 5.1 33.9 14.1l67.9 67.9c9 9 14.1 21.2 14.1 33.9V336c0 26.5-21.5 48-48 48H208c-26.5 0-48-21.5-48-48V48c0-26.5 21.5-48 48-48zM48 128h80v64H64V448H256V416h64v48c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V176c0-26.5 21.5-48 48-48z" />
-                </svg>
-                <div class="streaming-indicator"></div>
+                </svg></button>
+                <button type="button" class="card-action" onclick="removeResultCard(this)" data-tippy-content="Remove result" aria-label="Remove result">
+                    <svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 384 512" aria-hidden="true"><path d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/></svg>
+                </button>
+                <div class="streaming-indicator" aria-hidden="true"></div>
             </div>
         </div>
         <div class="progress mx-3 mb-3" style="height: 2px; background: var(--glass-border);">
-            <div class="progress-bar bg-danger" role="progressbar" style="width: 0%"></div>
+            <div class="progress-bar bg-danger" role="progressbar" aria-label="Scan progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" style="width: 0%"></div>
         </div>
         <div class="diagnostic-content p-3 pt-0">
+            <div class="service-section" data-service="target">
+                <details open><summary>TARGET PROFILE</summary></details>
+            </div>
             <div class="service-section" data-service="geo">
                 <details>
                     <summary><span class="status-indicator" data-status="pending"><svg
@@ -385,52 +420,176 @@
                 </details>
             </div>
         </div>
-    </div>
+    </article>
 </template>
+
+<div id="scanAnnouncement" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
     let socket;
     let messageQueue = [];
     const activeScans = new Map();
+    const diagnosticResults = new Map();
     const pingCharts = new Map();
+    const ignoredTargets = new Set();
+    const maxQueuedMessages = 50;
+    let reconnectTimer;
+    let reconnectAttempts = 0;
+    let heartbeatTimer;
+    let pageUnloading = false;
+
+    function getTargetCard(target) {
+        return [...document.querySelectorAll('.result-card')]
+            .find(card => card.dataset.target === String(target)) || null;
+    }
+
+    function announce(message) {
+        const region = document.getElementById('scanAnnouncement');
+        if (!region) return;
+        region.textContent = '';
+        window.setTimeout(() => { region.textContent = message; }, 20);
+    }
+
+    function updateWorkspaceState() {
+        const count = document.querySelectorAll('.result-card').length;
+        const empty = document.getElementById('emptyResults');
+        const summary = document.getElementById('resultsSummary');
+        if (empty) empty.hidden = count > 0;
+        if (summary) summary.textContent = count === 0
+            ? 'No scans in this workspace'
+            : `${count} ${count === 1 ? 'target' : 'targets'} in this workspace`;
+        document.querySelectorAll('[data-result-action]').forEach(button => {
+            button.disabled = count === 0;
+        });
+    }
+
+    function removeResultCard(button) {
+        const card = button.closest('.result-card');
+        if (!card) return;
+        const target = card.dataset.target;
+        ignoredTargets.add(target);
+        messageQueue = messageQueue.filter(message => !(message.targets || []).includes(target));
+        destroyPingCharts(card);
+        card.remove();
+        activeScans.delete(target);
+        diagnosticResults.delete(target);
+        targetColors.delete(target);
+        updateWorkspaceState();
+        announce(`${target} removed from the workspace.`);
+    }
+
+    function destroyPingCharts(container) {
+        container.querySelectorAll('canvas[id]').forEach(canvas => {
+            const chart = pingCharts.get(canvas.id);
+            if (chart) chart.destroy();
+            pingCharts.delete(canvas.id);
+        });
+    }
+
+    function clearHeartbeat() {
+        if (!heartbeatTimer) return;
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = undefined;
+    }
+
+    function scheduleWSReconnect(delay) {
+        if (pageUnloading || reconnectTimer) return;
+        const backoff = delay ?? Math.min(30000, 1000 * (2 ** Math.min(reconnectAttempts, 5)));
+        const jitter = delay === 0 ? 0 : Math.floor(Math.random() * 500);
+        reconnectAttempts++;
+        reconnectTimer = window.setTimeout(() => {
+            reconnectTimer = undefined;
+            connectWS();
+        }, backoff + jitter);
+    }
+
+    function queueWSMessage(data) {
+        if (messageQueue.length >= maxQueuedMessages) {
+            messageQueue.shift();
+            appendLog("SYSTEM", "The oldest queued scan was discarded while reconnecting.");
+        }
+        messageQueue.push(data);
+    }
 
     function connectWS() {
+        if (pageUnloading || (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING))) return;
+        if (reconnectTimer) {
+            window.clearTimeout(reconnectTimer);
+            reconnectTimer = undefined;
+        }
         const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        socket = new WebSocket(`${proto}//${window.location.host}/ws`);
+        let connection;
+        try {
+            connection = new WebSocket(`${proto}//${window.location.host}/ws`);
+            socket = connection;
+        } catch (error) {
+            console.error("WebSocket creation failed:", error);
+            scheduleWSReconnect();
+            return;
+        }
 
-        socket.onopen = () => {
+        connection.onopen = () => {
+            if (socket !== connection) return;
             console.log("WebSocket connected");
+            reconnectAttempts = 0;
             // Flush queue
-            while (messageQueue.length > 0) {
-                const msg = messageQueue.shift();
-                socket.send(JSON.stringify(msg));
+            while (messageQueue.length > 0 && connection.readyState === WebSocket.OPEN) {
+                try {
+                    connection.send(JSON.stringify(messageQueue[0]));
+                    messageQueue.shift();
+                } catch (error) {
+                    console.warn("Failed to flush queued WebSocket message:", error);
+                    connection.close();
+                    break;
+                }
             }
 
             // Start heartbeat
-            if (window.wsHeartbeat) clearInterval(window.wsHeartbeat);
-            window.wsHeartbeat = setInterval(() => {
-                if (socket.readyState === WebSocket.OPEN) {
-                    socket.send(JSON.stringify({ type: 'heartbeat' }));
+            clearHeartbeat();
+            heartbeatTimer = window.setInterval(() => {
+                if (connection.readyState === WebSocket.OPEN) {
+                    connection.send(JSON.stringify({ type: 'heartbeat' }));
                 }
             }, 25000);
         };
 
-        socket.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
+        connection.onmessage = (event) => {
+            if (socket !== connection) return;
+            let msg;
+            try {
+                msg = JSON.parse(event.data);
+            } catch (error) {
+                console.warn("Ignoring malformed WebSocket message:", error);
+                appendLog("SYSTEM", "A malformed server message was ignored.");
+                return;
+            }
+            if (!msg || typeof msg !== 'object' || typeof msg.type !== 'string') {
+                appendLog("SYSTEM", "An invalid server message was ignored.");
+                return;
+            }
             if (msg.type === 'heartbeat') return; // Ignore heartbeat responses
+            const supportedTypes = new Set(['log', 'result', 'done', 'all_done']);
+            const needsService = msg.type === 'result' || msg.type === 'done';
+            if (!supportedTypes.has(msg.type) || typeof msg.target !== 'string' || (needsService && typeof msg.service !== 'string')) {
+                appendLog("SYSTEM", "An incomplete server message was ignored.");
+                return;
+            }
             updateUI(msg);
         };
 
-        socket.onclose = (event) => {
+        connection.onclose = (event) => {
+            if (socket !== connection) return;
+            socket = undefined;
             console.log("Socket closed. Reconnecting...");
-            if (window.wsHeartbeat) clearInterval(window.wsHeartbeat);
+            clearHeartbeat();
             if (!event.wasClean) {
                 appendLog("SYSTEM", `WebSocket connection failed (Code: ${event.code}). Possible proxy issue.`);
             }
-            setTimeout(connectWS, 5000);
+            scheduleWSReconnect();
         };
 
-        socket.onerror = (err) => {
+        connection.onerror = (err) => {
+            if (socket !== connection) return;
             console.error("WebSocket error:", err);
             appendLog("SYSTEM", "WebSocket protocol error detected. Check proxy headers.");
         };
@@ -438,15 +597,30 @@
 
     function sendWS(data) {
         if (socket && socket.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(data));
-        } else {
-            console.log("Socket not ready, queuing message...");
-            messageQueue.push(data);
-            if (!socket || socket.readyState === WebSocket.CLOSED) {
-                connectWS();
+            try {
+                socket.send(JSON.stringify(data));
+                return;
+            } catch (error) {
+                console.warn("WebSocket send failed; message queued:", error);
+                socket.close();
             }
         }
+        console.log("Socket not ready, queuing message...");
+        queueWSMessage(data);
+        scheduleWSReconnect(0);
     }
+
+    window.addEventListener('beforeunload', () => {
+        pageUnloading = true;
+        clearHeartbeat();
+        if (reconnectTimer) window.clearTimeout(reconnectTimer);
+        if (socket && socket.readyState === WebSocket.OPEN) socket.close(1000, 'Page unloading');
+    });
+
+    window.addEventListener('pageshow', event => {
+        pageUnloading = false;
+        if (event.persisted) scheduleWSReconnect(0);
+    });
 
     const targetColors = new Map();
     const palette = [
@@ -477,25 +651,30 @@
     };
 
     function setServiceStatus(target, service, status) {
-        const card = document.querySelector(`[data-target="${target}"]`);
+        const card = getTargetCard(target);
         if (!card) return;
         const section = card.querySelector(`[data-service="${service}"]`);
         if (!section) return;
         const indicator = section.querySelector('.status-indicator');
         if (indicator) {
+            if (indicator.getAttribute('data-status') === 'error' && status === 'success') return;
             indicator.innerHTML = statusIcons[status];
             indicator.setAttribute('data-status', status);
         }
     }
 
     function escapeHTML(str) {
-        if (!str) return "";
+        if (str === null || str === undefined) return "";
         return String(str)
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
+    }
+
+    function resultHasError(data) {
+        return Boolean(data && typeof data === 'object' && !Array.isArray(data) && data.error);
     }
 
     function appendLog(target, message) {
@@ -506,7 +685,7 @@
         const color = getTargetColor(target);
         const escapedTarget = escapeHTML(target);
         const escapedMessage = escapeHTML(message);
-        entry.innerHTML = `<span class="text-white opacity-50">[${time}]</span> <span style="color: ${color}; font-weight: bold;">${escapedTarget}</span>: <span class="text-white">${escapedMessage}</span>`;
+        entry.innerHTML = DOMPurify.sanitize(`<span class="text-white opacity-50">[${time}]</span> <span style="color: ${color}; font-weight: bold;">${escapedTarget}</span>: <span class="text-white">${escapedMessage}</span>`);
         log.appendChild(entry);
         log.scrollTop = log.scrollHeight;
 
@@ -516,16 +695,21 @@
     }
 
     function startQuery() {
-        const targets = document.getElementById('targetInput').value.split(',').map(t => t.trim()).filter(t => t !== "");
-        if (targets.length === 0) return;
-
-        const isIP = (str) => {
-            const regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
-            return regex.test(str);
-        };
+        const input = document.getElementById('targetInput');
+        const error = document.getElementById('targetError');
+        const targets = [...new Set(input.value.split(',').map(t => t.trim()).filter(Boolean))];
+        if (targets.length === 0) {
+            error.textContent = 'Enter at least one domain, IP address, CIDR, ASN, or URL.';
+            input.setAttribute('aria-invalid', 'true');
+            input.focus();
+            return;
+        }
+        error.textContent = '';
+        input.removeAttribute('aria-invalid');
+        announce(`Starting diagnostics for ${targets.length} ${targets.length === 1 ? 'target' : 'targets'}.`);
 
         targets.forEach(t => {
-            const targetIsIP = isIP(t);
+            ignoredTargets.delete(t);
             const config = {
                 whois: document.getElementById('cfg-whois').checked,
                 dns: document.getElementById('cfg-dns').checked,
@@ -537,16 +721,18 @@
                 trace: document.getElementById('cfg-trace').checked,
                 route: document.getElementById('cfg-route').checked,
                 subdomains: document.getElementById('cfg-subdomains').checked,
-                portscan: document.getElementById('cfg-portscan').checked && targetIsIP,
+                portscan: document.getElementById('cfg-portscan').checked,
                 ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
             };
 
-            const enabledServices = Object.values(config).filter(v => v && v !== "").length;
+            const enabledServices = Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
 
             createCard(t);
             activeScans.set(t, {
                 total: enabledServices,
-                completed: 0
+                completed: 0,
+                failures: new Set(),
+                findings: new Set()
             });
             updateProgressBar(t);
             appendLog(t, `Initializing diagnostic vectors...`);
@@ -572,17 +758,24 @@
     }
 
     function createCard(target) {
-        let card = document.querySelector(`[data-target="${target}"]`);
+        ignoredTargets.delete(target);
+        let card = getTargetCard(target);
         if (card) {
+            destroyPingCharts(card);
             card.remove(); // Re-create for fresh scan
         }
+        diagnosticResults.set(target, {});
 
         const template = document.getElementById('resultCardTemplate');
         const clone = template.content.cloneNode(true);
         card = clone.querySelector('.result-card');
 
         card.setAttribute('data-target', target);
-        card.querySelector('.target-name').innerText = target;
+        const title = card.querySelector('.target-name');
+        const titleID = `target-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        title.id = titleID;
+        title.innerText = target;
+        card.setAttribute('aria-labelledby', titleID);
 
         // Drag Events
         card.addEventListener('dragstart', (e) => {
@@ -596,12 +789,6 @@
 
         const resultsGrid = document.getElementById('resultsGrid');
 
-        const isIP = (str) => {
-            const regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
-            return regex.test(str);
-        };
-        const targetIsIP = isIP(target);
-
         // Add skeletons to enabled services
         const config = {
             whois: document.getElementById('cfg-whois').checked,
@@ -613,7 +800,7 @@
             ping: document.getElementById('cfg-ping').checked,
             trace: document.getElementById('cfg-trace').checked,
             route: document.getElementById('cfg-route').checked,
-            portscan: document.getElementById('cfg-portscan').checked && targetIsIP,
+            portscan: document.getElementById('cfg-portscan').checked,
             subdomains: document.getElementById('cfg-subdomains').checked,
         };
 
@@ -621,16 +808,17 @@
             if (enabled) {
                 const section = card.querySelector(`[data-service="${service}"]`);
                 if (section) {
-                    section.innerHTML = `
+                    section.innerHTML = DOMPurify.sanitize(`
                     <div class="skeleton-wrapper p-2">
                         <div class="skeleton mb-2" style="height: 12px; width: 40%"></div>
                         <div class="skeleton" style="height: 8px; width: 80%"></div>
-                    </div>`;
+                    </div>`);
                 }
             }
         }
 
         document.getElementById('resultsGrid').prepend(card);
+        updateWorkspaceState();
 
         // Initialize tooltips for the new card - only if not already initialized
         tippy(card.querySelectorAll('[data-tippy-content]:not(.help-icon):not([data-tippy-root]):not(._tippy)'), {
@@ -644,28 +832,28 @@
     }
 
     function updateProgressBar(target) {
-        const card = document.querySelector(`[data-target="${target}"]`);
+        const card = getTargetCard(target);
         if (!card) return;
 
         const scan = activeScans.get(target);
         if (!scan) return;
 
-        const percent = (scan.completed / scan.total) * 100;
+        const percent = scan.total > 0 ? Math.min(100, (scan.completed / scan.total) * 100) : 0;
         const bar = card.querySelector('.progress-bar');
         bar.style.width = `${percent}%`;
+        bar.setAttribute('aria-valuenow', String(Math.round(percent)));
 
         const statusBadge = card.querySelector('.status-badge');
-        if (scan.completed === scan.total) {
-            statusBadge.innerText = "completed";
-            statusBadge.classList.replace('bg-nordic-blue-dim', 'bg-success-dim');
-            statusBadge.classList.replace('text-nordic-blue', 'text-success');
-            card.querySelector('.streaming-indicator').style.display = 'none';
+        if (scan.total > 0 && scan.completed >= scan.total) {
+            statusBadge.innerText = "finalizing...";
         } else {
             statusBadge.innerText = "scanning...";
         }
     }
 
     function updateUI(msg) {
+        if (msg.target && msg.target !== 'SYSTEM' && ignoredTargets.has(String(msg.target))) return;
+
         if (msg.type === 'log') {
             appendLog(msg.target, msg.data);
             return;
@@ -676,51 +864,83 @@
             if (scan) {
                 scan.completed++;
                 updateProgressBar(msg.target);
-                setServiceStatus(msg.target, msg.service, 'success');
-                appendLog(msg.target, `Service ${msg.service.toUpperCase()} completed successfully.`);
+                const hasFailure = scan.failures.has(msg.service);
+                const hasFindings = scan.findings.has(msg.service);
+                setServiceStatus(msg.target, msg.service, hasFailure || hasFindings ? 'error' : 'success');
+                appendLog(msg.target, hasFailure
+                    ? `Service ${msg.service.toUpperCase()} failed.`
+                    : (hasFindings
+                        ? `Service ${msg.service.toUpperCase()} completed with findings.`
+                        : `Service ${msg.service.toUpperCase()} completed successfully.`));
             }
             return;
         }
 
         if (msg.type === 'all_done') {
-            const card = document.querySelector(`[data-target="${msg.target}"]`);
+            const card = getTargetCard(msg.target);
             if (card) {
                 const bar = card.querySelector('.progress-bar');
                 bar.style.width = `100%`;
+                bar.setAttribute('aria-valuenow', '100');
                 const statusBadge = card.querySelector('.status-badge');
-                statusBadge.innerText = "completed";
-                statusBadge.classList.replace('bg-nordic-blue-dim', 'bg-success-dim');
-                statusBadge.classList.replace('text-nordic-blue', 'text-success');
+                const scan = activeScans.get(msg.target);
+                const problemCount = scan ? scan.failures.size + scan.findings.size : 0;
+                statusBadge.innerText = problemCount > 0 ? "completed with findings" : "completed";
+                statusBadge.classList.remove('bg-nordic-blue-dim', 'text-nordic-blue', 'bg-success-dim', 'text-success', 'bg-danger-dim', 'text-danger');
+                statusBadge.classList.add(problemCount > 0 ? 'bg-danger-dim' : 'bg-success-dim', problemCount > 0 ? 'text-danger' : 'text-success');
                 card.querySelector('.streaming-indicator').style.display = 'none';
+                card.setAttribute('aria-busy', 'false');
 
-                // Mark any remaining enabled modules as success
+                // Do not claim success for modules that never returned a result.
                 card.querySelectorAll('.status-indicator[data-status="running"], .status-indicator[data-status="pending"]').forEach(el => {
-                    const section = el.closest('.service-section');
-                    if (section && section.innerHTML.trim().length > 0) {
-                        el.innerHTML = statusIcons.success;
-                    }
+                    el.innerHTML = statusIcons.pending;
+                    el.setAttribute('data-status', 'skipped');
+                    el.setAttribute('title', 'No result returned');
                 });
 
-                appendLog(msg.target, `All diagnostics finished.`);
+                appendLog(msg.target, problemCount > 0 ? `Diagnostics finished with ${problemCount} finding(s).` : `All diagnostics finished.`);
+                announce(problemCount > 0
+                    ? `Diagnostics completed for ${msg.target} with ${problemCount} findings.`
+                    : `Diagnostics completed for ${msg.target}.`);
             }
             return;
         }
 
-        const card = document.querySelector(`[data-target="${msg.target}"]`);
+        const card = getTargetCard(msg.target);
         if (!card) return;
 
         const section = card.querySelector(`[data-service="${msg.service}"]`);
         if (!section) return;
 
+        const scan = activeScans.get(msg.target);
+        if (scan && resultHasError(msg.data)) scan.failures.add(msg.service);
+
         appendLog(msg.target, `Receiving data for ${msg.service.toUpperCase()}...`);
 
         let html = "";
         const data = msg.data;
+        if (!diagnosticResults.has(msg.target)) diagnosticResults.set(msg.target, {});
+        diagnosticResults.get(msg.target)[msg.service] = data;
 
         switch (msg.service) {
+            case 'target': {
+                const ips = Array.isArray(data.ips) ? data.ips : [];
+                const ipRows = ips.map(ip => `<div class="mb-2 pb-1 border-bottom border-secondary border-opacity-10">
+                    <div><span class="badge bg-dark border border-secondary text-info">IPv${escapeHTML(ip.version)}</span>
+                    <span class="clickable-record ms-1" onclick="copyToClipboard(this)">${escapeHTML(ip.address)}</span></div>
+                    <div class="text-white" style="font-size:.65rem">Scope: ${escapeHTML(ip.scope)}${ip.is_bogon ? ' · BOGON/SPECIAL' : ''}${ip.is_cgnat ? ' · CGNAT' : ''}${ip.is_documentation ? ' · DOCUMENTATION' : ''}</div>
+                    ${ip.reverse_dns?.length ? `<div class="text-white" style="font-size:.65rem">PTR: ${escapeHTML(ip.reverse_dns.join(', '))}</div>` : ''}
+                </div>`).join('');
+                const warningRows = (data.warnings || []).map(w => `<div class="text-warning" style="font-size:.65rem">${escapeHTML(w)}</div>`).join('');
+                html = `<details open><summary><span class="status-indicator" data-status="${data.valid ? 'success' : 'error'}">${data.valid ? statusIcons.success : statusIcons.error}</span>TARGET PROFILE</summary>
+                    <div class="p-2 small"><div class="d-flex justify-content-between mb-2"><strong>${escapeHTML(data.normalized || data.input)}</strong><span class="badge bg-nordic-blue-dim text-nordic-blue">${escapeHTML(data.kind)}</span></div>
+                    ${data.resolution_ms ? `<div class="mb-2 text-white">System DNS: ${escapeHTML(data.resolution_ms)} ms</div>` : ''}
+                    ${data.prefix ? `<div class="mb-2">Prefix: ${escapeHTML(data.prefix)}</div>` : ''}${ipRows}${warningRows}${data.error ? `<div class="text-danger">${escapeHTML(data.error)}</div>` : ''}</div></details>`;
+                break;
+            }
             case 'geo':
                 if (data && !data.error) {
-                    const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${data.country_emoji}</span>` : '';
+                    const flag = data.country_emoji ? `<span class="me-2" style="font-size:1.2rem">${escapeHTML(data.country_emoji)}</span>` : '';
                     html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>${flag} LOCATION & ASN <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Geographic location, ISP, and Autonomous System Number (ASN) data"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                         <div class="p-2 small">
                             <div class="d-flex align-items-center mb-2">
@@ -787,18 +1007,17 @@
                     return match ? parseFloat(match[1]) : null;
                 }).filter(v => v !== null);
 
+                const pingCanvasId = `chart-ping-${encodeURIComponent(String(msg.target)).replace(/%/g, '')}`;
                 html = `<details open><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>PING ICMP <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Network latency and packet round-trip time (ICMP Echo Request)"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
                     <div class="mt-2" style="height: 40px; background: rgba(0,0,0,0.2); border-radius: 4px; padding: 2px;">
-                        <canvas id="chart-ping-${msg.target.replace(/\./g, '-')}" style="width: 100%; height: 100%;"></canvas>
+                        <canvas id="${pingCanvasId}" style="width: 100%; height: 100%;"></canvas>
                     </div>
                     <pre class="p-2 mt-1 rounded bg-dark text-success clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem; min-height: 60px;"><code>${escapeHTML(data.join('\n'))}</code></pre>
                     </details>`;
 
-                section.innerHTML = html;
-
                 // Render Sparkline
                 setTimeout(() => {
-                    const canvasId = `chart-ping-${msg.target.replace(/\./g, '-')}`;
+                    const canvasId = pingCanvasId;
                     const canvas = document.getElementById(canvasId);
                     if (!canvas) return;
 
@@ -876,11 +1095,30 @@
                 if (data.error) {
                     html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>SSL/TLS</summary><div class="p-2 text-white small">${escapeHTML(data.error)}</div></details>`;
                 } else {
-                    html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>SSL/TLS <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="TLS Handshake, Cipher Suite, and Certificate Authority details"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    const tlsIssues = (data.issues || []).map(issue => `<li>${escapeHTML(issue)}</li>`).join('');
+                    const tlsFailed = Number(data.score) < 60;
+                    const tlsTone = Number(data.score) >= 80 ? 'result-grade--good' : (Number(data.score) >= 60 ? 'result-grade--warn' : 'result-grade--bad');
+                    const tlsFlags = [
+                        data.self_signed ? '<span class="badge bg-danger-dim text-danger">Self-signed</span>' : '',
+                        data.expired ? '<span class="badge bg-danger-dim text-danger">Expired</span>' : '',
+                        data.expiring_soon ? '<span class="badge bg-warning-dim text-warning">Expiring soon</span>' : '',
+                        data.verified ? '<span class="badge bg-success-dim text-success">Trusted chain</span>' : '<span class="badge bg-danger-dim text-danger">Untrusted chain</span>',
+                        data.hostname_valid ? '<span class="badge bg-success-dim text-success">Hostname valid</span>' : '<span class="badge bg-danger-dim text-danger">Hostname mismatch</span>'
+                    ].filter(Boolean).join(' ');
+                    html = `<details><summary><span class="status-indicator" data-status="${tlsFailed ? 'error' : 'success'}">${tlsFailed ? statusIcons.error : statusIcons.success}</span>SSL/TLS <span class="badge result-grade ${tlsTone} ms-1">Grade ${escapeHTML(data.grade)} · ${escapeHTML(data.score)}/100</span></summary>
                         <div class="p-2 small">
-                            <span class="badge bg-success mb-2">${escapeHTML(data.protocol)}</span><br>
+                            <span class="badge bg-success mb-2">${escapeHTML(data.protocol)}</span> <span class="badge bg-dark text-info">${escapeHTML(data.cipher_suite)}</span><br>
+                            <div class="d-flex flex-wrap gap-1 mb-2">${tlsFlags}</div>
+                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Subject:</strong> ${escapeHTML(data.subject) || 'Unknown'}</span><br>
                             <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Issuer:</strong> ${escapeHTML(data.issuer)}</span><br>
-                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Expiry:</strong> ${escapeHTML(data.expiry.split('T')[0])} (${escapeHTML(data.days_left)}d)</span>
+                            <span class="clickable-record" onclick="copyToClipboard(this)"><strong>Expiry:</strong> ${escapeHTML(String(data.expiry || '').split('T')[0])} (${escapeHTML(data.days_left)}d)</span><br>
+                            <span><strong>Trust / hostname:</strong> ${data.verified ? 'verified' : 'untrusted'} / ${data.hostname_valid ? 'valid' : 'mismatch'}</span><br>
+                            <span><strong>Versions:</strong> ${escapeHTML((data.supported_versions || []).join(', '))}</span><br>
+                            <span><strong>OCSP:</strong> ${escapeHTML(data.ocsp_status)} · <strong>SCTs:</strong> ${escapeHTML(data.sct_count)} · <strong>ALPN:</strong> ${escapeHTML(data.alpn) || 'none'}</span>
+                            ${data.verification_error ? `<div class="result-findings result-findings--warning mt-2"><strong>Verification error</strong><div>${escapeHTML(data.verification_error)}</div></div>` : ''}
+                            ${tlsIssues ? `<div class="result-findings result-findings--warning mt-3"><strong>Attention needed</strong><ul>${tlsIssues}</ul></div>` : '<div class="result-findings result-findings--success mt-3">No TLS configuration issues detected.</div>'}
+                            <details class="mt-2"><summary><small>CERTIFICATE CHAIN & SANS</small></summary><pre class="p-2 mt-1 rounded" style="font-size:.65rem"><code>${escapeHTML(JSON.stringify({sans:data.sans, chain:data.chain, fingerprint:data.fingerprint_sha256}, null, 2))}</code></pre></details>
+                            ${data.pem ? `<details class="mt-2"><summary><small>PEM CERTIFICATE</small></summary><pre class="p-2 mt-1 rounded" style="font-size:.65rem"><code>${escapeHTML(data.pem)}</code></pre></details>` : ''}
                         </div></details>`;
                 }
                 break;
@@ -889,25 +1127,45 @@
                     html = `<details><summary><span class="status-indicator" data-status="error">${statusIcons.error}</span>HTTP</summary><div class="p-2 text-white small">${escapeHTML(data.error)}</div></details>`;
                 } else {
                     let securityHtml = "";
-                    for (const [h, val] of Object.entries(data.security)) {
+                    for (const [h, val] of Object.entries(data.security || {})) {
                         const isSet = val !== "Not Set";
                         securityHtml += `<div class="d-flex justify-content-between mb-1 clickable-record" onclick="copyToClipboard(this)">
                         <span class="text-white" style="font-size: 0.65rem;">${escapeHTML(h)}</span>
                         <span class="badge ${isSet ? 'bg-success-dim text-success' : 'bg-danger-dim text-danger'}" style="font-size: 0.6rem;">${isSet ? 'SECURE' : 'MISSING'}</span>
                     </div>`;
                     }
+                    const httpIssues = (data.issues || []).map(issue => `<li>${escapeHTML(issue)}</li>`).join('');
+                    const redirectRows = (data.redirects || []).map(item => `<li><span class="badge bg-dark text-info">${escapeHTML(item.status)}</span> ${escapeHTML(item.url)} → ${escapeHTML(item.location)}</li>`).join('');
+                    const cookieRows = (data.cookies || []).map(cookie => `<li><strong>${escapeHTML(cookie.name)}</strong> · ${cookie.secure ? 'Secure' : 'not Secure'} · ${cookie.http_only ? 'HttpOnly' : 'script-readable'} · SameSite ${escapeHTML(cookie.same_site)}</li>`).join('');
+                    const securityCheckRows = (data.security_checks || []).map(check => {
+                        const passed = check.status === 'pass';
+                        const tone = passed ? 'bg-success-dim text-success' : (check.status === 'warning' ? 'bg-warning-dim text-warning' : 'bg-danger-dim text-danger');
+                        return `<li><div class="d-flex justify-content-between gap-2"><strong>${escapeHTML(check.name)}</strong><span class="badge ${tone}">${escapeHTML(check.status)}</span></div>${check.value ? `<code class="d-block mt-1">${escapeHTML(check.value)}</code>` : ''}${check.guidance ? `<div class="field-help">${escapeHTML(check.guidance)}</div>` : ''}</li>`;
+                    }).join('');
+                    const httpFailed = Number(data.score) < 60;
+                    const httpTone = Number(data.score) >= 80 ? 'result-grade--good' : (Number(data.score) >= 60 ? 'result-grade--warn' : 'result-grade--bad');
 
-                    html = `<details><summary><span class="status-indicator" data-status="success">${statusIcons.success}</span>HTTP INSPECTOR <svg style="width:12px;height:12px;margin-left:4px;fill:currentColor;opacity:0.2" viewBox="0 0 512 512" class="help-icon" data-tippy-content="Analysis of HTTP Security Headers (HSTS, CSP, XFO) and server metadata"><path d="M256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512zM216 336h24V272H216c-13.3 0-24-10.7-24-24s10.7-24 24-24h48c13.3 0 24 10.7 24 24v88h8c13.3 0 24 10.7 24 24s-10.7 24-24 24H216c-13.3 0-24-10.7-24-24s10.7-24 24-24zm40-208a32 32 0 1 1 0 64 32 32 0 1 1 0-64z"/></svg></summary>
+                    html = `<details><summary><span class="status-indicator" data-status="${httpFailed ? 'error' : 'success'}">${httpFailed ? statusIcons.error : statusIcons.success}</span>HTTP INSPECTOR <span class="badge result-grade ${httpTone} ms-1">Grade ${escapeHTML(data.grade)} · ${escapeHTML(data.score)}/100</span></summary>
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
-                                <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${escapeHTML(data.status)}</span>
+                                <strong>Status:</strong> <span class="badge ${String(data.status || '').startsWith('2') ? 'bg-success' : 'bg-warning'}">${escapeHTML(data.status || 'Unknown')}</span>
                                 <span class="badge bg-dark border border-secondary text-info">${escapeHTML(data.response_time_ms)}ms</span>
                             </div>
-                            <div class="mb-2"><strong>Protocol:</strong> ${escapeHTML(data.protocol)}</div>
-                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Server:</strong> ${escapeHTML(data.headers.Server) || 'Unknown'}</div>
+                            <div class="result-metrics mb-2"><span><strong>Protocol</strong>${escapeHTML(data.protocol)}</span><span><strong>Remote IP</strong>${escapeHTML(data.ip) || 'Unknown'}</span><span><strong>Compression</strong>${escapeHTML(data.compression) || 'None'}</span></div>
+                            <div class="result-metrics mb-2"><span><strong>Content type</strong>${escapeHTML(data.content_type) || 'Unknown'}</span><span><strong>Content length</strong>${escapeHTML(data.content_length)} bytes</span><span><strong>TLS verified</strong>${data.verified ? 'Yes' : 'No'}</span></div>
+                            <div class="mb-2"><strong>Timing:</strong> DNS ${escapeHTML(data.timing?.dns_ms)} · TCP ${escapeHTML(data.timing?.connect_ms)} · TLS ${escapeHTML(data.timing?.tls_ms)} · TTFB ${escapeHTML(data.timing?.ttfb_ms)} ms</div>
+                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Final URL:</strong> ${escapeHTML(data.final_url)}</div>
+                            <div class="mb-2 clickable-record" onclick="copyToClipboard(this)"><strong>Server:</strong> ${escapeHTML(data.server) || 'Unknown'} ${data.powered_by ? `· ${escapeHTML(data.powered_by)}` : ''}</div>
+                            <div class="mb-2"><strong>CORS:</strong> ${escapeHTML(data.cors)} · <strong>robots:</strong> ${escapeHTML(data.robots_txt)} · <strong>security.txt:</strong> ${escapeHTML(data.security_txt)}</div>
+                            ${(data.allowed_methods || []).length ? `<div class="mb-2"><strong>Allowed methods:</strong> ${escapeHTML(data.allowed_methods.join(', '))}</div>` : ''}
+                            ${data.directory_listing ? '<div class="result-findings result-findings--warning mb-2">Directory listing appears to be enabled.</div>' : ''}
+                            ${httpIssues ? `<div class="result-findings result-findings--warning mb-2"><strong>Security findings</strong><ul>${httpIssues}</ul></div>` : '<div class="result-findings result-findings--success mb-2">No HTTP security-header issues detected.</div>'}
                             <div class="security-headers-minimal mb-2">
                                 ${securityHtml}
                             </div>
+                            ${securityCheckRows ? `<details class="mt-2"><summary><small>SECURITY CHECK GUIDANCE (${data.security_checks.length})</small></summary><ul class="result-detail-list">${securityCheckRows}</ul></details>` : ''}
+                            ${redirectRows ? `<details class="mt-2"><summary><small>REDIRECT CHAIN (${data.redirects.length})</small></summary><ol class="result-detail-list">${redirectRows}</ol></details>` : ''}
+                            ${cookieRows ? `<details class="mt-2"><summary><small>COOKIE FLAGS (${data.cookies.length})</small></summary><ul class="result-detail-list">${cookieRows}</ul></details>` : ''}
                             <details class="mt-2"><summary><small>FULL HEADERS</small></summary>
                             <pre class="p-2 mt-1 rounded clickable-record" onclick="copyToClipboard(this)" style="font-size: 0.7rem;"><code>${escapeHTML(JSON.stringify(data.headers, null, 2))}</code></pre>
                             </details>
@@ -946,16 +1204,22 @@
                 break;
         }
 
-        section.innerHTML = html;
+        section.innerHTML = DOMPurify.sanitize(html);
+
+        const renderedStatus = section.querySelector('.status-indicator')?.getAttribute('data-status');
+        if (scan && renderedStatus === 'error' && !scan.failures.has(msg.service)) {
+            scan.findings.add(msg.service);
+        }
 
         // Add copy button to summary if it doesn't have one
         section.querySelectorAll('summary').forEach(s => {
             if (!s.querySelector('.section-copy-btn')) {
-                const btn = document.createElement('div');
-                btn.className = "section-copy-btn d-inline-block ms-2";
-                btn.style = "cursor:pointer; width:12px; height:12px;";
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = "section-copy-btn d-inline-grid ms-2";
                 btn.innerHTML = `<svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 448 512"><path d="M208 0H332.1c12.7 0 24.9 5.1 33.9 14.1l67.9 67.9c9 9 14.1 21.2 14.1 33.9V336c0 26.5-21.5 48-48 48H208c-26.5 0-48-21.5-48-48V48c0-26.5 21.5-48 48-48zM48 128h80v64H64V448H256V416h64v48c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V176c0-26.5 21.5-48 48-48z"/></svg>`;
                 btn.setAttribute('data-tippy-content', "Copy Section");
+                btn.setAttribute('aria-label', 'Copy section');
                 btn.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -975,13 +1239,8 @@
                     }
 
                     console.log('Copying section text');
-                    const banner = document.getElementById('copyBanner');
-
                     const onSuccess = () => {
-                        if (banner) {
-                            banner.classList.add('show');
-                            setTimeout(() => banner.classList.remove('show'), 2000);
-                        }
+                        showCopyNotification('Section copied');
                         btn.innerHTML = `<svg style="width:12px;height:12px;fill:#4caf50" viewBox="0 0 448 512"><path d="M438.6 105.4c12.5 12.5 12.5 32.8 0 45.3l-256 256c-12.5 12.5-32.8 12.5-45.3 0l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0L160 338.7 393.4 105.4c12.5-12.5 32.8-12.5 45.3 0z"/></svg>`;
                         setTimeout(() => {
                             btn.innerHTML = `<svg style="width:12px;height:12px;fill:currentColor;opacity:0.2" viewBox="0 0 448 512"><path d="M208 0H332.1c12.7 0 24.9 5.1 33.9 14.1l67.9 67.9c9 9 14.1 21.2 14.1 33.9V336c0 26.5-21.5 48-48 48H208c-26.5 0-48-21.5-48-48V48c0-26.5 21.5-48 48-48zM48 128h80v64H64V448H256V416h64v48c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V176c0-26.5 21.5-48 48-48z"/></svg>`;
@@ -999,6 +1258,19 @@
                 };
                 s.appendChild(btn);
             }
+        });
+
+        section.querySelectorAll('.clickable-record:not(button)').forEach(record => {
+            record.setAttribute('role', 'button');
+            record.setAttribute('tabindex', '0');
+            record.setAttribute('title', 'Copy value');
+            record.addEventListener('click', () => copyToClipboard(record));
+            record.addEventListener('keydown', event => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    copyToClipboard(record);
+                }
+            });
         });
 
         // Initialize tooltips for new content - only if not already initialized
@@ -1036,16 +1308,22 @@
 
     function exportToCSV() {
         const cards = document.querySelectorAll('.result-card');
-        if (cards.length === 0) return;
+        if (cards.length === 0) {
+            announce('There are no results to export.');
+            return;
+        }
 
+        const csvCell = value => {
+            let text = String(value ?? '');
+            if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+            return `"${text.replace(/"/g, '""')}"`;
+        };
         let csv = "Target,Service,Data\n";
         cards.forEach(card => {
             const target = card.getAttribute('data-target');
-            const sections = card.querySelectorAll('.service-section');
-            sections.forEach(section => {
-                const service = section.getAttribute('data-service');
-                const data = section.innerText.replace(/"/g, '""');
-                csv += `"${target}","${service}","${data}"\n`;
+            const services = diagnosticResults.get(target) || {};
+            Object.entries(services).forEach(([service, result]) => {
+                csv += `${csvCell(target)},${csvCell(service)},${csvCell(JSON.stringify(result))}\n`;
             });
         });
 
@@ -1055,23 +1333,35 @@
         a.setAttribute('href', url);
         a.setAttribute('download', `scan_results_${new Date().getTime()}.csv`);
         a.click();
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+        announce('CSV export downloaded.');
     }
 
     function exportToJSON() {
         const data = getAllResultsData();
+        if (data.length === 0) {
+            announce('There are no results to export.');
+            return;
+        }
         const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.setAttribute('href', url);
         a.setAttribute('download', `scan_results_${new Date().getTime()}.json`);
         a.click();
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
+        announce('JSON export downloaded.');
     }
 
     function copyAllJSON() {
         const data = getAllResultsData();
+        if (data.length === 0) {
+            announce('There are no results to copy.');
+            return;
+        }
         const jsonStr = JSON.stringify(data, null, 2);
         const onSuccess = () => {
-            alert("All results copied to clipboard as JSON");
+            showCopyNotification('All results copied as JSON');
         };
 
         if (navigator.clipboard && window.isSecureContext) {
@@ -1089,24 +1379,13 @@
         const results = [];
         cards.forEach(card => {
             const target = card.getAttribute('data-target');
-            const sections = {};
-            card.querySelectorAll('.service-section').forEach(section => {
-                const service = section.getAttribute('data-service');
-                sections[service] = section.innerText.trim();
-            });
-            results.push({ target, services: sections });
+            results.push({ target, services: diagnosticResults.get(target) || {} });
         });
         return results;
     }
 
     function reScanTarget(btn) {
         const target = btn.closest('.result-card').getAttribute('data-target');
-        const isIP = (str) => {
-            const regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$|^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
-            return regex.test(str);
-        };
-        const targetIsIP = isIP(target);
-
         const config = {
             whois: document.getElementById('cfg-whois').checked,
             dns: document.getElementById('cfg-dns').checked,
@@ -1118,15 +1397,17 @@
             trace: document.getElementById('cfg-trace').checked,
             route: document.getElementById('cfg-route').checked,
             subdomains: document.getElementById('cfg-subdomains').checked,
-            portscan: document.getElementById('cfg-portscan').checked && targetIsIP,
+            portscan: document.getElementById('cfg-portscan').checked,
             ports: document.getElementById('cfg-portscan').checked ? document.getElementById('cfg-ports').value : "",
         };
 
-        const enabledServices = Object.values(config).filter(v => v && v !== "").length;
+        const enabledServices = Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
         createCard(target);
         activeScans.set(target, {
             total: enabledServices,
-            completed: 0
+            completed: 0,
+            failures: new Set(),
+            findings: new Set()
         });
         updateProgressBar(target);
         sendWS({ targets: [target], config });
@@ -1165,12 +1446,8 @@
         });
 
         console.log('Copying full report for:', target);
-        const banner = document.getElementById('copyBanner');
         const onSuccess = () => {
-            if (banner) {
-                banner.classList.add('show');
-                setTimeout(() => banner.classList.remove('show'), 2000);
-            }
+            showCopyNotification('Report copied');
             const originalFill = btn.style.fill;
             btn.style.fill = "#4caf50";
             setTimeout(() => btn.style.fill = originalFill, 2000);
@@ -1229,27 +1506,44 @@
                     else el.value = config[key];
                 }
             });
-            // Trigger visibility for ports wrapper
-            document.getElementById('portsInputWrapper').style.display = config.portscan ? 'block' : 'none';
+            // Trigger visibility for the optional port expression.
+            const showPorts = Boolean(config.portscan);
+            document.getElementById('portsInputWrapper').hidden = !showPorts;
+            document.getElementById('portsHelp').hidden = !showPorts;
         } catch (e) { console.error("Failed to load settings", e); }
     }
 
     // Keyboard Shortcuts
     document.addEventListener('keydown', (e) => {
         // Ctrl + Enter to scan
-        if (e.ctrlKey && e.key === 'Enter') {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
             startQuery();
         }
         // '/' to focus search
-        if (e.key === '/' && document.activeElement.tagName !== 'TEXTAREA') {
+        if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !document.activeElement.isContentEditable) {
             e.preventDefault();
             document.getElementById('targetInput').focus();
         }
     });
 
     function clearResults() {
-        document.getElementById('resultsGrid').innerHTML = "";
-        document.getElementById('targetInput').value = "";
+        const resultsGrid = document.getElementById('resultsGrid');
+        resultsGrid.querySelectorAll('.result-card').forEach(card => ignoredTargets.add(card.dataset.target));
+        pingCharts.forEach(chart => chart.destroy());
+        pingCharts.clear();
+        messageQueue = [];
+        resultsGrid.innerHTML = "";
+        const input = document.getElementById('targetInput');
+        input.value = "";
+        input.removeAttribute('aria-invalid');
+        document.getElementById('targetError').textContent = '';
+        activeScans.clear();
+        diagnosticResults.clear();
+        targetColors.clear();
+        updateWorkspaceState();
+        announce('Workspace cleared.');
+        input.focus();
     }
 
     async function fetchHistory(btn) {
@@ -1265,11 +1559,11 @@
         modal.show();
 
         try {
-            const resp = await fetch(`/history/${target}`);
+            const resp = await fetch(`/history/${encodeURIComponent(target)}`);
             const data = await resp.json();
 
             if (data.error) {
-                body.innerHTML = `<div class="alert bg-danger-dim text-danger border-0">${data.error}</div>`;
+                body.innerHTML = `<div class="alert bg-danger-dim text-danger border-0" role="alert">${escapeHTML(data.error)}</div>`;
                 return;
             }
 
@@ -1297,7 +1591,7 @@
                         else if (line.startsWith('@@')) cls = "diff-line-info";
 
                         if (line.trim()) {
-                            html += `<div class="px-3 py-0 ${cls}">${line}</div>`;
+                            html += `<div class="px-3 py-0 ${cls}">${escapeHTML(line)}</div>`;
                         }
                     });
                 });
@@ -1325,7 +1619,7 @@
             });
 
             html += `</div></div>`;
-            body.innerHTML = html;
+            body.innerHTML = DOMPurify.sanitize(html);
         } catch (e) {
             body.innerHTML = `<div class="alert bg-danger-dim text-danger border-0">Failed to fetch history data.</div>`;
         }
@@ -1337,8 +1631,23 @@
     });
 
     document.getElementById('cfg-portscan').addEventListener('change', (e) => {
-        document.getElementById('portsInputWrapper').style.display = e.target.checked ? 'block' : 'none';
+        document.getElementById('portsInputWrapper').hidden = !e.target.checked;
+        document.getElementById('portsHelp').hidden = !e.target.checked;
     });
+
+    document.getElementById('queryForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        startQuery();
+    });
+
+    document.getElementById('targetInput').addEventListener('input', (event) => {
+        if (event.target.value.trim()) {
+            event.target.removeAttribute('aria-invalid');
+            document.getElementById('targetError').textContent = '';
+        }
+    });
+
+    updateWorkspaceState();
 
     // Register dragover event once globally for resultsGrid
     const resultsGridElement = document.getElementById('resultsGrid');

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"whois/internal/utils"
 )
@@ -34,6 +35,34 @@ func TestFetchCTSubdomains(t *testing.T) {
 
 	if len(subs) != 3 {
 		t.Errorf("Expected 3 subdomains, got %d", len(subs))
+	}
+}
+
+func TestFetchCTSubdomainsCapsProviderResults(t *testing.T) {
+	var payload strings.Builder
+	payload.WriteString(`[{"dns_names":[`)
+	for i := 0; i < maxCTSubdomains+250; i++ {
+		if i > 0 {
+			payload.WriteByte(',')
+		}
+		fmt.Fprintf(&payload, "%q", fmt.Sprintf("host-%d.example.com", i))
+	}
+	payload.WriteString(`]}]`)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(payload.String()))
+	}))
+	defer server.Close()
+	oldURL := CertspotterURL
+	CertspotterURL = server.URL
+	defer func() { CertspotterURL = oldURL }()
+
+	results, err := FetchCTSubdomains(context.Background(), "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != maxCTSubdomains {
+		t.Fatalf("got %d CT results, want cap of %d", len(results), maxCTSubdomains)
 	}
 }
 

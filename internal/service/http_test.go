@@ -1,9 +1,11 @@
 package service
 
 import (
+	"compress/gzip"
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"whois/internal/utils"
@@ -12,6 +14,7 @@ import (
 func init() {
 	utils.TestInitLogger()
 	utils.SetAllowPrivateIPs(true)
+	utils.SetAllowLoopbackIPs(true)
 }
 
 func TestGetHTTPInfo(t *testing.T) {
@@ -41,6 +44,68 @@ func TestGetHTTPInfo(t *testing.T) {
 	// HTTP (non-TLS) connection should not be marked as verified
 	if info.Verified {
 		t.Error("Expected Verified=false for plain HTTP connection")
+	}
+	if info.FinalURL == "" || info.Timing.Total < 0 {
+		t.Fatalf("expected final URL and timing, got %#v", info)
+	}
+	if info.Score < 0 || info.Score > 100 || info.Grade == "" {
+		t.Fatalf("invalid HTTP score: %d %q", info.Score, info.Grade)
+	}
+	if len(info.SecurityChecks) == 0 {
+		t.Error("expected structured security checks")
+	}
+}
+
+func TestGetHTTPInfoDecodesGzipWithoutAdvertisingBrotli(t *testing.T) {
+	encoding := make(chan string, 1)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		encoding <- r.Header.Get("Accept-Encoding")
+		w.Header().Set("Content-Encoding", "gzip")
+		writer := gzip.NewWriter(w)
+		_, _ = writer.Write([]byte("<html><title>Index of /</title></html>"))
+		_ = writer.Close()
+	}))
+	defer ts.Close()
+
+	host := strings.TrimPrefix(ts.URL, "http://")
+	info := GetHTTPInfo(context.Background(), host)
+	if info.Error != "" {
+		t.Fatalf("GetHTTPInfo failed: %s", info.Error)
+	}
+	if got := <-encoding; got != "gzip" {
+		t.Fatalf("Accept-Encoding = %q; want transport-managed gzip only", got)
+	}
+	if info.Compression != "gzip" {
+		t.Errorf("Compression = %q; want gzip", info.Compression)
+	}
+	if !info.DirectoryListing {
+		t.Error("expected gzip-compressed response body to be analyzed after decoding")
+	}
+}
+
+func TestGetHTTPInfoRedirectChain(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+	host := strings.TrimPrefix(ts.URL, "http://")
+	info := GetHTTPInfo(context.Background(), host)
+	if info.Error != "" {
+		t.Fatalf("GetHTTPInfo failed: %s", info.Error)
+	}
+	if len(info.Redirects) != 1 || info.Redirects[0].Status != http.StatusFound {
+		t.Fatalf("unexpected redirects: %#v", info.Redirects)
+	}
+	if !strings.HasSuffix(info.FinalURL, "/final") {
+		t.Fatalf("unexpected final URL: %s", info.FinalURL)
 	}
 }
 
@@ -88,6 +153,26 @@ func TestGetHTTPInfo_SecurityHeaders(t *testing.T) {
 	}
 	if info.Security["Referrer-Policy"] != "Not Set" {
 		t.Errorf("Expected Not Set for Referrer-Policy, got %s", info.Security["Referrer-Policy"])
+	}
+}
+
+func TestInspectHTTPSecurityRejectsInvalidPresentHeaders(t *testing.T) {
+	response := &http.Response{
+		Header: http.Header{
+			"Strict-Transport-Security": []string{"max-age=0"},
+			"Content-Security-Policy":   []string{"script-src 'unsafe-inline'"},
+			"X-Content-Type-Options":    []string{"sniff"},
+			"X-Frame-Options":           []string{"ALLOWALL"},
+			"Content-Type":              []string{"text/html"},
+		},
+		Request: &http.Request{URL: &url.URL{Scheme: "https", Host: "example.com"}},
+	}
+	checks, _, issues, score := inspectHTTPSecurity(response, `<a href="http://example.com">insecure</a>`)
+	if len(checks) == 0 || len(issues) < 5 {
+		t.Fatalf("expected invalid headers and mixed content to be reported, got checks=%v issues=%v", checks, issues)
+	}
+	if score >= 70 {
+		t.Fatalf("invalid security headers received an unexpectedly high score: %d", score)
 	}
 }
 
