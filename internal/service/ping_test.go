@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"strings"
@@ -41,6 +42,14 @@ func TestPing_InvalidTarget(t *testing.T) {
 	}
 	if !hasError {
 		t.Error("Expected error for invalid target")
+	}
+}
+
+func TestPing_Cancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := Ping(ctx, "8.8.8.8", 1, func(string) {}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled ping error = %v, want context.Canceled", err)
 	}
 }
 

@@ -17,6 +17,9 @@ var PingCommandRunner = func(ctx context.Context, name string, args ...string) *
 }
 
 func Ping(ctx context.Context, target string, count int, callback func(string)) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	resolvedTarget, err := utils.ResolveValidatedTarget(ctx, target)
 	if err != nil {
 		err = fmt.Errorf("invalid or disallowed target for ping: %w", err)

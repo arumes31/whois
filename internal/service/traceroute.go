@@ -28,6 +28,9 @@ func Traceroute(ctx context.Context, target string, callback func(string)) error
 func tracerouteWithTimeout(ctx context.Context, target string, timeout time.Duration, callback func(string)) error {
 	traceCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if err := traceCtx.Err(); err != nil {
+		return err
+	}
 	resolvedTarget, err := utils.ResolveValidatedTarget(traceCtx, target)
 	if err != nil {
 		if errors.Is(traceCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil {
