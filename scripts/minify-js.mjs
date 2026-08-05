@@ -1,11 +1,16 @@
-import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { relative, resolve } from "node:path";
+import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, relative, resolve } from "node:path";
 import process from "node:process";
 import { minify } from "terser";
 
 const staticTarget = resolve(process.argv[2] ?? "static");
 const templateTarget = resolve(process.argv[3] ?? "templates");
 const licenseComment = /(?:^!|@preserve|@license|\blicense\b)/i;
+
+const domPurifySource = resolve("node_modules/dompurify/dist/purify.min.js");
+const domPurifyTarget = resolve(staticTarget, "vendor/purify.min.js");
+await mkdir(dirname(domPurifyTarget), { recursive: true });
+await copyFile(domPurifySource, domPurifyTarget);
 
 async function findJavaScriptFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
