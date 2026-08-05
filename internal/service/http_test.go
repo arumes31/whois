@@ -206,6 +206,27 @@ func TestInspectHTTPSecurityPenalizesPlainHTTP(t *testing.T) {
 	}
 }
 
+func TestInspectHTTPSecurityHandlesMissingRequest(t *testing.T) {
+	response := &http.Response{Header: make(http.Header)}
+	checks, _, issues, score := inspectHTTPSecurity(response, `<img src="http://example.com/image.png">`)
+	if score < 0 || score > 70 {
+		t.Fatalf("missing-request score = %d, want a bounded non-HTTPS score", score)
+	}
+	if len(checks) == 0 || checks[0].Name != "Transport security" || checks[0].Status != "missing" {
+		t.Fatalf("missing-request transport check = %#v", checks)
+	}
+	found := false
+	for _, issue := range issues {
+		if strings.Contains(issue, "not protected by HTTPS") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("missing-request issues = %v, want transport warning", issues)
+	}
+}
+
 func TestGetHTTPInfo_Fail(t *testing.T) {
 	info := GetHTTPInfo(context.Background(), "localhost:1")
 	if info.Error == "" {

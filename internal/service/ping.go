@@ -64,6 +64,7 @@ func Ping(ctx context.Context, target string, count int, callback func(string)) 
 		}
 		if err := scanner.Err(); err != nil {
 			lines <- pingLine{text: "Error: ping output read failed: " + err.Error(), diagnostic: true}
+			_, _ = io.Copy(io.Discard, reader)
 		}
 	}
 	scanWG.Add(2)

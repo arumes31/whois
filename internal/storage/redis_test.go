@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"sync"
 	"testing"
 	"time"
 	"whois/internal/model"
@@ -64,6 +65,50 @@ func TestStorage_Basic(t *testing.T) {
 	items, _ = s.GetMonitoredItems(ctx)
 	if len(items) != 0 {
 		t.Errorf("expected 0 items after removal, got %d", len(items))
+	}
+}
+
+func TestStorage_AddMonitoredItemIfAbsentIsAtomic(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const item = "example.com"
+
+	var wg sync.WaitGroup
+	results := make(chan bool, 32)
+	errors := make(chan error, 32)
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			added, err := s.AddMonitoredItemIfAbsent(ctx, item)
+			results <- added
+			errors <- err
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errors)
+
+	addedCount := 0
+	for added := range results {
+		if added {
+			addedCount++
+		}
+	}
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("atomic add failed: %v", err)
+		}
+	}
+	if addedCount != 1 {
+		t.Fatalf("successful inserts = %d, want 1", addedCount)
+	}
+	items, err := s.GetMonitoredItems(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0] != item {
+		t.Fatalf("monitored items = %v, want [%s]", items, item)
 	}
 }
 

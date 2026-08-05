@@ -488,6 +488,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	hostTarget := targetInfo.Host
 	endpointTarget := targetInfo.Normalized
 	httpTarget := item
+	cacheable := true
 	var wg sync.WaitGroup
 	run := func(fn func()) {
 		wg.Add(1)
@@ -515,6 +516,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 			d, err := h.DNS.Lookup(ctx, hostTarget, isIP)
 			if err != nil {
 				res.DNS = model.DNSResult{"error": err.Error()}
+				cacheable = false
 				return
 			}
 			res.DNS = d
@@ -571,7 +573,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	}
 
 	wg.Wait()
-	if ctx.Err() == nil {
+	if ctx.Err() == nil && cacheable {
 		_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
 	}
 	return res
@@ -719,17 +721,7 @@ func (h *Handler) Config(c echo.Context) error {
 			if !target.Valid || !target.Networkable || target.Host == "" || !utils.IsValidTarget(target.Host) {
 				return echo.NewHTTPError(http.StatusBadRequest, "invalid monitored target")
 			}
-			items, listErr := h.Storage.GetMonitoredItems(ctx)
-			if listErr != nil {
-				return echo.NewHTTPError(http.StatusInternalServerError, "unable to load monitored targets").SetInternal(listErr)
-			}
-			for _, existing := range items {
-				existingTarget := utils.NormalizeTarget(existing)
-				if existingTarget.Valid && existingTarget.Networkable && existingTarget.Host == target.Host {
-					return c.Redirect(http.StatusFound, "/config")
-				}
-			}
-			err = h.Storage.AddMonitoredItem(ctx, target.Host)
+			_, err = h.Storage.AddMonitoredItemIfAbsent(ctx, target.Host)
 		case "remove":
 			if item == "" {
 				return echo.NewHTTPError(http.StatusBadRequest, "invalid monitored target")

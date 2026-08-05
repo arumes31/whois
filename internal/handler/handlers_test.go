@@ -118,6 +118,15 @@ func (c *failingMonitoredRedisClient) RPush(ctx context.Context, key string, val
 	return cmd
 }
 
+func (c *failingMonitoredRedisClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd {
+	if c.operation != "add" {
+		return c.RedisClient.Eval(ctx, script, keys, args...)
+	}
+	cmd := redis.NewCmd(ctx)
+	cmd.SetErr(c.err)
+	return cmd
+}
+
 func (c *failingMonitoredRedisClient) LRem(ctx context.Context, key string, count int64, value interface{}) *redis.IntCmd {
 	if c.operation != "remove" {
 		return c.RedisClient.LRem(ctx, key, count, value)
@@ -212,6 +221,33 @@ func TestQueryItemPreservesDNSError(t *testing.T) {
 	}
 	if len(history) != 0 {
 		t.Fatalf("DNS history entries = %d, want 0 after failed lookup", len(history))
+	}
+}
+
+func TestQueryItemRetriesDNSAfterTransientFailure(t *testing.T) {
+	oldLookup := service.DNSLookupFunc
+	calls := 0
+	service.DNSLookupFunc = func(context.Context, string, bool) (map[string]interface{}, error) {
+		calls++
+		if calls == 1 {
+			return nil, errors.New("resolver unavailable")
+		}
+		return map[string]interface{}{"A": []string{"192.0.2.10"}}, nil
+	}
+	t.Cleanup(func() { service.DNSLookupFunc = oldLookup })
+
+	store := setupMiniredisStorage(t)
+	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
+	first := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false)
+	if first.DNS["error"] == nil {
+		t.Fatalf("first DNS result = %#v, want transient error", first.DNS)
+	}
+	second := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false)
+	if calls != 2 {
+		t.Fatalf("DNS lookup calls = %d, want 2 after transient failure", calls)
+	}
+	if second.DNS["error"] != nil || second.DNS["A"] == nil {
+		t.Fatalf("second DNS result = %#v, want recovered A record", second.DNS)
 	}
 }
 

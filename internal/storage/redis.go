@@ -31,6 +31,7 @@ type RedisClient interface {
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
 	Incr(ctx context.Context, key string) *redis.IntCmd
 	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+	Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd
 	SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	SCard(ctx context.Context, key string) *redis.IntCmd
 }
@@ -40,6 +41,17 @@ type Storage struct {
 }
 
 const dnsHistoryTargetsKey = "dns_history_targets"
+
+const addMonitoredItemIfAbsentScript = `
+local items = redis.call("LRANGE", KEYS[1], 0, -1)
+for _, existing in ipairs(items) do
+    if existing == ARGV[1] then
+        return 0
+    end
+end
+redis.call("RPUSH", KEYS[1], ARGV[1])
+return 1
+`
 
 func NewStorage(host, port string) *Storage {
 	rdb := redis.NewClient(&redis.Options{
@@ -60,6 +72,20 @@ func (s *Storage) GetMonitoredItems(ctx context.Context) ([]string, error) {
 func (s *Storage) AddMonitoredItem(ctx context.Context, item string) error {
 	utils.Log.Info("redis rpush", utils.Field("key", "monitored_items"), utils.Field("item", item))
 	return s.Client.RPush(ctx, "monitored_items", item).Err()
+}
+
+// AddMonitoredItemIfAbsent atomically appends item when it is not already in
+// the monitored list. The Redis-side check prevents duplicates across server
+// instances handling concurrent requests.
+func (s *Storage) AddMonitoredItemIfAbsent(ctx context.Context, item string) (bool, error) {
+	result, err := s.Client.Eval(ctx, addMonitoredItemIfAbsentScript, []string{"monitored_items"}, item).Int()
+	if err != nil {
+		return false, err
+	}
+	if result == 1 {
+		utils.Log.Info("redis rpush", utils.Field("key", "monitored_items"), utils.Field("item", item))
+	}
+	return result == 1, nil
 }
 
 func (s *Storage) RemoveMonitoredItem(ctx context.Context, item string) error {

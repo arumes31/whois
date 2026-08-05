@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 	"whois/internal/utils"
 )
 
@@ -30,11 +31,14 @@ func TestPing(t *testing.T) {
 
 func TestPing_InvalidTarget(t *testing.T) {
 	hasError := false
-	_ = Ping(context.Background(), "invalid!target", 1, func(line string) {
+	err := Ping(context.Background(), "invalid!target", 1, func(line string) {
 		if strings.Contains(line, "Error") {
 			hasError = true
 		}
 	})
+	if err == nil {
+		t.Fatal("invalid target returned nil error")
+	}
 	if !hasError {
 		t.Error("Expected error for invalid target")
 	}
@@ -53,11 +57,14 @@ func TestPing_Mocked(t *testing.T) {
 			return cmd
 		}
 		found := false
-		_ = Ping(context.Background(), "1.1.1.1", 1, func(line string) {
+		err := Ping(context.Background(), "1.1.1.1", 1, func(line string) {
 			if strings.Contains(line, "Reply") {
 				found = true
 			}
 		})
+		if err != nil {
+			t.Fatalf("mocked ping failed: %v", err)
+		}
 		if !found {
 			t.Error("Expected Reply in output")
 		}
@@ -68,11 +75,14 @@ func TestPing_Mocked(t *testing.T) {
 			return exec.Command("non-existent-command-12345")
 		}
 		hasError := false
-		_ = Ping(context.Background(), "1.1.1.1", 1, func(line string) {
+		err := Ping(context.Background(), "1.1.1.1", 1, func(line string) {
 			if strings.Contains(line, "Error") {
 				hasError = true
 			}
 		})
+		if err == nil {
+			t.Fatal("command-start failure returned nil error")
+		}
 		if !hasError {
 			t.Error("Expected Error in output")
 		}
@@ -85,11 +95,34 @@ func TestPing_Mocked(t *testing.T) {
 			return cmd
 		}
 		var lines []string
-		_ = Ping(context.Background(), "1.1.1.1", 1, func(line string) {
+		err := Ping(context.Background(), "1.1.1.1", 1, func(line string) {
 			lines = append(lines, line)
 		})
+		if err != nil {
+			t.Fatalf("successful stderr diagnostic returned error: %v", err)
+		}
 		if len(lines) == 0 || !strings.Contains(strings.Join(lines, "\n"), "Error: network unreachable") {
 			t.Fatalf("ping did not surface stderr detail: %v", lines)
+		}
+	})
+
+	t.Run("Scanner Error Drains Output", func(t *testing.T) {
+		PingCommandRunner = func(ctx context.Context, name string, args ...string) *exec.Cmd {
+			cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=TestHelperProcess", "--", name)
+			cmd.Env = []string{"GO_WANT_HELPER_PROCESS=1", "HELPER_LONG_STDOUT=1"}
+			return cmd
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var lines []string
+		err := Ping(ctx, "1.1.1.1", 1, func(line string) {
+			lines = append(lines, line)
+		})
+		if err != nil {
+			t.Fatalf("ping failed after draining oversized output: %v", err)
+		}
+		if !strings.Contains(strings.Join(lines, "\n"), "output read failed") {
+			t.Fatalf("scanner error was not surfaced: %v", lines)
 		}
 	})
 }
