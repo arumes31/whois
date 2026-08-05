@@ -1,12 +1,15 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"whois/internal/utils"
@@ -71,12 +74,17 @@ func TestLookupMacVendor_MissingOUIDatabase(t *testing.T) {
 
 func TestMACService(t *testing.T) {
 	StopMACService()
+	oldTestMode := TestMode
 	TestMode = true
+	defer func() {
+		StopMACService()
+		TestMode = oldTestMode
+	}()
 	// We run these serially because they all touch OUIPath
 
 	t.Run("InitializeMACService", func(t *testing.T) {
 		oldPath := OUIPath
-		OUIPath = t.TempDir() + "/oui.txt"
+		OUIPath = t.TempDir() + "/nested/oui.txt"
 		oldURL := OUIURL
 		oldClient := MacHTTPClient
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,13 +125,14 @@ func TestMACService(t *testing.T) {
 			_, _ = w.Write([]byte("new"))
 		}))
 		OUIURL = ts.URL
+		oldTestMode := TestMode
 		TestMode = false
 
 		defer func() {
 			StopMACService()
 			UpdateInterval = oldInterval
 			OUIURL = oldURL
-			TestMode = true
+			TestMode = oldTestMode
 			ts.Close()
 			OUIPath = oldPath
 		}()
@@ -176,10 +185,9 @@ func TestMACService(t *testing.T) {
 	})
 
 	t.Run("DownloadOUI_RequestError", func(t *testing.T) {
-		oldTransport := MacHTTPClient.Transport
-		defer func() { MacHTTPClient.Transport = oldTransport }()
-
-		MacHTTPClient.Transport = &mockErrorTransport{}
+		oldClient := MacHTTPClient
+		defer func() { MacHTTPClient = oldClient }()
+		MacHTTPClient = &http.Client{Transport: &mockErrorTransport{}}
 
 		err := DownloadOUI()
 		if err == nil {
@@ -254,6 +262,68 @@ func TestMACService(t *testing.T) {
 	})
 }
 
+func TestDownloadOUIDoesNotBlockReaders(t *testing.T) {
+	oldPath := OUIPath
+	path := t.TempDir() + "/oui.txt"
+	OUIPath = path
+	defer func() { OUIPath = oldPath }()
+	if err := os.WriteFile(path, []byte("001122     (base 16)    Existing Vendor\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	body := &blockingResponseBody{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		reader:  bytes.NewReader([]byte("001122     (base 16)    Updated Vendor\n")),
+	}
+	client := &http.Client{Transport: macRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: body}, nil
+	})}
+	downloadDone := make(chan error, 1)
+	go func() {
+		downloadDone <- downloadOUI(context.Background(), client, "https://example.test/oui.txt", path)
+	}()
+	select {
+	case <-body.started:
+	case <-time.After(time.Second):
+		t.Fatal("download did not begin reading its response")
+	}
+
+	type lookupResult struct {
+		vendor string
+		err    error
+	}
+	lookupDone := make(chan lookupResult, 1)
+	go func() {
+		vendor, err := localOUILookup("00:11:22:33:44:55")
+		lookupDone <- lookupResult{vendor: vendor, err: err}
+	}()
+	var result lookupResult
+	readerBlocked := false
+	select {
+	case result = <-lookupDone:
+	case <-time.After(time.Second):
+		readerBlocked = true
+	}
+	close(body.release)
+	if err := <-downloadDone; err != nil {
+		t.Fatalf("downloadOUI failed: %v", err)
+	}
+	if readerBlocked {
+		t.Fatal("local OUI lookup blocked while the update was downloading")
+	}
+	if result.err != nil || result.vendor != "Existing Vendor" {
+		t.Fatalf("lookup during download = %q, %v", result.vendor, result.err)
+	}
+	updated, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(updated, []byte("Updated Vendor")) {
+		t.Fatalf("download did not atomically replace OUI data: %q", updated)
+	}
+}
+
 func TestMACUpdater_StopCancelsInFlightUpdate(t *testing.T) {
 	StopMACService()
 	started := make(chan struct{})
@@ -289,3 +359,28 @@ type mockErrorTransport struct{}
 func (m *mockErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("mock error")
 }
+
+type macRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f macRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+type blockingResponseBody struct {
+	started chan struct{}
+	release chan struct{}
+	reader  *bytes.Reader
+	once    sync.Once
+}
+
+func (b *blockingResponseBody) Read(p []byte) (int, error) {
+	b.once.Do(func() { close(b.started) })
+	<-b.release
+	return b.reader.Read(p)
+}
+
+func (b *blockingResponseBody) Close() error {
+	return nil
+}
+
+var _ io.ReadCloser = (*blockingResponseBody)(nil)

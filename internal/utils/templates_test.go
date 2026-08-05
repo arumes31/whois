@@ -131,10 +131,12 @@ func TestIsTrustedIP(t *testing.T) {
 func TestExtractIP(t *testing.T) {
 	t.Parallel()
 	e := echo.New()
+	e.IPExtractor = echo.ExtractIPDirect()
 
 	t.Run("UnconfiguredCloudflareHeader", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("CF-Connecting-IP", "1.1.1.1")
+		req.Header.Set("X-Forwarded-For", "1.1.1.1")
 		c := e.NewContext(req, nil)
 		cfg := ProxyConfig{UseCloudflare: true}
 		if ip := ExtractIP(c, cfg); ip != "192.0.2.1" {
@@ -146,6 +148,8 @@ func TestExtractIP(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.Header.Set("X-Forwarded-For", "2.2.2.2, 3.3.3.3")
 		_, trustedProxy, _ := net.ParseCIDR("192.0.2.0/24")
+		previousExtractor := e.IPExtractor
+		defer func() { e.IPExtractor = previousExtractor }()
 		e.IPExtractor = echo.ExtractIPFromXFFHeader(echo.TrustIPRange(trustedProxy))
 		c := e.NewContext(req, nil)
 		cfg := ProxyConfig{TrustProxy: true}

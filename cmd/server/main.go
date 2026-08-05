@@ -84,29 +84,15 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 	e.IPExtractor = echo.ExtractIPDirect()
+	trustedNetworks := parseTrustedNetworks(cfg.TrustedProxies)
 	if cfg.TrustProxy {
 		trustOptions := []echo.TrustOption{
 			echo.TrustLoopback(false),
 			echo.TrustLinkLocal(false),
 			echo.TrustPrivateNet(false),
 		}
-		for _, entry := range strings.Split(cfg.TrustedProxies, ",") {
-			entry = strings.TrimSpace(entry)
-			if entry == "" {
-				continue
-			}
-			if !strings.Contains(entry, "/") {
-				if strings.Contains(entry, ":") {
-					entry += "/128"
-				} else {
-					entry += "/32"
-				}
-			}
-			if _, network, err := net.ParseCIDR(entry); err == nil {
-				trustOptions = append(trustOptions, echo.TrustIPRange(network))
-			} else {
-				utils.Log.Warn("ignoring invalid trusted proxy range", utils.Field("range", entry))
-			}
+		for _, network := range trustedNetworks {
+			trustOptions = append(trustOptions, echo.TrustIPRange(network))
 		}
 		e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOptions...)
 	}
@@ -114,7 +100,7 @@ func NewServer(cfg *config.Config) *echo.Echo {
 		baseExtractor := e.IPExtractor
 		e.IPExtractor = func(request *http.Request) string {
 			directIP := echo.ExtractIPDirect()(request)
-			if utils.IsTrustedIP(directIP, cfg.TrustedProxies) {
+			if ipInNetworks(directIP, trustedNetworks) {
 				if cloudflareIP := net.ParseIP(strings.TrimSpace(request.Header.Get("CF-Connecting-IP"))); cloudflareIP != nil {
 					return cloudflareIP.String()
 				}
@@ -261,4 +247,40 @@ func NewServer(cfg *config.Config) *echo.Echo {
 	g.GET("/logout", h.Logout)
 
 	return e
+}
+
+func parseTrustedNetworks(entries string) []*net.IPNet {
+	networks := make([]*net.IPNet, 0)
+	for _, entry := range strings.Split(entries, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if !strings.Contains(entry, "/") {
+			if strings.Contains(entry, ":") {
+				entry += "/128"
+			} else {
+				entry += "/32"
+			}
+		}
+		if _, network, err := net.ParseCIDR(entry); err == nil {
+			networks = append(networks, network)
+		} else {
+			utils.Log.Warn("ignoring invalid trusted proxy range", utils.Field("range", entry))
+		}
+	}
+	return networks
+}
+
+func ipInNetworks(rawIP string, networks []*net.IPNet) bool {
+	ip := net.ParseIP(strings.TrimSpace(rawIP))
+	if ip == nil {
+		return false
+	}
+	for _, network := range networks {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
 }

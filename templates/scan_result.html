@@ -20,14 +20,14 @@
         <div class="list-group list-group-flush">
           {{ range $port, $banner := .result.Open }}
             <button type="button" class="list-group-item bg-transparent text-main border-secondary p-2 clickable-record text-start" onclick="copyToClipboard(this)" aria-label="Copy details for open port {{ $port }}">
-              <div class="d-flex align-items-center gap-3">
+              <span class="d-flex align-items-center gap-3">
                   <span class="badge bg-success-dim text-success" style="width: 60px;">{{ $port }}</span>
                   {{ if $banner }}
-                    <pre class="mb-0 text-info font-monospace" style="font-size: 0.7rem; white-space: pre-wrap;"><code>{{ $banner }}</code></pre>
+                    <span class="mb-0 text-info font-monospace" style="font-size: 0.7rem; white-space: pre-wrap;"><code>{{ $banner }}</code></span>
                   {{ else }}
                     <span class="text-white small italic">Open (No banner)</span>
                   {{ end }}
-              </div>
+              </span>
             </button>
           {{ end }}
         </div>

@@ -348,8 +348,9 @@ func TestV2Integration(t *testing.T) {
 			allowPrivateIPs := utils.GetAllowPrivateIPs()
 			utils.SetAllowPrivateIPs(true)
 			defer utils.SetAllowPrivateIPs(allowPrivateIPs)
+			allowLoopbackIPs := utils.GetAllowLoopbackIPs()
 			utils.SetAllowLoopbackIPs(true)
-			defer utils.SetAllowLoopbackIPs(false)
+			defer utils.SetAllowLoopbackIPs(allowLoopbackIPs)
 
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(http.StatusNoContent)

@@ -460,19 +460,20 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no dns resolvers configured")
 	}
-	var errors []string
+	var resolverErrors []string
 	for _, resolver := range candidates {
 		result, err := s.queryResolver(ctx, resolver, target, qtype, isReverse)
-		s.recordResolverResult(resolver, err)
 		if err == nil {
+			s.recordResolverResult(resolver, nil)
 			return result, nil
 		}
-		errors = append(errors, resolver+": "+err.Error())
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
+		s.recordResolverResult(resolver, err)
+		resolverErrors = append(resolverErrors, resolver+": "+err.Error())
 	}
-	return nil, fmt.Errorf("all resolvers failed: %s", strings.Join(errors, "; "))
+	return nil, fmt.Errorf("all resolvers failed: %s", strings.Join(resolverErrors, "; "))
 }
 
 func (s *DNSService) queryResolver(ctx context.Context, resolver, target string, qtype uint16, isReverse bool) ([]string, error) {

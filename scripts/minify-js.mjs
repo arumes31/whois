@@ -13,7 +13,7 @@ const domPurifyTarget = resolve(staticTarget, "vendor/purify.min.js");
 await mkdir(dirname(domPurifyTarget), { recursive: true });
 await copyFile(domPurifySource, domPurifyTarget);
 
-async function findJavaScriptFiles(directory) {
+async function findFiles(directory, suffix) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = [];
 
@@ -21,8 +21,8 @@ async function findJavaScriptFiles(directory) {
     const path = resolve(directory, entry.name);
 
     if (entry.isDirectory()) {
-      files.push(...(await findJavaScriptFiles(path)));
-    } else if (entry.isFile() && entry.name.endsWith(".js")) {
+      files.push(...(await findFiles(path, suffix)));
+    } else if (entry.isFile() && entry.name.endsWith(suffix)) {
       files.push(path);
     }
   }
@@ -57,23 +57,6 @@ async function minifyJavaScript(source, file) {
   }
 
   return result.code;
-}
-
-async function findTemplateFiles(directory) {
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = [];
-
-  for (const entry of entries) {
-    const path = resolve(directory, entry.name);
-
-    if (entry.isDirectory()) {
-      files.push(...(await findTemplateFiles(path)));
-    } else if (entry.isFile() && entry.name.endsWith(".html")) {
-      files.push(path);
-    }
-  }
-
-  return files;
 }
 
 async function minifyInlineScripts(file) {
@@ -120,8 +103,8 @@ async function minifyInlineScripts(file) {
   return { before: Buffer.byteLength(source), after: Buffer.byteLength(output), count };
 }
 
-const files = (await findJavaScriptFiles(staticTarget)).sort();
-const templates = (await findTemplateFiles(templateTarget)).sort();
+const files = (await findFiles(staticTarget, ".js")).sort();
+const templates = (await findFiles(templateTarget, ".html")).sort();
 
 if (files.length === 0 && templates.length === 0) {
   throw new Error("No JavaScript assets or HTML templates were found");
@@ -159,7 +142,7 @@ for (const file of templates) {
 }
 
 const saved = totalBefore - totalAfter;
-const reduction = ((saved / totalBefore) * 100).toFixed(1);
+const reduction = totalBefore > 0 ? ((saved / totalBefore) * 100).toFixed(1) : "0.0";
 
 console.log(
   `Minified ${files.length} JavaScript files and ${inlineScriptCount} first-party inline scripts: ${formatBytes(totalBefore)} -> ${formatBytes(totalAfter)} (${reduction}% smaller)`,

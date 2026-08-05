@@ -257,6 +257,9 @@ func (h *Handler) Index(c echo.Context) error {
 		geoEnabled := c.FormValue("geo") != "" && h.AppConfig.EnableGeo
 
 		items := strings.FieldsFunc(ipsDomains, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' })
+		if len(items) > maxQueryTargets {
+			return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "too many targets; maximum is 25")
+		}
 		var cleanedItems []string
 		seenItems := make(map[string]struct{})
 		for _, item := range items {
@@ -543,7 +546,9 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	}
 
 	wg.Wait()
-	_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
+	if ctx.Err() == nil {
+		_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
+	}
 	return res
 }
 

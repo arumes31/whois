@@ -4,16 +4,18 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+	"whois/internal/utils"
 )
 
 var (
-	macMu          sync.RWMutex
 	macFileMu      sync.RWMutex
 	macUpdaterMu   sync.Mutex
 	macUpdaterStop context.CancelFunc
@@ -30,20 +32,17 @@ const maxOUIDownloadBytes = 32 * 1024 * 1024
 func InitializeMACService() {
 	StopMACService()
 
-	macMu.RLock()
 	path := OUIPath
 	ouiURL := OUIURL
 	client := MacHTTPClient
 	testMode := TestMode
 	updateInterval := UpdateInterval
-	macMu.RUnlock()
-
-	// Ensure data directory exists
-	_ = os.MkdirAll("data", 0750)
 
 	// Initial download if missing
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		_ = downloadOUI(context.Background(), client, ouiURL, path)
+		if err := downloadOUI(context.Background(), client, ouiURL, path); err != nil {
+			utils.Log.Error("failed to download OUI database", utils.Field("error", err.Error()))
+		}
 	}
 
 	if testMode {
@@ -51,8 +50,13 @@ func InitializeMACService() {
 	}
 
 	startMACUpdater(updateInterval, func(ctx context.Context) {
+		if ctx.Err() != nil {
+			return
+		}
 		if stat, err := os.Stat(path); err == nil && time.Since(stat.ModTime()) > 72*time.Hour {
-			_ = downloadOUI(ctx, client, ouiURL, path)
+			if err := downloadOUI(ctx, client, ouiURL, path); err != nil && ctx.Err() == nil {
+				utils.Log.Error("failed to update OUI database", utils.Field("error", err.Error()))
+			}
 		}
 	})
 }
@@ -113,18 +117,13 @@ func stopMACUpdaterLocked() {
 }
 
 func DownloadOUI() error {
-	macMu.RLock()
 	client := MacHTTPClient
 	ouiURL := OUIURL
 	path := OUIPath
-	macMu.RUnlock()
 	return downloadOUI(context.Background(), client, ouiURL, path)
 }
 
 func downloadOUI(ctx context.Context, client *http.Client, ouiURL, path string) error {
-	macFileMu.Lock()
-	defer macFileMu.Unlock()
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, ouiURL, nil)
 	if err != nil {
 		return err
@@ -139,7 +138,47 @@ func downloadOUI(ctx context.Context, client *http.Client, ouiURL, path string) 
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	return writeFileAtomically(path, resp.Body, maxOUIDownloadBytes)
+	stagedPath, err := stageOUIDownload(path, resp.Body)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(stagedPath) }()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	macFileMu.Lock()
+	defer macFileMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := os.Rename(stagedPath, path); err != nil {
+		return fmt.Errorf("replace %s: %w", filepath.Base(path), err)
+	}
+	return nil
+}
+
+func stageOUIDownload(path string, source io.Reader) (string, error) {
+	directory := filepath.Dir(path)
+	if err := os.MkdirAll(directory, 0o750); err != nil {
+		return "", err
+	}
+	placeholder, err := os.CreateTemp(directory, ".oui-stage-*")
+	if err != nil {
+		return "", err
+	}
+	stagedPath := placeholder.Name()
+	if err := placeholder.Close(); err != nil {
+		_ = os.Remove(stagedPath)
+		return "", err
+	}
+	if err := os.Remove(stagedPath); err != nil {
+		return "", err
+	}
+	if err := writeFileAtomically(stagedPath, source, maxOUIDownloadBytes); err != nil {
+		return "", err
+	}
+	return stagedPath, nil
 }
 
 func LookupMacVendor(ctx context.Context, mac string) (string, error) {
@@ -151,9 +190,7 @@ func LookupMacVendor(ctx context.Context, mac string) (string, error) {
 		return "", err
 	}
 
-	macMu.RLock()
 	path := OUIPath
-	macMu.RUnlock()
 
 	vendor, err := localOUILookupAt(hardwareAddr, path)
 	if err != nil {
@@ -170,9 +207,7 @@ func localOUILookup(mac string) (string, error) {
 	if err != nil || len(hardwareAddr) < 3 {
 		return "", fmt.Errorf("invalid mac address format")
 	}
-	macMu.RLock()
 	path := OUIPath
-	macMu.RUnlock()
 	return localOUILookupAt(hardwareAddr, path)
 }
 

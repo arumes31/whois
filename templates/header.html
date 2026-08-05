@@ -94,9 +94,9 @@
             const banner = document.getElementById('copyBanner');
             if (!banner) return;
             const label = banner.querySelector('span');
-            if (label) label.textContent = message;
             banner.setAttribute('aria-hidden', 'false');
             banner.classList.add('show');
+            if (label) label.textContent = message;
             window.clearTimeout(window.copyBannerTimer);
             window.copyBannerTimer = window.setTimeout(() => {
                 banner.classList.remove('show');

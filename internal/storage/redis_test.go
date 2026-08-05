@@ -29,6 +29,16 @@ func setupMiniredis(t *testing.T) *Storage {
 	return &Storage{Client: client}
 }
 
+type failingSAddClient struct {
+	RedisClient
+}
+
+func (c *failingSAddClient) SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
+	cmd := redis.NewIntCmd(ctx)
+	cmd.SetErr(context.Canceled)
+	return cmd
+}
+
 func TestStorage_Basic(t *testing.T) {
 	s := setupMiniredis(t)
 	ctx := context.Background()
@@ -163,6 +173,46 @@ func TestStorage_DNSHistory(t *testing.T) {
 	}
 }
 
+func TestStorage_DNSHistoryPersistsWhenTrackingFails(t *testing.T) {
+	s := setupMiniredis(t)
+	s.Client = &failingSAddClient{RedisClient: s.Client}
+	ctx := context.Background()
+
+	if err := s.AddDNSHistory(ctx, "example.com", map[string]string{"A": "192.0.2.1"}); err != nil {
+		t.Fatalf("AddDNSHistory failed because tracking failed: %v", err)
+	}
+	history, err := s.GetDNSHistory(ctx, "example.com")
+	if err != nil {
+		t.Fatalf("GetDNSHistory failed: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("history entries = %d, want 1", len(history))
+	}
+}
+
+func TestStorage_DNSHistoryUnchangedEntryRepairsTracking(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	result := map[string]string{"A": "192.0.2.1"}
+	if err := s.AddDNSHistory(ctx, "example.com", result); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Client.Del(ctx, dnsHistoryTargetsKey).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.AddDNSHistory(ctx, "example.com", result); err != nil {
+		t.Fatal(err)
+	}
+	count, err := s.Client.SCard(ctx, dnsHistoryTargetsKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("tracked targets = %d, want 1", count)
+	}
+}
+
 func TestStorage_GetDNSHistory_UnmarshalError(t *testing.T) {
 	s := setupMiniredis(t)
 	ctx := context.Background()
@@ -255,6 +305,29 @@ func TestStorage_Stats(t *testing.T) {
 	}
 	if stats.HistoryCount != 2 {
 		t.Errorf("Expected 2 history keys, got %d", stats.HistoryCount)
+	}
+}
+
+func TestStorage_StatsBackfillsLegacyHistoryKeys(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	if err := s.Client.LPush(ctx, "dns_history:legacy.example", "legacy").Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := s.GetSystemStats(ctx)
+	if err != nil {
+		t.Fatalf("GetSystemStats failed: %v", err)
+	}
+	if stats.HistoryCount != 1 {
+		t.Fatalf("HistoryCount = %d, want 1", stats.HistoryCount)
+	}
+	tracked, err := s.Client.SCard(ctx, dnsHistoryTargetsKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracked != 1 {
+		t.Fatalf("backfilled targets = %d, want 1", tracked)
 	}
 }
 

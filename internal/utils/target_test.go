@@ -1,10 +1,29 @@
 package utils
 
 import (
+	"context"
+	"net/netip"
+	"strings"
 	"testing"
+	"time"
 
 	"whois/internal/model"
 )
+
+type fakeTargetResolver struct {
+	addresses    []netip.Addr
+	reverseCalls int
+	lookupAddr   func(context.Context, string) ([]string, error)
+}
+
+func (r *fakeTargetResolver) LookupNetIP(context.Context, string, string) ([]netip.Addr, error) {
+	return r.addresses, nil
+}
+
+func (r *fakeTargetResolver) LookupAddr(ctx context.Context, address string) ([]string, error) {
+	r.reverseCalls++
+	return r.lookupAddr(ctx, address)
+}
 
 func TestNormalizeTarget(t *testing.T) {
 	t.Parallel()
@@ -56,4 +75,75 @@ func TestNormalizeTargetClassifiesSpecialAddresses(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEnrichTargetBoundsReverseDNSLookups(t *testing.T) {
+	addresses := make([]netip.Addr, 12)
+	for i := range addresses {
+		addresses[i] = netip.AddrFrom4([4]byte{203, 0, 113, byte(i + 1)})
+	}
+	resolver := &fakeTargetResolver{
+		addresses: addresses,
+		lookupAddr: func(context.Context, string) ([]string, error) {
+			return []string{"one.example.", "two.example."}, nil
+		},
+	}
+
+	got := enrichTarget(context.Background(), "example.test", resolver, time.Second)
+	if len(got.IPs) != len(addresses) {
+		t.Fatalf("resolved address count = %d, want %d", len(got.IPs), len(addresses))
+	}
+	if resolver.reverseCalls != maxReverseDNSLookups {
+		t.Fatalf("reverse lookup calls = %d, want %d", resolver.reverseCalls, maxReverseDNSLookups)
+	}
+	if len(got.IPs[maxReverseDNSLookups-1].ReverseDNS) != 2 || len(got.IPs[maxReverseDNSLookups].ReverseDNS) != 0 {
+		t.Fatalf("reverse DNS limit was not applied: %#v", got.IPs)
+	}
+	if !warningsContain(got.Warnings, "limited to the first 8 addresses") {
+		t.Fatalf("missing reverse lookup limit warning: %v", got.Warnings)
+	}
+}
+
+func TestEnrichTargetReverseDNSTimeout(t *testing.T) {
+	resolver := &fakeTargetResolver{
+		lookupAddr: func(ctx context.Context, address string) ([]string, error) {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	started := time.Now()
+	got := enrichTarget(context.Background(), "203.0.113.1", resolver, 10*time.Millisecond)
+	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+		t.Fatalf("reverse lookup ignored timeout and took %s", elapsed)
+	}
+	if resolver.reverseCalls != 1 {
+		t.Fatalf("reverse lookup calls = %d, want 1", resolver.reverseCalls)
+	}
+	if !warningsContain(got.Warnings, context.DeadlineExceeded.Error()) {
+		t.Fatalf("missing timeout warning: %v", got.Warnings)
+	}
+}
+
+func TestEnrichTargetHonorsCanceledContext(t *testing.T) {
+	resolver := &fakeTargetResolver{
+		lookupAddr: func(context.Context, string) ([]string, error) {
+			t.Fatal("reverse lookup called after cancellation")
+			return nil, nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	got := enrichTarget(ctx, "203.0.113.1", resolver, time.Second)
+	if !warningsContain(got.Warnings, context.Canceled.Error()) {
+		t.Fatalf("missing cancellation warning: %v", got.Warnings)
+	}
+}
+
+func warningsContain(warnings []string, fragment string) bool {
+	for _, warning := range warnings {
+		if strings.Contains(warning, fragment) {
+			return true
+		}
+	}
+	return false
 }

@@ -35,7 +35,7 @@ import (
 func init() {
 	utils.TestInitLogger()
 	// Mock expensive services globally for handler tests
-	service.WhoisFunc = func(target string, query ...string) (string, error) {
+	service.WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 		return "Domain Name: " + target + "\nRegistrar: MockReg", nil
 	}
 	service.GeoAPIURL = "http://localhost:1/"
@@ -69,6 +69,16 @@ func setupMiniredisStorage(t *testing.T) *storage.Storage {
 	return &storage.Storage{Client: client}
 }
 
+type setTrackingRedisClient struct {
+	storage.RedisClient
+	setCalls int
+}
+
+func (c *setTrackingRedisClient) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+	c.setCalls++
+	return c.RedisClient.Set(ctx, key, value, expiration)
+}
+
 func TestIndexRejectsExcessiveTargetsBeforeLaunchingWork(t *testing.T) {
 	e, _ := setupTestEcho()
 	store := setupMiniredisStorage(t)
@@ -84,6 +94,39 @@ func TestIndexRejectsExcessiveTargetsBeforeLaunchingWork(t *testing.T) {
 	httpError, ok := err.(*echo.HTTPError)
 	if !ok || httpError.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("Index error = %v, want HTTP 413", err)
+	}
+}
+
+func TestIndexRejectsExcessiveRawTargetsBeforeNormalization(t *testing.T) {
+	e, _ := setupTestEcho()
+	store := setupMiniredisStorage(t)
+	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 2, MaxServiceConcurrency: 2})
+	targets := make([]string, maxQueryTargets+1)
+	for i := range targets {
+		targets[i] = fmt.Sprintf("invalid-%d", i)
+	}
+	form := url.Values{"ips_and_domains": []string{strings.Join(targets, ",")}}
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(form.Encode()))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+	err := h.Index(e.NewContext(req, httptest.NewRecorder()))
+	httpError, ok := err.(*echo.HTTPError)
+	if !ok || httpError.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("Index error = %v, want HTTP 413", err)
+	}
+}
+
+func TestQueryItemDoesNotCacheCanceledResult(t *testing.T) {
+	store := setupMiniredisStorage(t)
+	client := &setTrackingRedisClient{RedisClient: store.Client}
+	store.Client = client
+	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	h.queryItem(ctx, "192.0.2.1", false, false, false, false, false, false)
+
+	if client.setCalls != 0 {
+		t.Fatalf("cache Set calls = %d, want 0 for canceled query", client.setCalls)
 	}
 }
 

@@ -53,6 +53,10 @@ func SetAllowLoopbackIPs(v bool) {
 	}
 }
 
+func GetAllowLoopbackIPs() bool {
+	return atomic.LoadInt32(&allowLoopbackIPs) == 1
+}
+
 func SetAllowLinkLocalIPs(v bool) {
 	if v {
 		atomic.StoreInt32(&allowLinkLocalIPs, 1)

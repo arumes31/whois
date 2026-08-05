@@ -165,7 +165,7 @@
                             <input type="text" id="cfg-ports" class="form-control matrix-input py-1"
                                 value="common" list="port-presets" aria-describedby="portsHelp"
                                 placeholder="common, web, 8000-8010" autocomplete="off" spellcheck="false">
-                            <datalist id="port-presets"><option value="common"><option value="web"><option value="mail"><option value="database"><option value="remote"></datalist>
+                            <datalist id="port-presets"><option value="common"></option><option value="web"></option><option value="mail"></option><option value="database"></option><option value="remote"></option></datalist>
                         </div>
                     </div>
                     <div id="portsHelp" class="field-help mt-2" hidden>Presets: common, web, mail, database, remote. Ranges such as 8000-8010 are supported.</div>
@@ -615,6 +615,11 @@
         clearHeartbeat();
         if (reconnectTimer) window.clearTimeout(reconnectTimer);
         if (socket && socket.readyState === WebSocket.OPEN) socket.close(1000, 'Page unloading');
+    });
+
+    window.addEventListener('pageshow', event => {
+        pageUnloading = false;
+        if (event.persisted) scheduleWSReconnect(0);
     });
 
     const targetColors = new Map();
@@ -1096,7 +1101,7 @@
                     const tlsFlags = [
                         data.self_signed ? '<span class="badge bg-danger-dim text-danger">Self-signed</span>' : '',
                         data.expired ? '<span class="badge bg-danger-dim text-danger">Expired</span>' : '',
-                        data.expiring_soon ? '<span class="badge bg-warning text-warning">Expiring soon</span>' : '',
+                        data.expiring_soon ? '<span class="badge bg-warning-dim text-warning">Expiring soon</span>' : '',
                         data.verified ? '<span class="badge bg-success-dim text-success">Trusted chain</span>' : '<span class="badge bg-danger-dim text-danger">Untrusted chain</span>',
                         data.hostname_valid ? '<span class="badge bg-success-dim text-success">Hostname valid</span>' : '<span class="badge bg-danger-dim text-danger">Hostname mismatch</span>'
                     ].filter(Boolean).join(' ');
@@ -1134,7 +1139,7 @@
                     const cookieRows = (data.cookies || []).map(cookie => `<li><strong>${escapeHTML(cookie.name)}</strong> · ${cookie.secure ? 'Secure' : 'not Secure'} · ${cookie.http_only ? 'HttpOnly' : 'script-readable'} · SameSite ${escapeHTML(cookie.same_site)}</li>`).join('');
                     const securityCheckRows = (data.security_checks || []).map(check => {
                         const passed = check.status === 'pass';
-                        const tone = passed ? 'bg-success-dim text-success' : (check.status === 'warning' ? 'bg-warning text-warning' : 'bg-danger-dim text-danger');
+                        const tone = passed ? 'bg-success-dim text-success' : (check.status === 'warning' ? 'bg-warning-dim text-warning' : 'bg-danger-dim text-danger');
                         return `<li><div class="d-flex justify-content-between gap-2"><strong>${escapeHTML(check.name)}</strong><span class="badge ${tone}">${escapeHTML(check.status)}</span></div>${check.value ? `<code class="d-block mt-1">${escapeHTML(check.value)}</code>` : ''}${check.guidance ? `<div class="field-help">${escapeHTML(check.guidance)}</div>` : ''}</li>`;
                     }).join('');
                     const httpFailed = Number(data.score) < 60;
@@ -1143,7 +1148,7 @@
                     html = `<details><summary><span class="status-indicator" data-status="${httpFailed ? 'error' : 'success'}">${httpFailed ? statusIcons.error : statusIcons.success}</span>HTTP INSPECTOR <span class="badge result-grade ${httpTone} ms-1">Grade ${escapeHTML(data.grade)} · ${escapeHTML(data.score)}/100</span></summary>
                         <div class="p-2 small">
                             <div class="d-flex justify-content-between mb-2 align-items-center clickable-record" onclick="copyToClipboard(this)">
-                                <strong>Status:</strong> <span class="badge ${data.status.startsWith('2') ? 'bg-success' : 'bg-warning'}">${escapeHTML(data.status)}</span>
+                                <strong>Status:</strong> <span class="badge ${String(data.status || '').startsWith('2') ? 'bg-success' : 'bg-warning'}">${escapeHTML(data.status || 'Unknown')}</span>
                                 <span class="badge bg-dark border border-secondary text-info">${escapeHTML(data.response_time_ms)}ms</span>
                             </div>
                             <div class="result-metrics mb-2"><span><strong>Protocol</strong>${escapeHTML(data.protocol)}</span><span><strong>Remote IP</strong>${escapeHTML(data.ip) || 'Unknown'}</span><span><strong>Compression</strong>${escapeHTML(data.compression) || 'None'}</span></div>
@@ -1258,7 +1263,7 @@
         section.querySelectorAll('.clickable-record:not(button)').forEach(record => {
             record.setAttribute('role', 'button');
             record.setAttribute('tabindex', '0');
-            record.setAttribute('aria-label', 'Copy value');
+            record.setAttribute('title', 'Copy value');
             record.addEventListener('click', () => copyToClipboard(record));
             record.addEventListener('keydown', event => {
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -1308,13 +1313,17 @@
             return;
         }
 
+        const csvCell = value => {
+            let text = String(value ?? '');
+            if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+            return `"${text.replace(/"/g, '""')}"`;
+        };
         let csv = "Target,Service,Data\n";
         cards.forEach(card => {
             const target = card.getAttribute('data-target');
             const services = diagnosticResults.get(target) || {};
             Object.entries(services).forEach(([service, result]) => {
-                const data = JSON.stringify(result).replace(/"/g, '""');
-                csv += `"${target.replace(/"/g, '""')}","${service}","${data}"\n`;
+                csv += `${csvCell(target)},${csvCell(service)},${csvCell(JSON.stringify(result))}\n`;
             });
         });
 
@@ -1324,7 +1333,7 @@
         a.setAttribute('href', url);
         a.setAttribute('download', `scan_results_${new Date().getTime()}.csv`);
         a.click();
-        window.URL.revokeObjectURL(url);
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
         announce('CSV export downloaded.');
     }
 
@@ -1340,7 +1349,7 @@
         a.setAttribute('href', url);
         a.setAttribute('download', `scan_results_${new Date().getTime()}.json`);
         a.click();
-        window.URL.revokeObjectURL(url);
+        window.setTimeout(() => window.URL.revokeObjectURL(url), 0);
         announce('JSON export downloaded.');
     }
 
@@ -1437,12 +1446,8 @@
         });
 
         console.log('Copying full report for:', target);
-        const banner = document.getElementById('copyBanner');
         const onSuccess = () => {
-            if (banner) {
-                banner.classList.add('show');
-                setTimeout(() => banner.classList.remove('show'), 2000);
-            }
+            showCopyNotification('Report copied');
             const originalFill = btn.style.fill;
             btn.style.fill = "#4caf50";
             setTimeout(() => btn.style.fill = originalFill, 2000);
@@ -1516,7 +1521,7 @@
             startQuery();
         }
         // '/' to focus search
-        if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+        if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName) && !document.activeElement.isContentEditable) {
             e.preventDefault();
             document.getElementById('targetInput').focus();
         }

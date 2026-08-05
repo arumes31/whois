@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -115,6 +116,9 @@ func InitializeGeoDB(licenseKey, accountID string) {
 	startGeoDBUpdater(updateInterval, func(ctx context.Context) {
 		geoUpdateMu.Lock()
 		defer geoUpdateMu.Unlock()
+		if ctx.Err() != nil {
+			return
+		}
 
 		if updateURL == "" {
 			return
@@ -280,12 +284,21 @@ func downloadGeoDB(ctx context.Context, url, path string, client *http.Client, a
 	}
 
 	// MaxMind often provides .tar.gz
-	if strings.HasSuffix(url, ".tar.gz") {
+	if isTarGzDownload(url) {
 		return extractTarGzTo(resp.Body, path)
 	}
 
 	// Preserve the live database if the update is interrupted or oversized.
 	return writeFileAtomically(path, resp.Body, maxGeoDBDownloadBytes)
+}
+
+func isTarGzDownload(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(parsed.Path), ".tar.gz") ||
+		strings.EqualFold(parsed.Query().Get("suffix"), "tar.gz")
 }
 
 func extractTarGz(r io.Reader) error {

@@ -1,11 +1,17 @@
 package service
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"net"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 	"whois/internal/utils"
+
+	"github.com/likexian/whois"
 )
 
 func init() {
@@ -21,7 +27,7 @@ func TestWhois(t *testing.T) {
 	}()
 	WhoisServerValidator = func(context.Context, string) error { return nil }
 
-	WhoisFunc = func(target string, query ...string) (string, error) {
+	WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 		if target == "" {
 			return "", fmt.Errorf("empty target")
 		}
@@ -102,7 +108,7 @@ func TestWhois_Mocked(t *testing.T) {
 	WhoisServerValidator = func(context.Context, string) error { return nil }
 
 	t.Run("Error Response Fallback", func(t *testing.T) {
-		WhoisFunc = func(target string, query ...string) (string, error) {
+		WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 			if len(query) == 0 {
 				return "TLD is not supported", nil
 			}
@@ -116,7 +122,7 @@ func TestWhois_Mocked(t *testing.T) {
 	})
 
 	t.Run("IANA Referral", func(t *testing.T) {
-		WhoisFunc = func(target string, query ...string) (string, error) {
+		WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 			if len(query) == 0 {
 				return "No whois server found", nil
 			}
@@ -136,7 +142,7 @@ func TestWhois_Mocked(t *testing.T) {
 	})
 
 	t.Run("Registrar Referral", func(t *testing.T) {
-		WhoisFunc = func(target string, query ...string) (string, error) {
+		WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 			if len(query) == 0 {
 				return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\nRegistrar WHOIS Server: whois.reg.test\nDomain Name: test.com", nil
 			}
@@ -153,7 +159,7 @@ func TestWhois_Mocked(t *testing.T) {
 	})
 
 	t.Run("Filtering and Empty Lines", func(t *testing.T) {
-		WhoisFunc = func(target string, query ...string) (string, error) {
+		WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 			return strings.Repeat("Long response prefix to bypass length check... ", 10) + "\n%\n#\n\nLine 1\n\nLine 2\n", nil
 		}
 		res := Whois(context.Background(), "test.com")
@@ -170,7 +176,7 @@ func TestWhois_Mocked(t *testing.T) {
 		oldRdap := RdapLookupFunc
 		defer func() { RdapLookupFunc = oldRdap }()
 
-		WhoisFunc = func(target string, query ...string) (string, error) {
+		WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 			if len(query) == 0 {
 				return "No whois server found", nil
 			}
@@ -194,7 +200,7 @@ func TestWhois_Mocked(t *testing.T) {
 		oldRdap := RdapLookupFunc
 		defer func() { RdapLookupFunc = oldRdap }()
 
-		WhoisFunc = func(target string, query ...string) (string, error) {
+		WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 			if len(query) == 0 {
 				return "No whois server found", nil
 			}
@@ -222,6 +228,88 @@ func TestValidateWhoisServerRejectsPrivateAddress(t *testing.T) {
 	for _, server := range []string{"127.0.0.1", "[::1]:43", "http://127.0.0.1:43"} {
 		if err := validateWhoisServer(context.Background(), server); err == nil {
 			t.Errorf("validateWhoisServer(%q) accepted a private referral", server)
+		}
+	}
+}
+
+func TestWhoisPinnedDialerPinsInitialAndReferralAddresses(t *testing.T) {
+	resolvedHosts := make([]string, 0, 2)
+	var resolvedMu sync.Mutex
+	resolver := func(_ context.Context, host string) ([]net.IPAddr, error) {
+		resolvedMu.Lock()
+		resolvedHosts = append(resolvedHosts, host)
+		resolvedMu.Unlock()
+		switch host {
+		case "registry.example":
+			return []net.IPAddr{{IP: net.ParseIP("192.0.2.10")}}, nil
+		case "referral.example":
+			return []net.IPAddr{{IP: net.ParseIP("192.0.2.20")}}, nil
+		default:
+			return nil, fmt.Errorf("unexpected WHOIS host %q", host)
+		}
+	}
+
+	serverErrors := make(chan error, 2)
+	dialer := func(_ context.Context, network string, addresses []net.IPAddr, port string, _ time.Duration) (net.Conn, string, error) {
+		if network != "tcp" || port != "43" || len(addresses) != 1 {
+			return nil, "", fmt.Errorf("unexpected pinned dial: network=%s port=%s addresses=%v", network, port, addresses)
+		}
+		ip := addresses[0].IP.String()
+		client, server := net.Pipe()
+		go func() {
+			defer func() { _ = server.Close() }()
+			query, err := bufio.NewReader(server).ReadString('\n')
+			if err != nil {
+				serverErrors <- fmt.Errorf("read WHOIS query: %w", err)
+				return
+			}
+			if strings.TrimSpace(query) != "example.com" {
+				serverErrors <- fmt.Errorf("WHOIS query = %q", query)
+				return
+			}
+			var response string
+			switch ip {
+			case "192.0.2.10":
+				response = "Domain Name: EXAMPLE.COM\nRegistrar WHOIS Server: referral.example\n"
+			case "192.0.2.20":
+				response = "Domain Name: EXAMPLE.COM\nRegistrar: Pinned Registrar\n"
+			default:
+				serverErrors <- fmt.Errorf("dial used unexpected IP %q", ip)
+				return
+			}
+			if _, err := server.Write([]byte(response)); err != nil {
+				serverErrors <- fmt.Errorf("write WHOIS response: %w", err)
+				return
+			}
+			serverErrors <- nil
+		}()
+		return client, ip, nil
+	}
+
+	pinned := &whoisPinnedDialer{
+		ctx: context.Background(), timeout: time.Second, resolve: resolver, dial: dialer,
+	}
+	result, err := whois.NewClient().SetDialer(pinned).SetTimeout(time.Second).SetDisableStats(true).Whois("example.com", "registry.example")
+	if err != nil {
+		t.Fatalf("WHOIS lookup failed: %v", err)
+	}
+	if !strings.Contains(result, "Pinned Registrar") {
+		t.Fatalf("WHOIS did not follow the pinned referral: %q", result)
+	}
+	for range 2 {
+		if err := <-serverErrors; err != nil {
+			t.Fatal(err)
+		}
+	}
+	resolvedMu.Lock()
+	defer resolvedMu.Unlock()
+	wantHosts := []string{"registry.example", "referral.example"}
+	if len(resolvedHosts) != len(wantHosts) {
+		t.Fatalf("resolved hosts = %v; want %v", resolvedHosts, wantHosts)
+	}
+	for i := range wantHosts {
+		if resolvedHosts[i] != wantHosts[i] {
+			t.Fatalf("resolved hosts = %v; want %v", resolvedHosts, wantHosts)
 		}
 	}
 }

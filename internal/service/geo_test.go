@@ -75,18 +75,25 @@ func TestGetGeoInfo(t *testing.T) {
 
 func TestInitializeGeoDB(t *testing.T) {
 	StopGeoDBUpdater()
+	geoMu.Lock()
 	oldClient := GeoHTTPClient
-	defer func() { GeoHTTPClient = oldClient }()
+	oldTestMode := GeoTestMode
+	oldPath := geoPath
 	GeoHTTPClient = &http.Client{
 		Transport: &mockGeoTransport{},
 	}
-
 	GeoTestMode = true
-	oldPath := geoPath
 	geoPath = "test_init_geo.mmdb"
+	geoMu.Unlock()
 	defer func() {
+		StopGeoDBUpdater()
+		geoMu.Lock()
+		GeoHTTPClient = oldClient
+		GeoTestMode = oldTestMode
 		geoPath = oldPath
+		geoMu.Unlock()
 		_ = os.Remove("test_init_geo.mmdb")
+		ReloadGeoDB()
 	}()
 
 	// Test with no keys (public mirror fallback)
@@ -115,26 +122,33 @@ func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 func TestInitializeGeoDB_Background(t *testing.T) {
 	StopGeoDBUpdater()
-	oldPath := geoPath
-	geoPath = t.TempDir() + "/GeoLite2-City.mmdb"
-	GeoTestMode = false
-	oldInterval := GeoUpdateInterval
-	GeoUpdateInterval = 10 * time.Millisecond
-	oldClient := GeoHTTPClient
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
 	updated := make(chan struct{}, 1)
+	geoMu.Lock()
+	oldPath := geoPath
+	oldTestMode := GeoTestMode
+	oldInterval := GeoUpdateInterval
+	oldClient := GeoHTTPClient
+	geoPath = path
+	GeoTestMode = false
+	GeoUpdateInterval = 10 * time.Millisecond
 	GeoHTTPClient = &http.Client{Transport: &mockGeoTransport{called: updated}}
+	geoMu.Unlock()
 
 	// Set mod time to > 72h ago
-	_ = os.WriteFile(geoPath, []byte("old"), 0644)
+	_ = os.WriteFile(path, []byte("old"), 0644)
 	oldTime := time.Now().Add(-100 * time.Hour)
-	_ = os.Chtimes(geoPath, oldTime, oldTime)
+	_ = os.Chtimes(path, oldTime, oldTime)
 
 	defer func() {
 		StopGeoDBUpdater()
-		GeoTestMode = true
+		geoMu.Lock()
+		GeoTestMode = oldTestMode
 		GeoUpdateInterval = oldInterval
 		GeoHTTPClient = oldClient
 		geoPath = oldPath
+		geoMu.Unlock()
+		ReloadGeoDB()
 	}()
 
 	InitializeGeoDB("test", "test")
@@ -184,6 +198,12 @@ func TestGetGeoInfo_ReaderError(t *testing.T) {
 	oldPath := geoPath
 	geoPath = "dummy.mmdb"
 	geoMu.Unlock()
+	defer func() {
+		geoMu.Lock()
+		geoPath = oldPath
+		geoMu.Unlock()
+		ReloadGeoDB()
+	}()
 
 	ReloadGeoDB()
 
@@ -191,9 +211,6 @@ func TestGetGeoInfo_ReaderError(t *testing.T) {
 		t.Fatalf("expected local database unavailable error, got %v", err)
 	}
 
-	geoMu.Lock()
-	geoPath = oldPath
-	geoMu.Unlock()
 }
 
 func TestGetGeoInfo_ErrorPaths(t *testing.T) {
@@ -228,23 +245,35 @@ func TestGetGeoInfo_ErrorPaths(t *testing.T) {
 
 func TestManualUpdateGeoDB(t *testing.T) {
 	StopGeoDBUpdater()
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	geoMu.Lock()
 	oldClient := GeoHTTPClient
 	oldPath := geoPath
+	oldLicenseKey := geoLicenseKey
 	GeoHTTPClient = &http.Client{Transport: &mockGeoTransport{}}
-	geoPath = t.TempDir() + "/GeoLite2-City.mmdb"
+	geoPath = path
+	geoMu.Unlock()
 	defer func() {
+		geoMu.Lock()
 		GeoHTTPClient = oldClient
 		geoPath = oldPath
+		geoLicenseKey = oldLicenseKey
+		geoMu.Unlock()
+		ReloadGeoDB()
 	}()
 
 	// Test error when license key missing
+	geoMu.Lock()
 	geoLicenseKey = ""
+	geoMu.Unlock()
 	err := ManualUpdateGeoDB()
 	if err == nil {
 		t.Error("Expected error when license key is empty")
 	}
 
+	geoMu.Lock()
 	geoLicenseKey = "testkey"
+	geoMu.Unlock()
 	// The injected transport keeps this path deterministic and offline.
 	_ = ManualUpdateGeoDB()
 }
@@ -284,16 +313,62 @@ func TestDownloadGeoDB_BasicAuth(t *testing.T) {
 	}))
 	defer ts.Close()
 
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	geoMu.Lock()
+	oldPath := geoPath
+	oldAccountID := geoAccountID
+	oldLicenseKey := geoLicenseKey
+	geoPath = path
 	geoAccountID = "user"
 	geoLicenseKey = "pass"
+	geoMu.Unlock()
 	defer func() {
-		geoAccountID = ""
-		geoLicenseKey = ""
+		geoMu.Lock()
+		geoPath = oldPath
+		geoAccountID = oldAccountID
+		geoLicenseKey = oldLicenseKey
+		geoMu.Unlock()
+		ReloadGeoDB()
 	}()
 
 	err := DownloadGeoDB(ts.URL)
 	if err != nil {
 		t.Fatalf("DownloadGeoDB with basic auth failed: %v", err)
+	}
+}
+
+func TestDownloadGeoDB_MaxMindSuffixArchive(t *testing.T) {
+	var archive bytes.Buffer
+	gw := gzip.NewWriter(&archive)
+	tw := tar.NewWriter(gw)
+	content := []byte("extracted mmdb")
+	if err := tw.WriteHeader(&tar.Header{Name: "GeoLite2-City.mmdb", Size: int64(len(content))}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive.Bytes())
+	}))
+	defer ts.Close()
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	if err := downloadGeoDB(context.Background(), ts.URL+"?edition_id=GeoLite2-City&suffix=tar.gz", path, ts.Client(), "", ""); err != nil {
+		t.Fatalf("downloadGeoDB failed: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, content) {
+		t.Fatalf("downloaded database = %q, want extracted payload %q", got, content)
 	}
 }
 
@@ -312,11 +387,16 @@ func TestExtractTarGz_Success(t *testing.T) {
 	_ = tw.Close()
 	_ = gw.Close()
 
+	geoMu.Lock()
 	oldPath := geoPath
 	geoPath = "test_extract_success.mmdb"
+	geoMu.Unlock()
 	defer func() {
+		geoMu.Lock()
 		geoPath = oldPath
+		geoMu.Unlock()
 		_ = os.Remove("test_extract_success.mmdb")
+		ReloadGeoDB()
 	}()
 
 	err := extractTarGz(bytes.NewReader(buf.Bytes()))

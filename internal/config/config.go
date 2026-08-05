@@ -183,7 +183,8 @@ func getEnv(key, fallback string) string {
 
 func getEnvBool(key string, fallback bool) bool {
 	if value, ok := os.LookupEnv(key); ok {
-		return strings.ToLower(value) == "true" || value == "1"
+		value = strings.ToLower(strings.TrimSpace(value))
+		return value == "true" || value == "1"
 	}
 	return fallback
 }

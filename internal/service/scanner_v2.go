@@ -104,6 +104,9 @@ func ParsePortSpec(spec string, maxPorts int) ([]int, error) {
 	return ports, nil
 }
 
+// ScanPortsStreamWithOptions scans the selected ports with bounded workers.
+// onResult may be invoked concurrently by multiple workers; callers that share
+// mutable callback state must synchronize it.
 func ScanPortsStreamWithOptions(ctx context.Context, target string, ports []int, options ScanOptions, onResult func(port int, banner string, err error)) ScanResult {
 	return scanPortsStreamWithOptions(ctx, target, ports, options, onResult, utils.ValidateResolvedHost, utils.DialResolvedTarget)
 }
@@ -179,9 +182,6 @@ func scanPortsStreamWithOptions(
 	}
 	if options.Concurrency > len(validPorts) {
 		options.Concurrency = len(validPorts)
-	}
-	if options.Concurrency == 0 {
-		return result
 	}
 
 	jobs := make(chan int)
@@ -267,9 +267,21 @@ func scanPortsStreamWithOptions(
 }
 
 func isConnectionRefused(err error) bool {
-	return errors.Is(err, syscall.ECONNREFUSED)
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, syscall.ECONNREFUSED) {
+		return true
+	}
+	// Windows can surface WSAECONNREFUSED through wrappers that do not retain a
+	// portable errno for errors.Is. Keep the fallback narrow and only classify
+	// the two standard refusal messages as closed.
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "connection refused") || strings.Contains(message, "actively refused")
 }
 
+// ScanPortsStream scans with default safety limits. onResult follows the same
+// concurrent-callback contract as ScanPortsStreamWithOptions.
 func ScanPortsStream(ctx context.Context, target string, ports []int, onResult func(port int, banner string, err error)) ScanResult {
 	return ScanPortsStreamWithOptions(ctx, target, ports, DefaultScanOptions(), onResult)
 }

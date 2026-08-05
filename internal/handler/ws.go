@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"whois/internal/model"
 	"whois/internal/service"
 	"whois/internal/utils"
 
@@ -19,6 +21,20 @@ type WSMessage struct {
 	Target  string      `json:"target"`
 	Service string      `json:"service"`
 	Data    interface{} `json:"data"`
+}
+
+type wsQueryConfig struct {
+	Whois      bool   `json:"whois"`
+	DNS        bool   `json:"dns"`
+	CT         bool   `json:"ct"`
+	SSL        bool   `json:"ssl"`
+	HTTP       bool   `json:"http"`
+	Geo        bool   `json:"geo"`
+	Ping       bool   `json:"ping"`
+	Trace      bool   `json:"trace"`
+	Route      bool   `json:"route"`
+	Subdomains bool   `json:"subdomains"`
+	Ports      string `json:"ports"`
 }
 
 const (
@@ -132,21 +148,9 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		}
 
 		var input struct {
-			Type    string   `json:"type"`
-			Targets []string `json:"targets"`
-			Config  struct {
-				Whois      bool   `json:"whois"`
-				DNS        bool   `json:"dns"`
-				CT         bool   `json:"ct"`
-				SSL        bool   `json:"ssl"`
-				HTTP       bool   `json:"http"`
-				Geo        bool   `json:"geo"`
-				Ping       bool   `json:"ping"`
-				Trace      bool   `json:"trace"`
-				Route      bool   `json:"route"`
-				Subdomains bool   `json:"subdomains"`
-				Ports      string `json:"ports"`
-			} `json:"config"`
+			Type    string        `json:"type"`
+			Targets []string      `json:"targets"`
+			Config  wsQueryConfig `json:"config"`
 		}
 
 		if err := json.Unmarshal(msg, &input); err != nil {
@@ -161,7 +165,7 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		}
 
 		if len(input.Targets) > maxWSTargets {
-			payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "too many targets; maximum is 25"})
+			payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "too many targets; maximum is " + strconv.Itoa(maxWSTargets)})
 			_ = writer.write(websocket.TextMessage, payload)
 			continue
 		}
@@ -180,42 +184,29 @@ func (h *Handler) HandleWS(c echo.Context) error {
 				continue
 			}
 			seenTargets[identity] = struct{}{}
-			select {
-			case <-ctx.Done():
-				return nil
-			case activeQueries <- struct{}{}:
-			}
-			select {
-			case <-ctx.Done():
-				<-activeQueries
-				return nil
-			case h.targetSem <- struct{}{}:
-			}
 			queryWG.Add(1)
-			go func(target string) {
+			go func(target string, queryConfig wsQueryConfig) {
 				defer queryWG.Done()
+				select {
+				case <-ctx.Done():
+					return
+				case activeQueries <- struct{}{}:
+				}
 				defer func() { <-activeQueries }()
+				select {
+				case <-ctx.Done():
+					return
+				case h.targetSem <- struct{}{}:
+				}
 				defer func() { <-h.targetSem }()
-				h.streamQuery(ctx, writer, target, input.Config)
-			}(target)
+				h.streamQuery(ctx, writer, target, queryConfig)
+			}(target, input.Config)
 		}
 	}
 	return nil
 }
 
-func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target string, cfg struct {
-	Whois      bool   `json:"whois"`
-	DNS        bool   `json:"dns"`
-	CT         bool   `json:"ct"`
-	SSL        bool   `json:"ssl"`
-	HTTP       bool   `json:"http"`
-	Geo        bool   `json:"geo"`
-	Ping       bool   `json:"ping"`
-	Trace      bool   `json:"trace"`
-	Route      bool   `json:"route"`
-	Subdomains bool   `json:"subdomains"`
-	Ports      string `json:"ports"`
-}) {
+func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target string, cfg wsQueryConfig) {
 	cardTarget := target
 	targetInfo := utils.EnrichTarget(ctx, target)
 	endpointTarget := targetInfo.Normalized
@@ -224,7 +215,7 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 		target = targetInfo.Host
 	}
 	var wg sync.WaitGroup
-	isIP := targetInfo.Kind == "ipv4" || targetInfo.Kind == "ipv6"
+	isIP := targetInfo.Kind == model.TargetKindIPv4 || targetInfo.Kind == model.TargetKindIPv6
 
 	// Helper to send message
 	send := func(serviceName string, data interface{}) {
@@ -469,7 +460,7 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 				resolvedCount := 0
 				for sub := range c {
 					if resolvedCount >= maxCTResolveTargets {
-						sendLog("CT enrichment limited to 100 subdomains; the complete CT list remains available above")
+						sendLog("CT enrichment limited to " + strconv.Itoa(maxCTResolveTargets) + " subdomains; the complete CT list remains available above")
 						break
 					}
 					processSub(sub, nil)
@@ -560,28 +551,26 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 				return
 			}
 
-			if len(portList) > 0 {
-				results := make(map[int]string)
-				var pmu sync.Mutex
-				foundOpen := false
-				service.ScanPortsStreamWithOptions(ctx, target, portList, h.scanOptions, func(port int, banner string, err error) {
-					if err == nil {
-						pmu.Lock()
-						results[port] = banner
-						foundOpen = true
-						// Create a copy for sending to avoid race condition during Marshal
-						msgData := make(map[int]string)
-						for k, v := range results {
-							msgData[k] = v
-						}
-						pmu.Unlock()
-						send("portscan", msgData)
-						sendLog("Port " + strconv.Itoa(port) + " is OPEN")
+			results := make(map[int]string)
+			var pmu sync.Mutex
+			foundOpen := false
+			service.ScanPortsStreamWithOptions(ctx, target, portList, h.scanOptions, func(port int, banner string, err error) {
+				if err == nil {
+					pmu.Lock()
+					results[port] = banner
+					foundOpen = true
+					// Create a copy for sending to avoid race condition during Marshal
+					msgData := make(map[int]string)
+					for k, v := range results {
+						msgData[k] = v
 					}
-				})
-				if !foundOpen {
-					send("portscan", results)
+					pmu.Unlock()
+					send("portscan", msgData)
+					sendLog("Port " + strconv.Itoa(port) + " is OPEN")
 				}
+			})
+			if !foundOpen {
+				send("portscan", results)
 			}
 			sendLog("Port scan completed for " + target)
 			sendDone("portscan")

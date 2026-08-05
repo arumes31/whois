@@ -16,6 +16,17 @@ import (
 
 var asnPattern = regexp.MustCompile(`(?i)^AS([0-9]{1,10})$`)
 
+const (
+	maxReverseDNSLookups   = 8
+	maxReverseDNSNames     = 8
+	reverseDNSTotalTimeout = 2 * time.Second
+)
+
+type targetResolver interface {
+	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
+	LookupAddr(context.Context, string) ([]string, error)
+}
+
 var specialPrefixes = []struct {
 	prefix netip.Prefix
 	kind   string
@@ -200,13 +211,17 @@ func classifyIP(addr netip.Addr) model.IPMetadata {
 
 // EnrichTarget resolves addresses and reverse names without using an external data provider.
 func EnrichTarget(ctx context.Context, input string) model.TargetInfo {
+	return enrichTarget(ctx, input, net.DefaultResolver, reverseDNSTotalTimeout)
+}
+
+func enrichTarget(ctx context.Context, input string, resolver targetResolver, reverseTimeout time.Duration) model.TargetInfo {
 	info := NormalizeTarget(input)
 	if !info.Valid || !info.Networkable {
 		return info
 	}
 	if info.Kind == model.TargetKindDomain {
 		resolutionStart := time.Now()
-		addrs, err := net.DefaultResolver.LookupNetIP(ctx, "ip", info.Host)
+		addrs, err := resolver.LookupNetIP(ctx, "ip", info.Host)
 		info.ResolutionMS = time.Since(resolutionStart).Milliseconds()
 		if err != nil {
 			info.Warnings = append(info.Warnings, "DNS resolution failed: "+err.Error())
@@ -217,13 +232,29 @@ func EnrichTarget(ctx context.Context, input string) model.TargetInfo {
 			info.IPs = append(info.IPs, classifyIP(addr))
 		}
 	}
-	for i := range info.IPs {
-		names, err := net.DefaultResolver.LookupAddr(ctx, info.IPs[i].Address)
+	reverseLimit := min(len(info.IPs), maxReverseDNSLookups)
+	if len(info.IPs) > reverseLimit {
+		info.Warnings = append(info.Warnings, fmt.Sprintf("Reverse DNS lookups limited to the first %d addresses", reverseLimit))
+	}
+	reverseCtx, cancel := context.WithTimeout(ctx, reverseTimeout)
+	defer cancel()
+	for i := range reverseLimit {
+		if reverseCtx.Err() != nil {
+			info.Warnings = append(info.Warnings, "Reverse DNS lookup stopped: "+reverseCtx.Err().Error())
+			break
+		}
+		names, err := resolver.LookupAddr(reverseCtx, info.IPs[i].Address)
 		if err == nil {
+			if len(names) > maxReverseDNSNames {
+				names = names[:maxReverseDNSNames]
+			}
 			for j := range names {
 				names[j] = strings.TrimSuffix(names[j], ".")
 			}
 			info.IPs[i].ReverseDNS = names
+		} else if reverseCtx.Err() != nil {
+			info.Warnings = append(info.Warnings, "Reverse DNS lookup stopped: "+reverseCtx.Err().Error())
+			break
 		}
 	}
 	return info

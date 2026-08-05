@@ -39,6 +39,8 @@ type Storage struct {
 	Client RedisClient
 }
 
+const dnsHistoryTargetsKey = "dns_history_targets"
+
 func NewStorage(host, port string) *Storage {
 	rdb := redis.NewClient(&redis.Options{
 		Addr: net.JoinHostPort(host, port),
@@ -131,9 +133,6 @@ type HistoryMetadata struct {
 }
 
 func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interface{}) error {
-	if err := s.Client.SAdd(ctx, "dns_history_targets", item).Err(); err != nil {
-		return fmt.Errorf("track DNS history target: %w", err)
-	}
 	// Normalize input data before saving to ensure consistent comparison
 	// Marshal and Unmarshal to ensure we have a generic interface{} structure to normalize
 	resBytes, _ := json.Marshal(result)
@@ -152,6 +151,7 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 		if json.Unmarshal([]byte(lastEntryJSON), &lastEntry) == nil {
 			if lastEntry.Result == resStr {
 				utils.Log.Debug("redis history unchanged", utils.Field("item", item))
+				s.trackDNSHistoryTarget(ctx, item)
 				return nil
 			}
 		}
@@ -168,7 +168,17 @@ func (s *Storage) AddDNSHistory(ctx context.Context, item string, result interfa
 	pipe.LPush(ctx, historyKey, string(entryBytes))
 	pipe.LTrim(ctx, historyKey, 0, 99)
 	_, err = pipe.Exec(ctx)
-	return err
+	if err != nil {
+		return err
+	}
+	s.trackDNSHistoryTarget(ctx, item)
+	return nil
+}
+
+func (s *Storage) trackDNSHistoryTarget(ctx context.Context, item string) {
+	if err := s.Client.SAdd(ctx, dnsHistoryTargetsKey, item).Err(); err != nil {
+		utils.Log.Warn("failed to track DNS history target", utils.Field("item", item), utils.Field("error", err))
+	}
 }
 
 func (s *Storage) GetCache(ctx context.Context, key string) (string, error) {
@@ -197,9 +207,25 @@ func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 	if err != nil {
 		return SystemStats{}, fmt.Errorf("read monitored items: %w", err)
 	}
-	historyCount, err := s.Client.SCard(ctx, "dns_history_targets").Result()
+	historyCount, err := s.Client.SCard(ctx, dnsHistoryTargetsKey).Result()
 	if err != nil {
 		return SystemStats{}, fmt.Errorf("count DNS history targets: %w", err)
+	}
+	if historyCount == 0 {
+		historyTargets, scanErr := s.scanDNSHistoryTargets(ctx)
+		if scanErr != nil {
+			return SystemStats{}, scanErr
+		}
+		historyCount = int64(len(historyTargets))
+		if len(historyTargets) > 0 {
+			members := make([]interface{}, len(historyTargets))
+			for i, target := range historyTargets {
+				members[i] = target
+			}
+			if err := s.Client.SAdd(ctx, dnsHistoryTargetsKey, members...).Err(); err != nil {
+				utils.Log.Warn("failed to backfill DNS history targets", utils.Field("count", len(historyTargets)), utils.Field("error", err))
+			}
+		}
 	}
 
 	utils.Log.Debug("redis stats gathered", utils.Field("monitored", len(monitored)), utils.Field("history", historyCount))
@@ -207,6 +233,34 @@ func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 		MonitoredCount: len(monitored),
 		HistoryCount:   int(historyCount),
 	}, nil
+}
+
+func (s *Storage) scanDNSHistoryTargets(ctx context.Context) ([]string, error) {
+	const prefix = "dns_history:"
+	targets := make(map[string]struct{})
+	var cursor uint64
+	for {
+		keys, nextCursor, err := s.Client.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return nil, fmt.Errorf("scan DNS history targets: %w", err)
+		}
+		for _, key := range keys {
+			target := key[len(prefix):]
+			if target != "" {
+				targets[target] = struct{}{}
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	result := make([]string, 0, len(targets))
+	for target := range targets {
+		result = append(result, target)
+	}
+	return result, nil
 }
 
 // normalizeData recursively sorts and deduplicates slices, and removes empty fields

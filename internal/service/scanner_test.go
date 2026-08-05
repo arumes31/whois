@@ -114,13 +114,18 @@ func TestScanPortsResolvesOnceAndClassifiesFailures(t *testing.T) {
 	}
 	var dialMu sync.Mutex
 	dialed := make([]int, 0, 2)
+	dialValidationErrors := make(chan error, 2)
 	dialer := func(_ context.Context, _ string, addresses []net.IPAddr, port string, _ time.Duration) (net.Conn, string, error) {
 		if len(addresses) != 1 || !addresses[0].IP.Equal(net.ParseIP("203.0.113.10")) {
-			t.Fatalf("dial received an unexpected address snapshot: %#v", addresses)
+			err := fmt.Errorf("dial received an unexpected address snapshot: %#v", addresses)
+			dialValidationErrors <- err
+			return nil, "", err
 		}
 		portNumber, err := strconv.Atoi(port)
 		if err != nil {
-			t.Fatalf("invalid port passed to dialer: %q", port)
+			err = fmt.Errorf("invalid port passed to dialer: %q", port)
+			dialValidationErrors <- err
+			return nil, "", err
 		}
 		dialMu.Lock()
 		dialed = append(dialed, portNumber)
@@ -137,6 +142,11 @@ func TestScanPortsResolvesOnceAndClassifiesFailures(t *testing.T) {
 		ConnectTimeout: time.Second,
 		BannerTimeout:  time.Second,
 	}, nil, resolver, dialer)
+	select {
+	case err := <-dialValidationErrors:
+		t.Fatal(err)
+	default:
+	}
 
 	if resolveCalls != 1 {
 		t.Fatalf("resolved %d times; want exactly once", resolveCalls)
@@ -208,6 +218,9 @@ func TestIsConnectionRefused(t *testing.T) {
 	t.Parallel()
 	if !isConnectionRefused(fmt.Errorf("wrapped: %w", syscall.ECONNREFUSED)) {
 		t.Fatal("wrapped connection refusal was not recognized")
+	}
+	if !isConnectionRefused(errors.New("connectex: No connection could be made because the target machine actively refused it")) {
+		t.Fatal("Windows connection refusal was not recognized")
 	}
 	if isConnectionRefused(errors.New("network unreachable")) {
 		t.Fatal("unreachable error was classified as a refusal")

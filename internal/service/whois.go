@@ -23,9 +23,17 @@ type WhoisInfo struct {
 	Created   string `json:"created,omitempty"`
 }
 
-// WhoisFunc is the function type for WHOIS lookups, matching the signature of whois.Whois.
-var WhoisFunc = func(target string, servers ...string) (string, error) {
-	return whois.NewClient().SetTimeout(8*time.Second).Whois(target, servers...)
+// WhoisFunc performs WHOIS lookups. The context-aware signature ensures that
+// connection setup uses the same caller cancellation and address policy as the
+// rest of the request.
+var WhoisFunc = func(ctx context.Context, target string, servers ...string) (string, error) {
+	dialer := &whoisPinnedDialer{
+		ctx:     ctx,
+		timeout: 8 * time.Second,
+		resolve: resolveWhoisServer,
+		dial:    utils.DialResolvedTarget,
+	}
+	return whois.NewClient().SetDialer(dialer).SetTimeout(8*time.Second).Whois(target, servers...)
 }
 
 var WhoisServerValidator = validateWhoisServer
@@ -57,38 +65,81 @@ func callWhois(ctx context.Context, target string, servers ...string) (string, e
 			return "", err
 		}
 	}
-	return callWithContext(ctx, func() (string, error) { return WhoisFunc(target, servers...) })
+	return callWithContext(ctx, func() (string, error) { return WhoisFunc(ctx, target, servers...) })
 }
 
 func validateWhoisServer(ctx context.Context, server string) error {
+	_, err := resolveWhoisServer(ctx, server)
+	return err
+}
+
+func resolveWhoisServer(ctx context.Context, server string) ([]net.IPAddr, error) {
+	host, err := whoisServerHost(server)
+	if err != nil {
+		return nil, err
+	}
+
+	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, fmt.Errorf("resolve WHOIS server: %w", err)
+	}
+	if len(addresses) == 0 {
+		return nil, fmt.Errorf("WHOIS server resolved to no addresses")
+	}
+	for _, address := range addresses {
+		if !utils.IsPublicIP(address.IP) {
+			return nil, fmt.Errorf("WHOIS server resolves to a non-public address")
+		}
+	}
+	return addresses, nil
+}
+
+func whoisServerHost(server string) (string, error) {
 	server = strings.TrimSpace(server)
 	if server == "" {
-		return fmt.Errorf("WHOIS server is empty")
+		return "", fmt.Errorf("WHOIS server is empty")
 	}
 	if strings.Contains(server, "://") {
 		parsed, err := url.Parse(server)
 		if err != nil || parsed.Hostname() == "" {
-			return fmt.Errorf("invalid WHOIS server")
+			return "", fmt.Errorf("invalid WHOIS server")
 		}
 		server = parsed.Hostname()
 	} else if host, _, err := net.SplitHostPort(server); err == nil {
 		server = host
 	}
 	server = strings.Trim(strings.TrimSuffix(server, "."), "[]")
+	if server == "" {
+		return "", fmt.Errorf("invalid WHOIS server")
+	}
+	return server, nil
+}
 
-	addresses, err := net.DefaultResolver.LookupIPAddr(ctx, server)
+type whoisResolver func(context.Context, string) ([]net.IPAddr, error)
+type whoisDial func(context.Context, string, []net.IPAddr, string, time.Duration) (net.Conn, string, error)
+
+// whoisPinnedDialer preserves the hostname passed through the WHOIS protocol
+// while connecting only to the numeric addresses validated for that exact dial.
+// The library may discover referrals internally, so policy enforcement belongs
+// in the dialer and applies to both initial and referred servers.
+type whoisPinnedDialer struct {
+	ctx     context.Context
+	timeout time.Duration
+	resolve whoisResolver
+	dial    whoisDial
+}
+
+func (d *whoisPinnedDialer) Dial(network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return fmt.Errorf("resolve WHOIS server: %w", err)
+		return nil, fmt.Errorf("invalid WHOIS address: %w", err)
 	}
-	if len(addresses) == 0 {
-		return fmt.Errorf("WHOIS server resolved to no addresses")
+	addresses, err := d.resolve(d.ctx, host)
+	if err != nil {
+		return nil, err
 	}
-	for _, address := range addresses {
-		if !utils.IsPublicIP(address.IP) {
-			return fmt.Errorf("WHOIS server resolves to a non-public address")
-		}
-	}
-	return nil
+	conn, _, err := d.dial(d.ctx, network, addresses, port, d.timeout)
+	return conn, err
 }
 
 func Whois(ctx context.Context, target string) interface{} {

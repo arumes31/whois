@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -316,6 +317,26 @@ func TestDNSServiceResolverFailover(t *testing.T) {
 	}
 }
 
+func TestDNSServiceCancellationDoesNotPenalizeResolver(t *testing.T) {
+	service := NewDNSService("192.0.2.53:53", "")
+	service.SetMaxAttempts(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := service.query(ctx, "example.com", dns.TypeA, false)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("query error = %v; want context cancellation", err)
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if len(service.failures) != 0 {
+		t.Fatalf("caller cancellation recorded resolver failures: %v", service.failures)
+	}
+	if len(service.unhealthyUntil) != 0 {
+		t.Fatalf("caller cancellation degraded resolvers: %v", service.unhealthyUntil)
+	}
+}
+
 func TestDNSService_Trace_Success(t *testing.T) {
 	// Create a mock DNS server to simulate a referral
 	handler := dns.HandlerFunc(func(w dns.ResponseWriter, r *dns.Msg) {
@@ -526,23 +547,27 @@ func TestDNSService_Query_Truncated(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	// Use fixed port but randomized for this test specifically if needed,
-	// but here we can just use the same port for both UDP and TCP on localhost.
-	l, _ := net.Listen("tcp", "127.0.0.1:0")
-	tcpAddr := l.Addr().String()
-	_ = l.Close() // Close so dns.Server can bind
+	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for UDP: %v", err)
+	}
+	resolverAddr := packetConn.LocalAddr().String()
+	tcpListener, err := net.Listen("tcp", resolverAddr)
+	if err != nil {
+		_ = packetConn.Close()
+		t.Fatalf("listen for TCP: %v", err)
+	}
 
-	server := &dns.Server{Addr: tcpAddr, Net: "udp", Handler: handler}
-	go func() { _ = server.ListenAndServe() }()
-	defer func() { _ = server.Shutdown() }()
+	udpServer := &dns.Server{PacketConn: packetConn, Handler: handler}
+	tcpServer := &dns.Server{Listener: tcpListener, Handler: handler}
+	go func() { _ = udpServer.ActivateAndServe() }()
+	go func() { _ = tcpServer.ActivateAndServe() }()
+	t.Cleanup(func() {
+		_ = udpServer.Shutdown()
+		_ = tcpServer.Shutdown()
+	})
 
-	serverTCP := &dns.Server{Addr: tcpAddr, Net: "tcp", Handler: handler}
-	go func() { _ = serverTCP.ListenAndServe() }()
-	defer func() { _ = serverTCP.Shutdown() }()
-
-	time.Sleep(100 * time.Millisecond)
-
-	s := NewDNSService(tcpAddr, "")
+	s := NewDNSService(resolverAddr, "")
 	res, err := s.query(context.Background(), "example.com", dns.TypeA, false)
 	if err != nil {
 		t.Fatalf("Truncated query failed: %v", err)
