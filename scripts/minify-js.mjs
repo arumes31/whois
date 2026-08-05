@@ -1,6 +1,7 @@
 import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import process from "node:process";
+import { parse } from "parse5";
 import { minify } from "terser";
 
 const staticTarget = resolve(process.argv[2] ?? "static");
@@ -77,23 +78,38 @@ async function findTemplateFiles(directory) {
 
 async function minifyInlineScripts(file) {
   const source = await readFile(file, "utf8");
-  const scriptPattern = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+  const document = parse(source, { sourceCodeLocationInfo: true });
+  const scripts = [];
+
+  function collectScripts(node) {
+    if (node.tagName === "script" && node.sourceCodeLocation?.startTag && node.sourceCodeLocation?.endTag) {
+      scripts.push(node);
+    }
+    for (const child of node.childNodes ?? []) collectScripts(child);
+    for (const child of node.content?.childNodes ?? []) collectScripts(child);
+  }
+
+  collectScripts(document);
+
   let output = "";
   let cursor = 0;
   let count = 0;
 
-  for (const match of source.matchAll(scriptPattern)) {
-    const [block, attributes, code] = match;
-    const index = match.index;
-    const hasSource = /\bsrc\s*=/i.test(attributes);
-    const nonJavaScriptType = /\btype\s*=\s*["'](?!text\/javascript|application\/javascript|module)[^"']+["']/i.test(attributes);
+  for (const script of scripts) {
+    const attributes = new Map(script.attrs.map(attribute => [attribute.name, attribute.value]));
+    const type = (attributes.get("type") ?? "").trim().toLowerCase();
+    const hasSource = attributes.has("src");
+    const nonJavaScriptType = type !== "" && !["text/javascript", "application/javascript", "module"].includes(type);
+    const start = script.sourceCodeLocation.startTag.endOffset;
+    const end = script.sourceCodeLocation.endTag.startOffset;
+    const code = source.slice(start, end);
 
     if (hasSource || nonJavaScriptType || !code.trim()) continue;
 
     const minified = await minifyJavaScript(code, `${file} inline script ${count + 1}`);
-    output += source.slice(cursor, index);
-    output += `<script${attributes}>${minified}</script>`;
-    cursor = index + block.length;
+    output += source.slice(cursor, start);
+    output += minified;
+    cursor = end;
     count++;
   }
 

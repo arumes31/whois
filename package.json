@@ -6,6 +6,7 @@
     "minify:js": "node scripts/minify-js.mjs static templates"
   },
   "devDependencies": {
+    "parse5": "^8.0.0",
     "terser": "5.49.0"
   },
   "engines": {
