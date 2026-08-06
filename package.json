@@ -11,7 +11,7 @@
     "test": "npm run test:frontend && npm run assets:check && npm run assets:test-build"
   },
   "devDependencies": {
-    "parse5": "8.0.0",
+    "parse5": "8.0.1",
     "terser": "5.49.0"
   },
   "engines": {
