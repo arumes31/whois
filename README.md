@@ -25,7 +25,7 @@ A network diagnostic dashboard for WHOIS, DNS, HTTP/TLS inspection, GeoIP, port 
 
 ```mermaid
 graph TD
-    User((User)) -->|HTMX / WebSocket| FE[Frontend: Bootstrap 5 / JS]
+    User((User)) -->|WebSocket / Fetch| FE[Frontend: ES Modules / Phosphor UI]
     subgraph "Go Diagnostic Engine (Echo Framework)"
         FE -->|Requests| Handler[Echo API Handlers]
         Handler -->|Concurrent Execution| Svc[Service Layer]
@@ -41,7 +41,7 @@ graph TD
 
 ### Technical Highlights
 *   **Echo Framework:** Leverages a high-performance, minimalist Go web framework for optimized routing and middleware management.
-*   **HTMX v2:** Enables a reactive, SPA-like user experience using pure HTML attributes, minimizing client-side JavaScript complexity.
+*   **Dependency-free frontend:** The console runs on vanilla ES modules — no Bootstrap, no HTMX, no client-side framework. A custom phosphor-terminal design system (locally hosted JetBrains Mono + Inter) replaces the old vendor bundle.
 *   **Concurrency:** Built on Go's goroutine model with strict `context.Context` lifecycle management for safe, parallel diagnostic execution.
 *   **DNS over HTTPS (DoH):** Implements secure, encrypted DNS queries with automatic load balancing across providers (Cloudflare, Google, Quad9).
 
@@ -50,7 +50,7 @@ graph TD
 | Layer | Technologies |
 |---|---|
 | **Backend** | Go 1.26.4+, Echo v4, Zap Logging |
-| **Frontend** | HTMX, Bootstrap 5, Tippy.js, Prism.js |
+| **Frontend** | Vanilla ES modules, custom phosphor design system, Chart.js (vendored) |
 | **Storage** | Redis with bounded DNS history and set-backed dashboard counters |
 | **Networking** | DoH (DNS-over-HTTPS), RDAP, ICMP, TCP |
 | **DevOps** | Docker, GitHub Actions, golangci-lint |
@@ -200,4 +200,4 @@ docker build --check .
 This tool is intended for authorized network diagnostics and research. Users are responsible for complying with local regulations. The platform includes a mandatory **Security & Legal Disclosure** system to ensure users acknowledge terms of use before proceeding.
 
 ---
-*Built with ❤️ using Go and HTMX.*
+*Built with ❤️ using Go and a hand-rolled phosphor terminal UI.*
