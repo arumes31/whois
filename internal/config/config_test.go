@@ -118,3 +118,68 @@ func TestGetEnvInt(t *testing.T) {
 		t.Fatalf("invalid value = %d; want fallback 4", got)
 	}
 }
+
+func TestLoadConfigSecurityAndRetentionDefaults(t *testing.T) {
+	t.Setenv("SECRET_KEY", "test-secret")
+	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("SESSION_COOKIE_SECURE", "false")
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.SessionCookieSecure {
+		t.Fatal("development session cookie unexpectedly secure")
+	}
+	if cfg.MaxWSConnections != 128 || cfg.MaxWSConnectionsPerIP != 8 {
+		t.Fatalf("websocket defaults = %d/%d, want 128/8", cfg.MaxWSConnections, cfg.MaxWSConnectionsPerIP)
+	}
+	if cfg.DNSHistoryMaxTargets != 1000 || cfg.DNSHistoryTTLHours != 720 {
+		t.Fatalf("history defaults = %d/%d, want 1000/720", cfg.DNSHistoryMaxTargets, cfg.DNSHistoryTTLHours)
+	}
+}
+
+func TestLoadConfigProductionCookieIsSecureByDefault(t *testing.T) {
+	t.Setenv("SECRET_KEY", strings.Repeat("s", 32))
+	t.Setenv("ENVIRONMENT", "production")
+	t.Setenv("CONFIG_USER", "operator")
+	t.Setenv("CONFIG_PASS", "long-production-password")
+	oldCookieSecure, hadCookieSecure := os.LookupEnv("SESSION_COOKIE_SECURE")
+	_ = os.Unsetenv("SESSION_COOKIE_SECURE")
+	t.Cleanup(func() {
+		if hadCookieSecure {
+			_ = os.Setenv("SESSION_COOKIE_SECURE", oldCookieSecure)
+		} else {
+			_ = os.Unsetenv("SESSION_COOKIE_SECURE")
+		}
+	})
+	cfg, err := LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.SessionCookieSecure {
+		t.Fatal("production session cookie is not secure by default")
+	}
+}
+
+func TestLoadConfigRejectsPerIPWebSocketLimitAboveGlobal(t *testing.T) {
+	t.Setenv("SECRET_KEY", "test-secret")
+	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("MAX_WS_CONNECTIONS", "4")
+	t.Setenv("MAX_WS_CONNECTIONS_PER_IP", "5")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "MAX_WS_CONNECTIONS_PER_IP") {
+		t.Fatalf("expected websocket limit validation error, got %v", err)
+	}
+}
+
+func TestLoadConfigValidatesAllowedDomain(t *testing.T) {
+	t.Setenv("SECRET_KEY", "test-secret")
+	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("ALLOWED_DOMAIN", "com")
+	if _, err := LoadConfig(); err == nil || !strings.Contains(err.Error(), "ALLOWED_DOMAIN") {
+		t.Fatalf("expected allowed-domain validation error, got %v", err)
+	}
+	t.Setenv("ALLOWED_DOMAIN", "example.com")
+	if _, err := LoadConfig(); err != nil {
+		t.Fatalf("valid allowed domain rejected: %v", err)
+	}
+}

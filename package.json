@@ -3,16 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "minify:js": "node scripts/minify-js.mjs static templates"
+    "assets:check": "node scripts/check-assets.mjs static templates scripts/asset-reference-allowlist.json",
+    "assets:test-build": "node scripts/test-asset-build.mjs",
+    "build:assets": "node scripts/minify-js.mjs static templates assets.sha256",
+    "minify:js": "node scripts/minify-js.mjs static templates",
+    "test:frontend": "node scripts/test-frontend-state.mjs",
+    "test": "npm run test:frontend && npm run assets:check && npm run assets:test-build"
   },
   "devDependencies": {
-    "parse5": "^8.0.0",
+    "parse5": "8.0.0",
     "terser": "5.49.0"
   },
   "engines": {
-    "node": ">=24"
-  },
-  "dependencies": {
-    "dompurify": "^3.4.13"
+    "node": ">=24 <25"
   }
 }

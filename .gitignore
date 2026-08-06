@@ -12,6 +12,7 @@ bin/
 vendor/
 venv/
 node_modules/
+assets.sha256
 
 # Configuration and secrets
 .env

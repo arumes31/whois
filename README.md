@@ -73,11 +73,13 @@ docker compose up -d --build
 
 Access the dashboard at `http://localhost:14400`.
 
-The administrative `/login` and `/config` routes use HTTPS-only session cookies. Put the application behind an HTTPS reverse proxy before using configuration administration; plain HTTP is suitable only for the unprivileged diagnostics dashboard on a trusted local machine.
+Compose binds port 14400 to `127.0.0.1` by default and runs both services with read-only root filesystems, bounded process counts, and writable named volumes only for application data. Set `WHOIS_BIND_ADDRESS` only when remote access is intentional.
+
+Local Compose uses plain HTTP, so `.env.example` sets `SESSION_COOKIE_SECURE=false`. When the browser reaches the application through an HTTPS reverse proxy, set `SESSION_COOKIE_SECURE=true`; otherwise the browser will not send the administrator session cookie. Plain HTTP administration should remain limited to a trusted loopback workstation.
 
 ### Run the Published GHCR Image
 
-The GHCR definition inherits the shared, hardened services from `docker-compose.yml`, so local builds and published images use identical Redis, security, feature, and concurrency settings.
+The local and GHCR definitions both inherit their hardened runtime contract from `docker-compose.common.yml`. The GHCR leaf never inherits the local `build` rule, so the rendered published-image configuration is image-only while retaining identical Redis, security, feature, and concurrency settings.
 
 ```bash
 cp .env.example .env
@@ -87,7 +89,7 @@ docker compose -f docker-compose.ghcr.yml pull
 docker compose -f docker-compose.ghcr.yml up -d --no-build
 ```
 
-Published `latest`, release, and commit-SHA tags are built only after Go tests, the asset build, and a blocking Critical/High Trivy scan pass.
+Published `latest`, release, and commit-SHA tags are assembled only after the full reusable Go CI gate and both architecture builds pass. Each architecture is pushed without a staging tag, verified and scanned by immutable digest, then the final manifest is checked for the exact `linux/amd64` and `linux/arm64` digests. The verifier also requires an SPDX SBOM and SLSA provenance attestation that explicitly references each platform digest.
 
 ### Health and Operations
 
@@ -101,6 +103,8 @@ docker compose logs -f web redis
 ```
 
 The `whois_data` and `redis_data` named volumes contain downloaded lookup data and application history. Back them up before upgrades that remove or recreate volumes. `docker compose down` preserves them; `docker compose down --volumes` deletes them.
+
+Redis is bounded to 192 MiB with `allkeys-lru` eviction by default, below the 256 MiB container limit. Override `REDIS_MAXMEMORY` or `REDIS_MAXMEMORY_POLICY` only after accounting for Redis overhead and the container memory limit.
 
 ### Reverse Proxy Configuration (Nginx)
 If you are running behind Nginx, you **must** ensure WebSocket headers are forwarded correctly:
@@ -130,9 +134,12 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 | `SEO_DOMAIN` | Canonical domain for SEO indexing | - |
 | `ALLOWED_DOMAIN` | Base domain allowed for WebSocket connections | - |
 | `WS_SKIP_ORIGIN_CHECK` | Completely disable WebSocket origin validation | `false` |
+| `MAX_WS_CONNECTIONS` | Process-wide WebSocket connection ceiling | `128` |
+| `MAX_WS_CONNECTIONS_PER_IP` | Per-client WebSocket connection ceiling; must not exceed the global ceiling | `8` |
 | `CONFIG_USER` | Administrator username; must be changed in production | `admin` outside Compose |
 | `CONFIG_PASS` | Administrator passcode; minimum 12 characters in production | `admin` outside Compose |
 | `ENVIRONMENT` | Runtime environment; Compose defaults to restrictive `production` behavior | `production` in Compose |
+| `SESSION_COOKIE_SECURE` | Send administrator cookies only over HTTPS; local HTTP Compose explicitly sets this false | `true` in production outside Compose |
 | `ALLOW_DEV_CORS` | Force-allow wildcard CORS even in non-development environment | `false` |
 | `CORS_ORIGINS` | Comma-separated cross-origin clients; same-origin use needs no entry | Empty |
 | `TRUSTED_IPS` | CSV of IPs allowed to access `/metrics` | `127.0.0.1,::1,...` |
@@ -149,13 +156,19 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 | `DNS_SERVERS` | CSV of DoH resolvers used for multi-vector lookups | `Cloudflare, Google, Quad9` |
 | `BOOTSTRAP_DNS` | DNS used to resolve the hostnames of DoH providers | `1.1.1.1, 9.9.9.9` |
 | `DNS_MAX_ATTEMPTS` | Resolver attempts before returning an error; unhealthy resolvers receive a short cooldown | `3` |
+| `DNS_HISTORY_MAX_TARGETS` | Maximum target histories retained in Redis | `1000` |
+| `DNS_HISTORY_TTL_HOURS` | Retention window for per-target DNS history | `720` |
 | `MAX_TARGET_CONCURRENCY` | Maximum target diagnostic chains running at once | `4` |
 | `MAX_SERVICE_CONCURRENCY` | Maximum individual diagnostic services running at once | `12` |
 | `PORT_SCAN_CONCURRENCY` | TCP scan worker count | `32` |
 | `PORT_SCAN_MAX_PORTS` | Maximum ports accepted in one scan | `1024` |
 | `PORT` | Local port the web server listens on | `5000` |
+| `WHOIS_BIND_ADDRESS` | Host address used by Compose's published HTTP port | `127.0.0.1` |
+| `WHOIS_PORT` | Host port published by Compose | `14400` |
 | `REDIS_HOST` | Hostname of the Redis server | `localhost` |
 | `REDIS_PORT` | Port of the Redis server | `6379` |
+| `REDIS_MAXMEMORY` | Redis data-memory ceiling beneath the container limit | `192mb` |
+| `REDIS_MAXMEMORY_POLICY` | Eviction policy after the Redis memory ceiling is reached | `allkeys-lru` |
 
 #### 🔍 Diagnostic Features
 | Variable | Description | Default |
@@ -181,12 +194,19 @@ Startup is network-silent by default. For automatic GeoIP/OUI downloads set `AUT
 ## 🔄 Development Lifecycle
 
 ### Automated Workflow
-GitHub Actions runs pinned linting, race-enabled tests, reachable dependency vulnerability scanning, and a Docker build check. Container publication additionally builds packaged assets and scans the exact local image before assigning and pushing registry tags.
+GitHub Actions uses commit-SHA-pinned actions for linting, `go vet`, race-enabled tests, deterministic stress tests, fuzz smoke tests, reachable dependency vulnerability scanning, and Docker build checks. Registry-writing jobs reuse that complete gate. Container publication pushes untagged per-architecture digests, scans those exact immutable images, and publishes registry tags only after assembling and verifying their platform digests and attestations. Run-unique digest artifacts coordinate the jobs, so branch and release runs cannot share mutable staging references. The Dockerfile owns the reproducible asset build and embeds a checksum manifest that is verified during the image build and again before publication.
+
+The manual **Delete Old Packages** workflow defaults to a dry run. When explicitly enabled, it prunes only untagged manifests older than 30 days and discovers all children referenced by retained multi-architecture tags before deletion; inspection failures stop deletion for that package.
+
+The Node runtime, container base images, QEMU helper image, Buildx binary, and BuildKit image are pinned exactly in release automation. Runtime `apk add` dependencies intentionally follow compatible patch revisions from the Alpine 3.24 repositories: exact APK pins are not retained indefinitely by Alpine mirrors and would make otherwise reproducible rebuilds fail. CI bypasses the cached runtime stage so those packages are refreshed for every registry-writing build. This limited patch drift is deliberate; every resulting immutable architecture digest is checksum-verified and blocked on the Critical/High vulnerability scan before it can receive a deployment tag.
 
 ```bash
 # Run the same core checks used by CI
 go test -race -count=1 ./...
+go test -race -tags=stress -count=1 -run '^TestStress' ./internal/service
 govulncheck ./...
+npm ci --ignore-scripts
+npm test
 
 # Run linter
 go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4 run
@@ -194,6 +214,8 @@ go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4 run
 # Validate and build the container
 docker compose config
 docker build --check .
+docker build -t whois:local .
+docker run --rm --entrypoint /bin/sh whois:local -c 'cd /app && sha256sum -c assets.sha256'
 ```
 
 ## ⚖️ Compliance & Security

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,23 +17,6 @@ import (
 
 func init() {
 	utils.TestInitLogger()
-}
-
-func TestGetSSLInfo(t *testing.T) {
-	t.Parallel()
-	t.Run("Online Test Fallback", func(t *testing.T) {
-		info := GetSSLInfo(context.Background(), "google.com")
-		if info.Error != "" {
-			t.Logf("GetSSLInfo google.com failed: %s", info.Error)
-		} else {
-			if info.Issuer == "" {
-				t.Error("Expected issuer common name")
-			}
-			if !info.Verified {
-				t.Log("Expected Verified=true for google.com (this can happen if the test environment lacks root CA certificates)")
-			}
-		}
-	})
 }
 
 func TestGetSSLInfo_Local(t *testing.T) {
@@ -95,50 +79,47 @@ func TestGetSSLInfo_HandshakeFail(t *testing.T) {
 	}
 }
 
-func TestGetSSLInfo_NoCerts(t *testing.T) {
-	// Hard to trigger with httptest TLSServer as it always has a cert.
-	// But we can test the protocol switch logic by using a local server.
+func TestGetSSLInfo_ReportsCertificate(t *testing.T) {
 	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer ts.Close()
 	u, _ := url.Parse(ts.URL)
 	info := GetSSLInfo(context.Background(), u.Host)
 	if info.Error != "" {
-		t.Logf("NoCerts test info: %v", info.Error)
+		t.Fatalf("local TLS inspection failed: %v", info.Error)
+	}
+	if len(info.Chain) == 0 || info.FingerprintSHA256 == "" || info.PEM == "" {
+		t.Fatalf("certificate details are incomplete: %#v", info)
 	}
 }
 
 func TestGetSSLInfo_Versions(t *testing.T) {
-	// Test TLS 1.2 specifically
-	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	ts.TLS = &tls.Config{MinVersion: tls.VersionTLS12, MaxVersion: tls.VersionTLS12}
-	ts.StartTLS()
-	defer ts.Close()
-	u, _ := url.Parse(ts.URL)
-	_ = GetSSLInfo(context.Background(), u.Host)
+	for _, test := range []struct {
+		name    string
+		version uint16
+		want    string
+	}{
+		{name: "TLS12", version: tls.VersionTLS12, want: "TLS 1.2"},
+		{name: "TLS13", version: tls.VersionTLS13, want: "TLS 1.3"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+			server.TLS = &tls.Config{MinVersion: test.version, MaxVersion: test.version}
+			server.StartTLS()
+			defer server.Close()
 
-	// Test TLS 1.3 specifically
-	ts2 := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	ts2.TLS = &tls.Config{MinVersion: tls.VersionTLS13, MaxVersion: tls.VersionTLS13}
-	ts2.StartTLS()
-	defer ts2.Close()
-	u2, _ := url.Parse(ts2.URL)
-	_ = GetSSLInfo(context.Background(), u2.Host)
-
-	// Test TLS 1.0 specifically (if supported by env)
-	ts3 := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	ts3.TLS = &tls.Config{MinVersion: tls.VersionTLS10, MaxVersion: tls.VersionTLS10}
-	ts3.StartTLS()
-	defer ts3.Close()
-	u3, _ := url.Parse(ts3.URL)
-	_ = GetSSLInfo(context.Background(), u3.Host)
-
-	// Test TLS 1.1 specifically (if supported by env)
-	ts4 := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	ts4.TLS = &tls.Config{MinVersion: tls.VersionTLS11, MaxVersion: tls.VersionTLS11}
-	ts4.StartTLS()
-	defer ts4.Close()
-	u4, _ := url.Parse(ts4.URL)
-	_ = GetSSLInfo(context.Background(), u4.Host)
+			u, err := url.Parse(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			info := GetSSLInfo(context.Background(), u.Host)
+			if info.Error != "" {
+				t.Fatalf("TLS inspection failed: %s", info.Error)
+			}
+			if !slices.Contains(info.SupportedVersions, test.want) {
+				t.Fatalf("supported versions = %v; want %s", info.SupportedVersions, test.want)
+			}
+		})
+	}
 }
 
 func TestScoreTLSRevokedCertificate(t *testing.T) {

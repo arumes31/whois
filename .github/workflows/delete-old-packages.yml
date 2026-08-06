@@ -2,19 +2,38 @@ name: Delete Old Packages
 
 on:
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Report deletions without changing GHCR
+        required: true
+        default: true
+        type: boolean
 
 jobs:
   delete-versions:
     runs-on: ubuntu-latest
     permissions:
+      contents: read
       packages: write
     steps:
-      - name: Delete old package versions
-        uses: actions/delete-package-versions@v5
+      - name: Prune unreferenced container manifests safely
+        # v3.1+ discovers every retained multi-architecture index and removes
+        # its untagged platform/attestation children from deletion candidates.
+        # It fails closed if those manifests cannot be inspected. Invoke the
+        # v3.1.0 container by immutable multi-platform digest because the
+        # action wrapper itself references a mutable container tag.
+        uses: docker://ghcr.io/snok/container-retention-policy@sha256:884037f146d6ef574b61fbcc59bef490f887322e6b9dc2eefcf364cb4e9b4112
         with:
-          package-name: 'whois'
-          package-type: 'container'
-          # Tagged versions include releases, deployment SHA tags, latest, and test.
-          # Delete only untagged versions and retain a rollback window.
-          min-versions-to-keep: 10
-          delete-only-untagged-versions: 'true'
+          args: >-
+            --account=user
+            --token=${{ secrets.GITHUB_TOKEN }}
+            --image-names=whois
+            --image-tags=
+            --shas-to-skip=
+            --tag-selection=untagged
+            --keep-n-most-recent=0
+            --timestamp-to-use=updated_at
+            --cut-off=30d
+            --dry-run=${{ inputs.dry_run }}
+        env:
+          RUST_LOG: container_retention_policy=INFO

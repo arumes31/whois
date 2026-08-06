@@ -1,13 +1,17 @@
 // Console bootstrap: form wiring, module toggles, shortcuts, message routing.
 import * as ws from './ws.js';
-import { announce, toast } from './util.js';
 import {
-  appendLog, readModuleConfig, enabledServiceCount, setScan,
+  announce, canonicalTargetIdentity, createRequestID, fetchWithCSRF, readResponse, splitTargets, toast,
+} from './util.js';
+import {
+  appendLog, beginScan, getCurrentScans, identityIsInFlight,
+  readModuleConfig, enabledServiceCount, restoreActivity,
   applyPreset, saveSettings, loadSettings, updateModuleCount, moduleIds,
 } from './store.js';
 import {
   createCard, updateProgressBar, routeMessage, updateWorkspaceState,
   initDragOrdering, clearWorkspace, exportJSON, exportCSV, copyAllJSON,
+  routeRequestEvent,
 } from './cards.js';
 import { initModal, openTool } from './history.js';
 
@@ -16,7 +20,7 @@ const MAX_TARGETS = 25;
 function startQuery() {
   const input = document.getElementById('targetInput');
   const error = document.getElementById('targetError');
-  const targets = [...new Set(input.value.split(',').map((t) => t.trim()).filter(Boolean))];
+  const targets = splitTargets(input.value);
   if (targets.length === 0) {
     error.textContent = 'Enter at least one domain, IP address, CIDR, ASN, or URL.';
     input.setAttribute('aria-invalid', 'true');
@@ -36,20 +40,37 @@ function startQuery() {
     announce(error.textContent);
     return;
   }
-  error.textContent = '';
+  const runnable = [];
+  let duplicateCount = 0;
+  targets.forEach((target) => {
+    const identity = canonicalTargetIdentity(target);
+    if (identityIsInFlight(identity)) duplicateCount += 1;
+    else runnable.push({ target, identity });
+  });
+  if (runnable.length === 0) {
+    error.textContent = 'Every target in this queue already has a diagnostic run in progress.';
+    announce(error.textContent);
+    return;
+  }
+  error.textContent = duplicateCount > 0
+    ? `${duplicateCount} target${duplicateCount === 1 ? ' was' : 's were'} skipped because a run is already in progress.`
+    : '';
   input.removeAttribute('aria-invalid');
-  announce(`Starting diagnostics for ${targets.length} ${targets.length === 1 ? 'target' : 'targets'}.`);
+  announce(`Starting diagnostics for ${runnable.length} ${runnable.length === 1 ? 'target' : 'targets'}.`);
 
   const runBtn = document.getElementById('runBtn');
   runBtn.classList.add('is-running');
   window.setTimeout(() => runBtn.classList.remove('is-running'), 1200);
 
-  targets.forEach((target) => {
+  runnable.forEach(({ target, identity }) => {
+    const requestID = createRequestID();
+    beginScan(target, {
+      requestID, identity, config, total,
+    });
     createCard(target);
-    setScan(target, { total, completed: 0, failures: new Set(), findings: new Set() });
     updateProgressBar(target);
     appendLog(target, 'Initializing diagnostic vectors...');
-    ws.send({ targets: [target], config });
+    ws.send({ request_id: requestID, targets: [target], config });
   });
 }
 
@@ -83,6 +104,8 @@ function initModules() {
   const portsField = document.getElementById('portsField');
   const syncPorts = () => portsField.classList.toggle('is-open', portscanBox.checked);
   portscanBox.addEventListener('change', syncPorts);
+  document.addEventListener('console:modules-changed', syncPorts);
+  document.getElementById('cfg-ports')?.addEventListener('input', saveSettings);
   syncPorts();
 }
 
@@ -91,6 +114,9 @@ function initToolbar() {
   document.getElementById('exportJsonBtn').addEventListener('click', exportJSON);
   document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
   document.getElementById('clearBtn').addEventListener('click', () => {
+    getCurrentScans().forEach((scan) => {
+      if (scan.status === 'queued') ws.cancelQueued(scan.requestID);
+    });
     clearWorkspace();
     const input = document.getElementById('targetInput');
     input.value = '';
@@ -112,19 +138,24 @@ function initToolbar() {
       const form = new FormData();
       form.append('file', bulkInput.files[0]);
       try {
-        const resp = await fetch('/bulk-upload', { method: 'POST', body: form });
-        const data = await resp.json();
-        if (!resp.ok || data.error) {
-          announce(`Bulk upload failed: ${data.error || resp.status}`);
-          return;
-        }
+        const resp = await fetchWithCSRF('/bulk-upload', { method: 'POST', body: form });
+        const data = await readResponse(resp, { json: true });
+        const uploaded = Array.isArray(data.targets) ? splitTargets(data.targets.join('\n')) : [];
+        if (uploaded.length === 0) throw new Error(data.error || 'No valid targets were found in that file.');
         const input = document.getElementById('targetInput');
-        const existing = input.value.trim();
-        input.value = (existing ? `${existing}, ` : '') + data.targets.join(', ');
+        const combined = splitTargets(`${input.value}\n${uploaded.join('\n')}`);
+        if (combined.length > MAX_TARGETS) {
+          throw new Error(`The combined queue would exceed the ${MAX_TARGETS}-target limit.`);
+        }
+        input.value = combined.join(', ');
+        input.removeAttribute('aria-invalid');
+        document.getElementById('targetError').textContent = '';
         input.focus();
-        announce(`${data.count} targets loaded into the queue.`);
+        announce(`${uploaded.length} unique target${uploaded.length === 1 ? '' : 's'} loaded; ${combined.length} in the queue.`);
       } catch (err) {
-        announce(`Bulk upload failed: ${err.message}`);
+        const message = `Bulk upload failed: ${err.message || err}`;
+        document.getElementById('targetError').textContent = message;
+        announce(message);
       } finally {
         bulkInput.value = '';
       }
@@ -134,6 +165,9 @@ function initToolbar() {
 
 function initShortcuts() {
   document.addEventListener('keydown', (event) => {
+    // Dialogs own the keyboard while open. In particular, do not allow the
+    // global run shortcut to bypass the mandatory authorization disclosure.
+    if (document.querySelector('.modal-backdrop.is-open')) return;
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       startQuery();
@@ -148,8 +182,11 @@ function initShortcuts() {
 
 function initRescanBridge() {
   window.addEventListener('console:rescan', (event) => {
-    const { target, config } = event.detail;
-    ws.send({ targets: [target], config });
+    const { target, config, request_id: requestID } = event.detail;
+    ws.send({ request_id: requestID, targets: [target], config });
+  });
+  window.addEventListener('console:cancel-request', (event) => {
+    ws.cancelQueued(event.detail?.request_id);
   });
 }
 
@@ -161,8 +198,10 @@ function init() {
   initDragOrdering();
   initModal();
   initRescanBridge();
+  restoreActivity();
   ws.onMessage(routeMessage);
   ws.onTransportLog((message) => appendLog('SYSTEM', message));
+  ws.onRequestEvent(routeRequestEvent);
   ws.connect();
   updateWorkspaceState();
 }

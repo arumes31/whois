@@ -4,6 +4,7 @@ permissions:
   contents: read
 
 on:
+  workflow_call:
   push:
     branches: [ test, main ]
   pull_request:
@@ -19,39 +20,47 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
         with:
           go-version-file: go.mod
           cache: true
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9 (golangci/golangci-lint-action@v9)
         with:
           version: v2.11.4
+      - name: Go vet
+        run: go vet ./...
 
   test:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
         with:
           go-version-file: go.mod
           cache: true
       - name: Run tests with the race detector
         run: go test -race -count=1 ./...
+      - name: Run deterministic stress tests
+        run: go test -race -tags=stress -count=1 -run '^TestStress' ./internal/service
+      - name: Smoke-test fuzz targets
+        run: |
+          go test -run='^$' -fuzz=FuzzNormalizeTarget -fuzztime=10s ./internal/utils
+          go test -run='^$' -fuzz=FuzzParsePortSpec -fuzztime=10s ./internal/service
 
   vulnerability:
     name: Vulnerability scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
         with:
           go-version-file: go.mod
           cache: true
@@ -66,9 +75,9 @@ jobs:
     timeout-minutes: 15
     needs: [lint, test, vulnerability]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
         with:
           go-version-file: go.mod
           cache: true
@@ -81,23 +90,43 @@ jobs:
     timeout-minutes: 20
     needs: build
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6 (actions/setup-node@v6)
         with:
-          node-version: 24
+          node-version: 24.19.0
           cache: npm
       - name: Build packaged assets
         run: |
-          npm ci
-          npm run minify:js
+          npm ci --ignore-scripts
+          npm test
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4 (docker/setup-buildx-action@v4)
+        with:
+          version: v0.36.1
+          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
+      - name: Assert published Compose is image-only
+        env:
+          CONFIG_USER: ci-user
+          CONFIG_PASS: ci-password-012345
+          SECRET_KEY: ci-secret-key-0123456789abcdef
+          MAXMIND_LICENSE_KEY: unused-in-ci
+          MAXMIND_ACCOUNT_ID: unused-in-ci
+        run: |
+          docker compose -f docker-compose.ghcr.yml config --format json > "${RUNNER_TEMP}/compose-ghcr.json"
+          if jq -e '.services | to_entries[] | select(.value | has("build"))' "${RUNNER_TEMP}/compose-ghcr.json" >/dev/null; then
+            echo "Published-image Compose configuration must not contain a build section" >&2
+            exit 1
+          fi
       - name: Build the runtime image
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7 (docker/build-push-action@v7)
         with:
           context: .
+          load: true
           push: false
           tags: whois:ci
+          no-cache-filters: runtime
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Verify final image asset manifest
+        run: docker run --rm --entrypoint /bin/sh whois:ci -c 'cd /app && sha256sum -c assets.sha256'

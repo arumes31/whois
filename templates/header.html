@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ .csrf }}">
     {{ if .config.SEOEnabled }}
     <title>{{ if .page_title }}{{ .page_title }} | {{ end }}WHOIS Network Diagnostics</title>
     <meta name="description" content="{{ if .meta_description }}{{ .meta_description }}{{ else }}Professional-grade network diagnostic platform for WHOIS, DNS, GeoIP, and security reconnaissance.{{ end }}">
@@ -30,7 +31,7 @@
     <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/main.css">
 </head>
-<body>
+<body data-csrf-token="{{ .csrf }}">
 
 <a class="skip-link" href="#main-content">Skip to diagnostic console</a>
 
@@ -47,7 +48,7 @@
             <span class="app-brand__copy"><strong>WHOIS</strong><small>NETWORK COMMAND</small></span>
         </a>
         <div class="app-header__status">
-            <span class="system-status" id="systemStatus">SYSTEM ONLINE</span>
+            <span class="system-status" id="systemStatus" role="status" aria-live="polite" aria-atomic="true">SYSTEM READY</span>
             <span class="remote-ip"><span class="remote-ip__label">REMOTE IP</span><b>{{ .real_ip }}</b></span>
             <a href="/login" class="btn btn--sm">▸ CONFIG</a>
         </div>

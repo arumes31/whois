@@ -9,6 +9,7 @@ import (
 	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -36,6 +37,8 @@ const (
 	maxBulkUploadBytes = 2 * 1024 * 1024
 	maxQueryTargets    = 25
 	sessionTTL         = 12 * time.Hour
+	defaultMaxWSConns  = 128
+	defaultMaxWSPerIP  = 8
 )
 
 func generateSessionToken(secretKey string) (string, error) {
@@ -89,6 +92,10 @@ type Handler struct {
 	scanOptions service.ScanOptions
 	wsConnMu    sync.Mutex
 	wsConns     map[*websocket.Conn]struct{}
+	wsActive    int
+	wsByIP      map[string]int
+	maxWSConns  int
+	maxWSPerIP  int
 	wsWG        sync.WaitGroup
 	wsClosing   bool
 }
@@ -110,6 +117,17 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 	if maxScanPorts < 1 {
 		maxScanPorts = 1024
 	}
+	maxWSConns := cfg.MaxWSConnections
+	if maxWSConns < 1 {
+		maxWSConns = defaultMaxWSConns
+	}
+	maxWSPerIP := cfg.MaxWSConnectionsPerIP
+	if maxWSPerIP < 1 {
+		maxWSPerIP = defaultMaxWSPerIP
+	}
+	if maxWSPerIP > maxWSConns {
+		maxWSPerIP = maxWSConns
+	}
 	dnsService := service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS)
 	dnsService.SetMaxAttempts(cfg.DNSMaxAttempts)
 	h := &Handler{
@@ -120,6 +138,9 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 		serviceSem:  make(chan struct{}, serviceConcurrency),
 		scanOptions: service.ScanOptions{Concurrency: scanConcurrency, MaxPorts: maxScanPorts, ConnectTimeout: 2 * time.Second, BannerTimeout: time.Second},
 		wsConns:     make(map[*websocket.Conn]struct{}),
+		wsByIP:      make(map[string]int),
+		maxWSConns:  maxWSConns,
+		maxWSPerIP:  maxWSPerIP,
 	}
 
 	h.Upgrader = websocket.Upgrader{
@@ -127,92 +148,145 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 		WriteBufferSize:  1024,
 		HandshakeTimeout: 5 * time.Second,
 		CheckOrigin: func(r *http.Request) bool {
-			if cfg.SkipOriginCheck {
-				return true
-			}
-
-			origin := r.Header.Get("Origin")
-			if origin == "" {
-				return true
-			}
-			u, err := url.Parse(origin)
-			if err != nil {
-				return false
-			}
-
-			// Robust host comparison: strip ports if present
-			originHost := u.Hostname()
-			requestHost := r.Host
-			if host, _, err := net.SplitHostPort(requestHost); err == nil {
-				requestHost = host
-			}
-
-			// Also check X-Forwarded-Host if present (common behind reverse proxies)
-			forwardedHost := r.Header.Get("X-Forwarded-Host")
-			if forwardedHost != "" {
-				if host, _, err := net.SplitHostPort(forwardedHost); err == nil {
-					forwardedHost = host
-				}
-			}
-
-			// Cloudflare support: detect CF headers
-			cfIP := r.Header.Get("CF-Connecting-IP")
-			cfRay := r.Header.Get("CF-Ray")
-
-			utils.Log.Info("websocket origin check",
-				utils.Field("origin", origin),
-				utils.Field("origin_hostname", originHost),
-				utils.Field("request_host", r.Host),
-				utils.Field("request_hostname", requestHost),
-				utils.Field("forwarded_host", forwardedHost),
-				utils.Field("cf_ip", cfIP),
-				utils.Field("cf_ray", cfRay),
-				utils.Field("use_cloudflare", cfg.UseCloudflare),
-				utils.Field("allowed_domain", cfg.AllowedDomain),
-			)
-
-			// Allow if hosts match exactly
-			if originHost == requestHost || (forwardedHost != "" && originHost == forwardedHost) {
-				return true
-			}
-
-			// If Cloudflare is enabled and headers are present, trust the origin
-			// if it matches the host or is a subdomain of the allowed domain.
-			if cfg.UseCloudflare && cfIP != "" {
-				if originHost == requestHost || originHost == forwardedHost {
-					return true
-				}
-			}
-
-			// Fallback: Allow localhost/127.0.0.1 for development
-			if requestHost == "localhost" || requestHost == "127.0.0.1" || originHost == "localhost" || originHost == "127.0.0.1" {
-				return true
-			}
-
-			// If we are on a subdomain of the allowed domain
-			if cfg.AllowedDomain != "" {
-				if strings.HasSuffix(originHost, "."+cfg.AllowedDomain) || originHost == cfg.AllowedDomain {
-					return true
-				}
-			}
-
-			utils.Log.Warn("websocket origin rejected",
-				utils.Field("origin", origin),
-				utils.Field("request_host", r.Host),
-				utils.Field("allowed_domain", cfg.AllowedDomain),
-			)
-			return false
+			return websocketOriginAllowed(r, cfg)
 		},
 		Error: func(w http.ResponseWriter, r *http.Request, status int, reason error) {
-			utils.Log.Error("websocket upgrade error",
+			utils.Log.Warn("websocket upgrade rejected",
 				utils.Field("status", status),
 				utils.Field("reason", reason.Error()),
 				utils.Field("uri", r.URL.Path),
 			)
+			// Gorilla delegates the complete error response to this callback.
+			// Keep the useful server-side reason in structured logs, but expose
+			// only the standard status text to untrusted clients.
+			http.Error(w, http.StatusText(status), status)
 		},
 	}
 
 	return h
+}
+
+type originAddress struct {
+	scheme string
+	host   string
+	port   string
+}
+
+func websocketOriginAllowed(r *http.Request, cfg *config.Config) bool {
+	if cfg.SkipOriginCheck {
+		return true
+	}
+
+	originValue := strings.TrimSpace(r.Header.Get("Origin"))
+	if originValue == "" {
+		// Non-browser clients do not always send Origin. Browsers do, which is
+		// the trust boundary this check protects.
+		return true
+	}
+
+	expected, err := expectedWebSocketOrigin(r, cfg)
+	if err != nil {
+		return false
+	}
+	origin, err := parseOrigin(originValue)
+	if err != nil {
+		return false
+	}
+
+	if origin == expected {
+		return true
+	}
+
+	allowedDomain := strings.ToLower(strings.Trim(strings.TrimSpace(cfg.AllowedDomain), "."))
+	hostAllowed := origin.host == allowedDomain || strings.HasSuffix(origin.host, "."+allowedDomain)
+	if allowedDomain != "" && hostAllowed && origin.scheme == expected.scheme && origin.port == expected.port {
+		return true
+	}
+
+	utils.Log.Warn("websocket origin rejected",
+		utils.Field("origin", originValue),
+		utils.Field("request_host", r.Host),
+		utils.Field("allowed_domain", cfg.AllowedDomain),
+	)
+	return false
+}
+
+func expectedWebSocketOrigin(r *http.Request, cfg *config.Config) (originAddress, error) {
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	authority := r.Host
+
+	if requestFromTrustedProxy(r, cfg) {
+		if forwardedScheme := firstForwardedValue(r.Header.Get("X-Forwarded-Proto")); forwardedScheme != "" {
+			scheme = strings.ToLower(forwardedScheme)
+		}
+		if forwardedHost := firstForwardedValue(r.Header.Get("X-Forwarded-Host")); forwardedHost != "" {
+			authority = forwardedHost
+		}
+	}
+
+	return parseOrigin(scheme + "://" + authority)
+}
+
+func parseOrigin(value string) (originAddress, error) {
+	u, err := url.Parse(value)
+	if err != nil || u.User != nil || u.Hostname() == "" || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return originAddress{}, fmt.Errorf("invalid websocket origin")
+	}
+
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return originAddress{}, fmt.Errorf("unsupported websocket origin scheme")
+	}
+	port := u.Port()
+	if port == "" {
+		if scheme == "https" {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+
+	return originAddress{
+		scheme: scheme,
+		host:   strings.ToLower(strings.TrimSuffix(u.Hostname(), ".")),
+		port:   port,
+	}, nil
+}
+
+func firstForwardedValue(value string) string {
+	first, _, _ := strings.Cut(value, ",")
+	return strings.TrimSpace(first)
+}
+
+func requestFromTrustedProxy(r *http.Request, cfg *config.Config) bool {
+	if !cfg.TrustProxy && !cfg.UseCloudflare {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = strings.Trim(r.RemoteAddr, "[]")
+	}
+	peer := net.ParseIP(host)
+	if peer == nil {
+		return false
+	}
+
+	for _, entry := range strings.Split(cfg.TrustedProxies, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if trustedIP := net.ParseIP(entry); trustedIP != nil && trustedIP.Equal(peer) {
+			return true
+		}
+		if _, network, parseErr := net.ParseCIDR(entry); parseErr == nil && network.Contains(peer) {
+			return true
+		}
+	}
+	return false
 }
 
 // Close terminates hijacked WebSocket connections that net/http shutdown does
@@ -257,12 +331,23 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
+func (h *Handler) secureCookie(c echo.Context) bool {
+	if h.AppConfig.SessionCookieSecure || c.Request().TLS != nil {
+		return true
+	}
+	if !requestFromTrustedProxy(c.Request(), h.AppConfig) {
+		return false
+	}
+	return strings.EqualFold(firstForwardedValue(c.Request().Header.Get("X-Forwarded-Proto")), "https")
+}
+
 // === Routes ===
 
 func (h *Handler) Index(c echo.Context) error {
 	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 	realIP := utils.ExtractIP(c, pCfg)
 	stats, _ := h.Storage.GetSystemStats(c.Request().Context())
+	viewConfig := h.templateConfig()
 
 	if c.Request().Method == http.MethodPost {
 		ipsDomains := c.FormValue("ips_and_domains")
@@ -273,7 +358,7 @@ func (h *Handler) Index(c echo.Context) error {
 		ctEnabled := c.FormValue("ct") != "" && h.AppConfig.EnableCT
 		sslEnabled := c.FormValue("ssl") != "" && h.AppConfig.EnableSSL
 		httpEnabled := c.FormValue("http") != "" && h.AppConfig.EnableHTTP
-		geoEnabled := c.FormValue("geo") != "" && h.AppConfig.EnableGeo
+		geoEnabled := c.FormValue("geo") != "" && viewConfig.EnableGeo
 
 		items := strings.FieldsFunc(ipsDomains, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' })
 		if len(items) > maxQueryTargets {
@@ -337,8 +422,8 @@ func (h *Handler) Index(c echo.Context) error {
 			"real_ip":       realIP,
 			"auto_expand":   true,
 			"stats":         stats,
-			"config":        h.AppConfig,
-			"geo_available": service.GeoDBAvailable(),
+			"config":        viewConfig,
+			"geo_available": viewConfig.EnableGeo,
 			"mac_available": service.MACDatabaseAvailable(),
 			"current_path":  c.Request().URL.Path,
 			"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
@@ -349,12 +434,35 @@ func (h *Handler) Index(c echo.Context) error {
 		"auto_expand":   false,
 		"real_ip":       realIP,
 		"stats":         stats,
-		"config":        h.AppConfig,
-		"geo_available": service.GeoDBAvailable(),
+		"config":        viewConfig,
+		"geo_available": viewConfig.EnableGeo,
 		"mac_available": service.MACDatabaseAvailable(),
 		"current_path":  c.Request().URL.Path,
 		"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
+}
+
+func (h *Handler) templateConfig() *config.Config {
+	viewConfig := *h.AppConfig
+	viewConfig.EnableGeo = viewConfig.EnableGeo && service.GeoDBAvailable()
+	return &viewConfig
+}
+
+func (h *Handler) recordDNSHistory(ctx context.Context, target string, result interface{}, notify func(string)) {
+	if err := h.Storage.AddDNSHistory(ctx, target, result); err != nil {
+		utils.Log.Warn("failed to persist DNS history",
+			utils.Field("target", target),
+			utils.Field("error", err.Error()),
+		)
+		if notify == nil {
+			return
+		}
+		if errors.Is(err, storage.ErrDNSHistoryCapacity) {
+			notify("DNS history was not saved: retention capacity reached")
+			return
+		}
+		notify("DNS history could not be saved")
+	}
 }
 
 func (h *Handler) BulkUpload(c echo.Context) error {
@@ -380,7 +488,25 @@ func (h *Handler) BulkUpload(c echo.Context) error {
 		_ = src.Close()
 	}()
 
-	var targets []string
+	targets := make([]string, 0, maxQueryTargets)
+	seen := make(map[string]struct{}, maxQueryTargets)
+	addTarget := func(candidate string) bool {
+		trimmed := strings.TrimSpace(candidate)
+		info := utils.NormalizeTarget(trimmed)
+		if !info.Valid || !info.Networkable || !utils.IsValidTarget(trimmed) {
+			return true
+		}
+		identity := info.Scheme + "|" + info.Normalized
+		if _, exists := seen[identity]; exists {
+			return true
+		}
+		if len(targets) >= maxQueryTargets {
+			return false
+		}
+		seen[identity] = struct{}{}
+		targets = append(targets, trimmed)
+		return true
+	}
 	if strings.HasSuffix(ext, ".csv") {
 		r := csv.NewReader(src)
 		records, err := r.ReadAll()
@@ -389,9 +515,8 @@ func (h *Handler) BulkUpload(c echo.Context) error {
 		}
 		for _, record := range records {
 			for _, field := range record {
-				trimmed := strings.TrimSpace(field)
-				if utils.IsValidTarget(trimmed) {
-					targets = append(targets, trimmed)
+				if !addTarget(field) {
+					return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "Too many targets (max 25)"})
 				}
 			}
 		}
@@ -404,9 +529,8 @@ func (h *Handler) BulkUpload(c echo.Context) error {
 		for _, line := range lines {
 			parts := strings.Split(line, ",")
 			for _, part := range parts {
-				trimmed := strings.TrimSpace(part)
-				if utils.IsValidTarget(trimmed) {
-					targets = append(targets, trimmed)
+				if !addTarget(part) {
+					return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "Too many targets (max 25)"})
 				}
 			}
 		}
@@ -520,7 +644,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 				return
 			}
 			res.DNS = d
-			_ = h.Storage.AddDNSHistory(ctx, hostTarget, d)
+			h.recordDNSHistory(ctx, hostTarget, d, nil)
 		})
 	}
 
@@ -584,7 +708,7 @@ func (h *Handler) Scanner(c echo.Context) error {
 	realIP := utils.ExtractIP(c, pCfg)
 	return c.Render(http.StatusOK, "scanner.html", map[string]interface{}{
 		"real_ip": realIP,
-		"config":  h.AppConfig,
+		"config":  h.templateConfig(),
 		"csrf":    c.Get(middleware.DefaultCSRFConfig.ContextKey),
 	})
 }
@@ -688,12 +812,13 @@ func (h *Handler) Login(c echo.Context) error {
 				utils.Log.Error("failed to generate config session", utils.Field("error", err.Error()))
 				return echo.NewHTTPError(http.StatusInternalServerError, "Unable to create session")
 			}
+			// #nosec G124 -- secureCookie enforces Secure in production and for HTTPS requests.
 			c.SetCookie(&http.Cookie{
 				Name:     "session_id",
 				Value:    token,
 				Path:     "/",
 				HttpOnly: true,
-				Secure:   true, // Recommended for HTTPS
+				Secure:   h.secureCookie(c),
 				SameSite: http.SameSiteLaxMode,
 				MaxAge:   int(sessionTTL.Seconds()),
 				Expires:  time.Now().Add(sessionTTL),
@@ -748,21 +873,30 @@ func (h *Handler) Config(c echo.Context) error {
 }
 
 func (h *Handler) Logout(c echo.Context) error {
+	// #nosec G124 -- secureCookie enforces Secure in production and for HTTPS requests.
 	c.SetCookie(&http.Cookie{
 		Name:     "session_id",
 		MaxAge:   -1,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   h.secureCookie(c),
 		SameSite: http.SameSiteLaxMode,
 	})
 	return c.Redirect(http.StatusFound, "/")
 }
 
 func (h *Handler) GetHistory(c echo.Context) error {
+	// DNS answers are public data and the dashboard consumes this endpoint
+	// without a configuration session. Keep it public, but only accept one
+	// normalized DNS target and apply route-specific rate limiting in NewServer.
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+	c.Response().Header().Set("X-Robots-Tag", "noindex, nofollow")
 	item := strings.TrimSpace(c.QueryParam("item"))
 	if item == "" {
 		item = strings.TrimSpace(c.Param("item"))
+	}
+	if len(item) > 512 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid DNS history target"})
 	}
 	target := utils.NormalizeTarget(item)
 	if !target.Valid || target.Host == "" || (target.Kind != model.TargetKindDomain && target.Kind != model.TargetKindIPv4 && target.Kind != model.TargetKindIPv6) {
@@ -771,11 +905,28 @@ func (h *Handler) GetHistory(c echo.Context) error {
 	item = target.Host
 	entries, diffs, err := h.Storage.GetHistoryWithDiffs(c.Request().Context(), item)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		utils.Log.Error("failed to load DNS history", utils.Field("item", item), utils.Field("error", err.Error()))
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "unable to load DNS history"})
 	}
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"entries": entries,
 		"diffs":   diffs,
+	})
+}
+
+func (h *Handler) SystemStats(c echo.Context) error {
+	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
+	stats, err := h.Storage.GetSystemStats(c.Request().Context())
+	if err != nil {
+		utils.Log.Error("failed to load system stats", utils.Field("error", err.Error()))
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+	}
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":          "ok",
+		"monitored_count": stats.MonitoredCount,
+		"history_count":   stats.HistoryCount,
+		"geo_available":   service.GeoDBAvailable(),
+		"mac_available":   service.MACDatabaseAvailable(),
 	})
 }
 

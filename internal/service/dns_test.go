@@ -439,13 +439,10 @@ func TestDNSService_Trace_ReferralNoGlue_Detailed(t *testing.T) {
 		_ = w.WriteMsg(m)
 	})
 
-	server := &dns.Server{Addr: "127.0.0.1:15366", Net: "udp", Handler: handler}
-	go func() { _ = server.ListenAndServe() }()
-	defer func() { _ = server.Shutdown() }()
-	time.Sleep(50 * time.Millisecond)
+	resolver := startMockDNSServer(t, handler, "udp")
 
 	oldRoots := RootServers
-	RootServers = []string{"127.0.0.1:15366"}
+	RootServers = []string{resolver}
 	defer func() { RootServers = oldRoots }()
 
 	svc := NewDNSService("", "")

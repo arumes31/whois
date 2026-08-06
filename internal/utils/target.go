@@ -83,7 +83,8 @@ func NormalizeTarget(input string) model.TargetInfo {
 	}
 	info.Host, info.Port, info.Scheme = host, port, scheme
 
-	if addr, err := netip.ParseAddr(host); err == nil {
+	canonicalHost := strings.TrimSuffix(host, ".")
+	if addr, err := netip.ParseAddr(canonicalHost); err == nil {
 		addr = addr.Unmap()
 		info.Host = addr.String()
 		info.Normalized = info.Host
@@ -106,7 +107,7 @@ func NormalizeTarget(input string) model.TargetInfo {
 		return info
 	}
 	info.Kind = model.TargetKindDomain
-	info.Host = strings.ToLower(strings.TrimSuffix(host, "."))
+	info.Host = strings.ToLower(canonicalHost)
 	info.Normalized = info.Host
 	if port != "" {
 		info.Normalized = net.JoinHostPort(info.Host, port)
@@ -151,10 +152,15 @@ func splitTarget(raw string) (host, port, scheme string, err error) {
 }
 
 func isValidHostname(host string) bool {
-	if len(host) == 0 || len(host) > 253 || !strings.Contains(host, ".") {
+	if len(host) == 0 || len(host) > 253 {
 		return false
 	}
 	host = strings.TrimSuffix(host, ".")
+	// A trailing root label must not be the only dot. Validate the canonical
+	// form so every accepted hostname remains valid after normalization.
+	if host == "" || !strings.Contains(host, ".") {
+		return false
+	}
 	for _, label := range strings.Split(host, ".") {
 		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
 			return false

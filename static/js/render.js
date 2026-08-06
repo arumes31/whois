@@ -35,7 +35,7 @@ function errorDetails(service, message) {
 
 function kvRow(label, value, { copy = true, hot = false } = {}) {
   const cls = copy ? `clickable-record${hot ? ' clickable-record--hot' : ''}` : '';
-  return `<div class="kv"><dt>${escapeHTML(label)}</dt><dd class="${cls}">${escapeHTML(value ?? 'unknown')}</dd></div>`;
+  return `<dl class="kv"><dt>${escapeHTML(label)}</dt><dd class="${cls}">${escapeHTML(value ?? 'unknown')}</dd></dl>`;
 }
 
 function rawBlock(content) {
@@ -67,7 +67,7 @@ function renderTarget(data) {
   const warnings = (data.warnings || [])
     .map((w) => `<div style="color:var(--amber);font-size:11px">⚠ ${escapeHTML(w)}</div>`).join('');
   const body = `
-    <div class="kv"><dt>NORMALIZED</dt><dd class="clickable-record clickable-record--hot">${escapeHTML(data.normalized || data.input)}</dd></div>
+    <dl class="kv"><dt>NORMALIZED</dt><dd class="clickable-record clickable-record--hot">${escapeHTML(data.normalized || data.input)}</dd></dl>
     ${data.resolution_ms ? kvRow('SYSTEM DNS', `${data.resolution_ms} ms`) : ''}
     ${data.prefix ? kvRow('PREFIX', data.prefix) : ''}
     ${data.kind ? kvRow('KIND', data.kind) : ''}
@@ -89,6 +89,12 @@ function renderGeo(data) {
 }
 
 function renderWhois(data) {
+  if (typeof data === 'string' && /^(?:whois\s+)?error:/i.test(data.trim())) {
+    return errorDetails('whois', data);
+  }
+  if (data && typeof data === 'object' && data.error) {
+    return errorDetails('whois', data.error);
+  }
   if (data && typeof data === 'object') {
     const body = `
       ${kvRow('REGISTRAR', data.registrar || 'Unknown')}
@@ -124,6 +130,9 @@ function renderDns(data) {
 }
 
 function renderSubdomains(data) {
+  if (data && typeof data === 'object' && data.error) {
+    return errorDetails('subdomains', data.error);
+  }
   if (data && Object.keys(data).length > 0) {
     let inner = '';
     for (const [fqdn, records] of Object.entries(data)) {
@@ -142,19 +151,22 @@ function renderSubdomains(data) {
 
 function renderPortscan(data) {
   const open = data && typeof data === 'object' && !Array.isArray(data) ? (data.open || {}) : {};
-  const errors = data && typeof data === 'object' ? (data.error || []) : [];
+  const rawErrors = data && typeof data === 'object'
+    ? data.error
+    : (typeof data === 'string' && resultHasError(data) ? data : []);
+  const errors = Array.isArray(rawErrors) ? rawErrors : (rawErrors ? [String(rawErrors)] : []);
   let status = 'success';
   let inner = '';
   const entries = Object.entries(open);
   if (entries.length) {
     inner += entries
       .sort((a, b) => Number(a[0]) - Number(b[0]))
-      .map(([port, banner]) => `<div class="kv"><dt>PORT ${escapeHTML(port)}</dt><dd class="clickable-record clickable-record--hot">OPEN${banner ? ` — ${escapeHTML(banner)}` : ''}</dd></div>`)
+      .map(([port, banner]) => `<dl class="kv"><dt>PORT ${escapeHTML(port)}</dt><dd class="clickable-record clickable-record--hot">OPEN${banner ? ` — ${escapeHTML(banner)}` : ''}</dd></dl>`)
       .join('');
   } else {
     inner += `<div style="color:var(--phos-50)">No open ports detected in the selected range.</div>`;
   }
-  if (Array.isArray(errors) && errors.length) {
+  if (errors.length) {
     status = 'error';
     inner += `<div class="findings findings--err"><strong>SCAN FAULT</strong>${escapeHTML(errors.join('; '))}</div>`;
   }
@@ -164,6 +176,7 @@ function renderPortscan(data) {
 function renderPing(data, target, section) {
   const lines = Array.isArray(data) ? data : (Array.isArray(data?.lines) ? data.lines : []);
   const failed = resultHasError(data);
+  const errorMessage = typeof data === 'string' ? data : data?.error;
   const rtts = [];
   lines.forEach((line) => {
     const match = /time[=<]([\d.]+)\s*ms/i.exec(line);
@@ -174,7 +187,7 @@ function renderPing(data, target, section) {
     ? `<div class="ping-chart"><canvas id="${chartId}" aria-label="Ping RTT chart"></canvas></div>` : '';
   const avg = rtts.length ? (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(1) : null;
   const body = `
-    ${failed ? `<div class="findings findings--err">${escapeHTML(data.error)}</div>` : ''}
+    ${failed ? `<div class="findings findings--err">${escapeHTML(errorMessage || 'Ping failed.')}</div>` : ''}
     ${avg ? `<div class="chips"><span class="chip chip--ok">AVG ${avg} ms</span><span class="chip">N=${rtts.length}</span></div>` : ''}
     ${chartHtml}
     <div class="stream-lines">${lines.map((l) => `<div>${escapeHTML(l)}</div>`).join('')}</div>`;
@@ -187,14 +200,16 @@ function renderPing(data, target, section) {
 function renderRoute(data) {
   const lines = Array.isArray(data) ? data : (Array.isArray(data?.lines) ? data.lines : []);
   const failed = resultHasError(data);
-  const body = `${failed ? `<div class="findings findings--err">${escapeHTML(data.error)}</div>` : ''}${preLines(lines)}`;
+  const errorMessage = typeof data === 'string' ? data : data?.error;
+  const body = `${failed ? `<div class="findings findings--err">${escapeHTML(errorMessage || 'Traceroute failed.')}</div>` : ''}${preLines(lines)}`;
   return openDetails('route', failed ? 'error' : 'success', body);
 }
 
 function renderTrace(data) {
   const lines = Array.isArray(data) ? data : (Array.isArray(data?.lines) ? data.lines : []);
   const failed = resultHasError(data);
-  const body = `${failed ? `<div class="findings findings--err">${escapeHTML(data.error)}</div>` : ''}${preLines(lines)}`;
+  const errorMessage = typeof data === 'string' ? data : data?.error;
+  const body = `${failed ? `<div class="findings findings--err">${escapeHTML(errorMessage || 'DNS trace failed.')}</div>` : ''}${preLines(lines)}`;
   return openDetails('trace', failed ? 'error' : 'success', body);
 }
 
@@ -231,7 +246,7 @@ function renderHttp(data) {
   let securityRows = '';
   for (const [header, val] of Object.entries(data.security || {})) {
     const isSet = val !== 'Not Set';
-    securityRows += `<div class="kv"><dt>${escapeHTML(header)}</dt><dd><span class="chip ${isSet ? 'chip--ok' : 'chip--bad'}">${isSet ? 'SET' : 'MISSING'}</span>${isSet ? ` <span class="clickable-record">${escapeHTML(val)}</span>` : ''}</dd></div>`;
+    securityRows += `<dl class="kv"><dt>${escapeHTML(header)}</dt><dd><span class="chip ${isSet ? 'chip--ok' : 'chip--bad'}">${isSet ? 'SET' : 'MISSING'}</span>${isSet ? ` <span class="clickable-record">${escapeHTML(val)}</span>` : ''}</dd></dl>`;
   }
   const issues = (data.issues || []).map((i) => `<li>${escapeHTML(i)}</li>`).join('');
   const redirects = (data.redirects || [])
@@ -297,6 +312,13 @@ export function skeletonHtml() {
   return `<div class="skel" aria-hidden="true"><i style="width:88%"></i><i style="width:64%"></i><i style="width:76%"></i></div>`;
 }
 
-export function skippedDetails(service) {
-  return openDetails(service, 'skipped', `<div style="color:var(--phos-30)">No result returned by this module.</div>`, { open: false });
+export function skippedDetails(service, reason = '') {
+  const messages = {
+    'profile-only': 'Skipped because this target is available for profile inspection only.',
+    'invalid-target': 'Skipped because the target is invalid.',
+    failed: 'No result was returned before the diagnostic request failed.',
+    interrupted: 'No result was returned before the diagnostic stream was interrupted.',
+  };
+  const message = messages[reason] || 'No result was returned by this module.';
+  return openDetails(service, 'skipped', `<div class="module-skipped">${message}</div>`, { open: Boolean(reason) });
 }

@@ -8,7 +8,7 @@
   <div style="display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:22px" class="config-grid">
     <div>
       <div class="rail-panel" style="margin-bottom:22px">
-        <h3>ADD NEW ITEM</h3>
+        <h2>ADD NEW ITEM</h2>
         <form method="post">
           <input type="hidden" name="_csrf" value="{{ .csrf }}">
           <div class="form-field">
@@ -22,19 +22,24 @@
       </div>
 
       <div class="rail-panel">
-        <h3>GEOIP DATABASE</h3>
+        <h2>GEOIP DATABASE</h2>
         <button id="geoUpdateBtn" class="btn" style="width:100%;justify-content:center">FORCE DATABASE UPDATE</button>
         <div id="geoUpdateRes" style="margin-top:12px;font-size:11px" aria-live="polite"></div>
       </div>
+
+      <form method="post" action="/logout" style="margin-top:22px">
+        <input type="hidden" name="_csrf" value="{{ .csrf }}">
+        <button type="submit" class="btn" style="width:100%;justify-content:center">SIGN OUT</button>
+      </form>
     </div>
 
     <div class="rail-panel">
-      <h3>CURRENTLY MONITORED ({{ len .monitored }})</h3>
+      <h2>CURRENTLY MONITORED ({{ len .monitored }})</h2>
       {{ if .monitored }}
         {{ range .monitored }}
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px dashed var(--line);padding:8px 0">
-            <code style="color:var(--phos-bright)">{{ . }}</code>
-            <form method="post" onsubmit="return confirm('Remove this target from monitoring?')">
+          <div class="monitor-row">
+            <code class="monitor-row__target">{{ . }}</code>
+            <form method="post" data-confirm="Remove this target from monitoring?">
               <input type="hidden" name="_csrf" value="{{ $.csrf }}">
               <input type="hidden" name="item" value="{{ . }}">
               <button type="submit" name="action" value="remove" class="btn btn--sm" aria-label="Remove {{ . }} from monitoring">REMOVE</button>
@@ -48,28 +53,6 @@
   </div>
 </div>
 
-<style>
-  @media (max-width: 900px) { .config-grid { grid-template-columns: 1fr !important; } }
-</style>
-
-<script>
-  (function () {
-    var btn = document.getElementById('geoUpdateBtn');
-    var out = document.getElementById('geoUpdateRes');
-    btn.addEventListener('click', async function () {
-      btn.disabled = true;
-      out.innerHTML = '<span class="live-log__empty">Updating database…</span>';
-      try {
-        var resp = await fetch('/config/update-geo', { method: 'POST' });
-        var text = await resp.text();
-        out.innerHTML = '<pre class="raw-block">' + text.replace(/</g, '&lt;') + '</pre>';
-      } catch (err) {
-        out.innerHTML = '<div class="alert-err">' + String(err.message || err) + '</div>';
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  })();
-</script>
+<script type="module" src="/static/js/config.js"></script>
 
 {{ template "footer" . }}

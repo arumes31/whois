@@ -1,29 +1,32 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
 	"whois/internal/config"
 	"whois/internal/utils"
+
+	"github.com/labstack/echo/v4"
 )
 
 func TestNewServer(t *testing.T) {
-	// Setup environment
-	_ = os.Setenv("SECRET_KEY", "test-secret")
-	_ = os.Setenv("ENVIRONMENT", "development")
-	defer func() { _ = os.Unsetenv("SECRET_KEY") }()
-	defer func() { _ = os.Unsetenv("ENVIRONMENT") }()
+	t.Setenv("SECRET_KEY", "test-secret")
+	t.Setenv("ENVIRONMENT", "development")
 
 	// Change to project root so templates can be found
-	_ = os.Chdir("../../")
+	t.Chdir("../..")
 
 	utils.InitLogger()
-	cfg, _ := config.LoadConfig()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
 	// Use invalid redis port to fail fast
 	cfg.RedisPort = "1"
 	cfg.TrustedIPs = "127.0.0.1"
@@ -40,9 +43,17 @@ func TestNewServer(t *testing.T) {
 	if e == nil {
 		t.Fatal("NewServer returned nil")
 	}
+	if e.Server.ReadTimeout != 15*time.Second {
+		t.Fatalf("ReadTimeout = %s, want 15s", e.Server.ReadTimeout)
+	}
+	if e.Server.MaxHeaderBytes != 64<<10 {
+		t.Fatalf("MaxHeaderBytes = %d, want %d", e.Server.MaxHeaderBytes, 64<<10)
+	}
 
-	// Test a basic route
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	// Exercise the routed middleware without turning a unit test into a real
+	// Redis timeout probe. Index rendering is covered with deterministic storage
+	// doubles in the handler package.
+	req := httptest.NewRequest(http.MethodGet, "/livez", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
@@ -63,16 +74,132 @@ func TestNewServer(t *testing.T) {
 
 	// Test Custom Error Handler
 	t.Run("HTTPErrorHandler", func(t *testing.T) {
-		// A POST request without CSRF token will trigger a 400 Bad Request
+		// Health only supports GET; CSRF is skipped for health probes.
 		req := httptest.NewRequest(http.MethodPost, "/health", nil)
 		rec := httptest.NewRecorder()
 		e.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("Expected 400, got %d", rec.Code)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("Expected 405, got %d", rec.Code)
 		}
-		if !strings.Contains(rec.Body.String(), "400") {
-			t.Error("Error page does not contain expected status code 400")
+		if !strings.Contains(rec.Body.String(), "405") {
+			t.Error("error page does not contain expected status code 405")
+		}
+	})
+
+	t.Run("UnknownRouteRemainsNotFound", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/does-not-exist", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("unknown route = %d, want 404", rec.Code)
+		}
+	})
+
+	t.Run("StaticHEADHasCacheAndSecurityHeadersWithoutCSRFCookie", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodHead, "/static/css/main.css", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("static HEAD = %d, want 200", rec.Code)
+		}
+		if got := rec.Header().Get(echo.HeaderCacheControl); got != "public, max-age=3600, must-revalidate" {
+			t.Fatalf("Cache-Control = %q", got)
+		}
+		if strings.Contains(rec.Header().Get(echo.HeaderSetCookie), "_csrf=") {
+			t.Fatal("static HEAD allocated a CSRF cookie")
+		}
+		if got := rec.Header().Get("Referrer-Policy"); got == "" {
+			t.Fatal("static response missing Referrer-Policy")
+		}
+	})
+
+	t.Run("CSPRejectsExecutableInlineScript", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/static/css/main.css", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		csp := rec.Header().Get(echo.HeaderContentSecurityPolicy)
+		if strings.Contains(csp, "script-src 'self' 'unsafe-inline'") || strings.Contains(csp, "'unsafe-eval'") {
+			t.Fatalf("weak CSP = %q", csp)
+		}
+		if !strings.Contains(csp, "object-src 'none'") {
+			t.Fatalf("CSP missing object-src restriction: %q", csp)
+		}
+		for _, source := range strings.Fields(csp) {
+			source = strings.TrimSuffix(source, ";")
+			if source == "ws:" || source == "wss:" {
+				t.Fatalf("CSP contains an unrestricted WebSocket scheme source: %q", csp)
+			}
+		}
+		if !strings.Contains(csp, "connect-src 'self' ws://example.com:80") {
+			t.Fatalf("CSP missing exact same-origin WebSocket source: %q", csp)
+		}
+	})
+
+	t.Run("BulkUploadAllowsMultipartFramingButKeepsTwoMiBFileCap", func(t *testing.T) {
+		csrfRequest := httptest.NewRequest(http.MethodGet, "/login", nil)
+		csrfRecorder := httptest.NewRecorder()
+		e.ServeHTTP(csrfRecorder, csrfRequest)
+		var csrfCookie *http.Cookie
+		for _, cookie := range csrfRecorder.Result().Cookies() {
+			if cookie.Name == "_csrf" {
+				csrfCookie = cookie
+				break
+			}
+		}
+		if csrfCookie == nil {
+			t.Fatal("login response did not issue a CSRF cookie")
+		}
+
+		tests := []struct {
+			name       string
+			fileSize   int
+			wantStatus int
+		}{
+			{name: "exactly two MiB", fileSize: 2 * 1024 * 1024, wantStatus: http.StatusOK},
+			{name: "one byte over two MiB", fileSize: 2*1024*1024 + 1, wantStatus: http.StatusRequestEntityTooLarge},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				body := &bytes.Buffer{}
+				writer := multipart.NewWriter(body)
+				part, err := writer.CreateFormFile("file", "targets.txt")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := part.Write(bytes.Repeat([]byte{' '}, tt.fileSize)); err != nil {
+					t.Fatal(err)
+				}
+				if err := writer.Close(); err != nil {
+					t.Fatal(err)
+				}
+
+				req := httptest.NewRequest(http.MethodPost, "/bulk-upload", body)
+				req.Header.Set(echo.HeaderContentType, writer.FormDataContentType())
+				req.Header.Set("X-CSRF-Token", csrfCookie.Value)
+				req.AddCookie(csrfCookie)
+				rec := httptest.NewRecorder()
+				e.ServeHTTP(rec, req)
+				if rec.Code != tt.wantStatus {
+					t.Fatalf("status = %d, want %d: %s", rec.Code, tt.wantStatus, rec.Body.String())
+				}
+			})
+		}
+	})
+
+	t.Run("LogoutIsPOSTAndCSRFProtected", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/logout", nil)
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("GET /logout = %d, want 405", rec.Code)
+		}
+
+		req = httptest.NewRequest(http.MethodPost, "/logout", nil)
+		rec = httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("POST /logout without CSRF = %d, want 400", rec.Code)
 		}
 	})
 }

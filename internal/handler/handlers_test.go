@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -72,6 +73,17 @@ func setupMiniredisStorage(t *testing.T) *storage.Storage {
 	return &storage.Storage{Client: client}
 }
 
+type failingEvalClient struct {
+	storage.RedisClient
+	err error
+}
+
+func (c *failingEvalClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd {
+	cmd := redis.NewCmd(ctx)
+	cmd.SetErr(c.err)
+	return cmd
+}
+
 func startEmptyDNSServer(t *testing.T) string {
 	t.Helper()
 	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -96,6 +108,70 @@ func startEmptyDNSServer(t *testing.T) string {
 	<-started
 	t.Cleanup(func() { _ = server.Shutdown() })
 	return packetConn.LocalAddr().String()
+}
+
+func TestSecureCookiePolicy(t *testing.T) {
+	e := echo.New()
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{})
+
+	directHTTP := httptest.NewRequest(http.MethodGet, "/login", nil)
+	if h.secureCookie(e.NewContext(directHTTP, httptest.NewRecorder())) {
+		t.Fatal("direct development HTTP cookie unexpectedly marked Secure")
+	}
+
+	directHTTPS := httptest.NewRequest(http.MethodGet, "/login", nil)
+	directHTTPS.TLS = &tls.ConnectionState{}
+	if !h.secureCookie(e.NewContext(directHTTPS, httptest.NewRecorder())) {
+		t.Fatal("direct HTTPS cookie not marked Secure")
+	}
+
+	h.AppConfig.TrustProxy = true
+	h.AppConfig.TrustedProxies = "127.0.0.1/32"
+	proxiedHTTPS := httptest.NewRequest(http.MethodGet, "/login", nil)
+	proxiedHTTPS.RemoteAddr = "127.0.0.1:1234"
+	proxiedHTTPS.Header.Set("X-Forwarded-Proto", "https")
+	if !h.secureCookie(e.NewContext(proxiedHTTPS, httptest.NewRecorder())) {
+		t.Fatal("trusted proxied HTTPS cookie not marked Secure")
+	}
+
+	spoofedHTTPS := httptest.NewRequest(http.MethodGet, "/login", nil)
+	spoofedHTTPS.RemoteAddr = "192.0.2.10:1234"
+	spoofedHTTPS.Header.Set("X-Forwarded-Proto", "https")
+	if h.secureCookie(e.NewContext(spoofedHTTPS, httptest.NewRecorder())) {
+		t.Fatal("untrusted forwarded proto marked cookie Secure")
+	}
+
+	h.AppConfig.SessionCookieSecure = true
+	if !h.secureCookie(e.NewContext(directHTTP, httptest.NewRecorder())) {
+		t.Fatal("configured secure cookie policy was ignored")
+	}
+}
+
+func TestSystemStatsReturnsSafeAvailabilitySummary(t *testing.T) {
+	e := echo.New()
+	store := setupMiniredisStorage(t)
+	if err := store.AddMonitoredItem(context.Background(), "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	h := NewHandler(store, &config.Config{})
+	req := httptest.NewRequest(http.MethodGet, "/system-stats", nil)
+	rec := httptest.NewRecorder()
+	if err := h.SystemStats(e.NewContext(req, rec)); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if rec.Header().Get(echo.HeaderCacheControl) != "no-store" {
+		t.Fatal("system stats response is cacheable")
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["status"] != "ok" || response["monitored_count"] != float64(1) {
+		t.Fatalf("response = %#v", response)
+	}
 }
 
 type setTrackingRedisClient struct {
@@ -222,6 +298,41 @@ func TestQueryItemPreservesDNSError(t *testing.T) {
 	if len(history) != 0 {
 		t.Fatalf("DNS history entries = %d, want 0 after failed lookup", len(history))
 	}
+}
+
+func TestRecordDNSHistoryReportsSafeNonFatalFailures(t *testing.T) {
+	t.Run("capacity", func(t *testing.T) {
+		store := setupMiniredisStorage(t)
+		store.ConfigureDNSHistory(1, time.Hour)
+		if err := store.AddDNSHistory(context.Background(), "existing.example", "existing"); err != nil {
+			t.Fatal(err)
+		}
+		h := NewHandler(store, &config.Config{})
+		var notification string
+		h.recordDNSHistory(context.Background(), "new.example", "new", func(message string) {
+			notification = message
+		})
+		if notification != "DNS history was not saved: retention capacity reached" {
+			t.Fatalf("capacity notification = %q", notification)
+		}
+	})
+
+	t.Run("storage error", func(t *testing.T) {
+		store := setupMiniredisStorage(t)
+		backendErr := errors.New("sensitive redis endpoint detail")
+		store.Client = &failingEvalClient{RedisClient: store.Client, err: backendErr}
+		h := NewHandler(store, &config.Config{})
+		var notification string
+		h.recordDNSHistory(context.Background(), "new.example", "new", func(message string) {
+			notification = message
+		})
+		if notification != "DNS history could not be saved" {
+			t.Fatalf("storage-error notification = %q", notification)
+		}
+		if strings.Contains(notification, backendErr.Error()) {
+			t.Fatalf("notification leaked backend error: %q", notification)
+		}
+	})
 }
 
 func TestQueryItemRetriesDNSAfterTransientFailure(t *testing.T) {
@@ -384,6 +495,12 @@ func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	}, nil
 }
 
+type failingGeoTransport struct{}
+
+func (t *failingGeoTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("forced GeoIP transport failure")
+}
+
 func TestHandlers(t *testing.T) {
 	e, _ := setupTestEcho()
 	cfg := &config.Config{SecretKey: "test", EnableDNS: true, EnableGeo: true}
@@ -512,10 +629,19 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Logout", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/logout", nil)
+		req := httptest.NewRequest(http.MethodPost, "/logout", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		_ = h.Logout(c)
+		if err := h.Logout(c); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusFound || rec.Header().Get(echo.HeaderLocation) != "/" {
+			t.Fatalf("logout response = %d location %q", rec.Code, rec.Header().Get(echo.HeaderLocation))
+		}
+		cookies := rec.Result().Cookies()
+		if len(cookies) != 1 || cookies[0].Name != "session_id" || cookies[0].MaxAge != -1 || !cookies[0].HttpOnly {
+			t.Fatalf("logout cookie = %#v", cookies)
+		}
 	})
 
 	t.Run("History", func(t *testing.T) {
@@ -574,14 +700,22 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("History Error", func(t *testing.T) {
-		badStore := storage.NewStorage("localhost", "1")
+		badStore := setupMiniredisStorage(t)
+		if err := badStore.Client.(*redis.Client).Close(); err != nil {
+			t.Fatal(err)
+		}
 		badH := NewHandler(badStore, cfg)
 		req := httptest.NewRequest(http.MethodGet, "/history/test.com", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 		c.SetParamNames("item")
 		c.SetParamValues("test.com")
-		_ = badH.GetHistory(c)
+		if err := badH.GetHistory(c); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("history storage error status = %d, want 500", rec.Code)
+		}
 	})
 
 	t.Run("Metrics", func(t *testing.T) {
@@ -615,21 +749,20 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("Health Error", func(t *testing.T) {
-		badStore := storage.NewStorage("localhost", "1")
+		badStore := setupMiniredisStorage(t)
+		if err := badStore.Client.(*redis.Client).Close(); err != nil {
+			t.Fatal(err)
+		}
 		badH := NewHandler(badStore, cfg)
 		req := httptest.NewRequest(http.MethodGet, "/health", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		_ = badH.Health(c)
-	})
-
-	t.Run("UpdateGeoDB Success", func(t *testing.T) {
-		// Mock UpdateGeoDB logic via Service setting
-		service.InitializeGeoDB("test", "test")
-		req := httptest.NewRequest(http.MethodPost, "/update-geo", nil)
-		rec := httptest.NewRecorder()
-		c := e.NewContext(req, rec)
-		_ = h.UpdateGeoDB(c)
+		if err := badH.Health(c); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("health storage error status = %d, want 503", rec.Code)
+		}
 	})
 
 	t.Run("Scanner", func(t *testing.T) {
@@ -696,14 +829,22 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("History Error", func(t *testing.T) {
-		badStore := storage.NewStorage("localhost", "1")
+		badStore := setupMiniredisStorage(t)
+		if err := badStore.Client.(*redis.Client).Close(); err != nil {
+			t.Fatal(err)
+		}
 		badH := NewHandler(badStore, cfg)
 		req := httptest.NewRequest(http.MethodGet, "/history/test.com", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
 		c.SetParamNames("item")
 		c.SetParamValues("test.com")
-		_ = badH.GetHistory(c)
+		if err := badH.GetHistory(c); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("history storage error status = %d, want 500", rec.Code)
+		}
 	})
 
 	t.Run("queryItem Cache Hit", func(t *testing.T) {
@@ -833,12 +974,19 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("UpdateGeoDB Error Path", func(t *testing.T) {
-		// Set empty key to trigger ManualUpdateGeoDB error
+		oldClient := service.GeoHTTPClient
+		defer func() { service.GeoHTTPClient = oldClient }()
+		service.GeoHTTPClient = &http.Client{Transport: &failingGeoTransport{}}
 		service.InitializeGeoDB("", "")
 		req := httptest.NewRequest(http.MethodPost, "/update-geo", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		_ = h.UpdateGeoDB(c)
+		if err := h.UpdateGeoDB(c); err != nil {
+			t.Fatal(err)
+		}
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("UpdateGeoDB error status = %d, want 500", rec.Code)
+		}
 	})
 
 	t.Run("Robots", func(t *testing.T) {

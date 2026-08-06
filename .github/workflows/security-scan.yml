@@ -12,8 +12,17 @@ env:
 
 jobs:
   scan:
+    name: Scan ${{ matrix.platform }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+          - platform: linux/arm64
+            slug: linux-arm64
     permissions:
       contents: read
       security-events: write
@@ -21,22 +30,24 @@ jobs:
 
     steps:
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (aquasecurity/trivy-action@v0)
         with:
-          # Scans the latest image published to GHCR
-          image-ref: ghcr.io/${{ github.repository_owner }}/whois:latest
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
+          # Scan both platform manifests published beneath the latest index.
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          format: sarif
+          output: trivy-results-${{ matrix.slug }}.sarif
+          severity: CRITICAL,HIGH
           ignore-unfixed: true
-          vuln-type: 'os,library'
+          vuln-type: os,library
           exit-code: '1'
         env:
+          TRIVY_PLATFORM: ${{ matrix.platform }}
           TRIVY_USERNAME: ${{ github.actor }}
           TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
-        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4 (github/codeql-action/upload-sarif@v4)
+        if: ${{ always() && hashFiles(format('trivy-results-{0}.sarif', matrix.slug)) != '' }}
         with:
-          sarif_file: 'trivy-results.sarif'
+          sarif_file: trivy-results-${{ matrix.slug }}.sarif
+          category: trivy-daily-${{ matrix.slug }}

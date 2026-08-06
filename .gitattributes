@@ -1,5 +1,12 @@
+# Keep CI-sensitive source and shell files stable across Windows and Linux
+# checkouts without renormalizing unrelated working-tree files.
+*.go text eol=lf
 *.sh text eol=lf
 Dockerfile text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.mjs text eol=lf
+*.js text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.json text eol=lf

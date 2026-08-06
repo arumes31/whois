@@ -18,10 +18,11 @@ import (
 )
 
 type WSMessage struct {
-	Type    string      `json:"type"`
-	Target  string      `json:"target"`
-	Service string      `json:"service"`
-	Data    interface{} `json:"data"`
+	Type      string      `json:"type"`
+	RequestID string      `json:"request_id,omitempty"`
+	Target    string      `json:"target"`
+	Service   string      `json:"service"`
+	Data      interface{} `json:"data"`
 }
 
 type wsQueryConfig struct {
@@ -45,7 +46,29 @@ const (
 	maxWSQueuedQueries  = 25
 	maxCTResolveTargets = 100
 	wsWriteWait         = 10 * time.Second
+	maxWSRequestIDBytes = 128
 )
+
+func validWSRequestID(requestID string) bool {
+	if len(requestID) > maxWSRequestIDBytes {
+		return false
+	}
+	for i := range len(requestID) {
+		char := requestID[i]
+		if (char >= 'a' && char <= 'z') ||
+			(char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') {
+			continue
+		}
+		switch char {
+		case '.', '_', ':', '-':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 type wsWriter struct {
 	conn *websocket.Conn
@@ -62,6 +85,10 @@ func (w *wsWriter) write(messageType int, data []byte) error {
 }
 
 func (h *Handler) HandleWS(c echo.Context) error {
+	if !websocket.IsWebSocketUpgrade(c.Request()) {
+		return echo.NewHTTPError(http.StatusBadRequest, "websocket upgrade required")
+	}
+
 	utils.Log.Info("websocket handshake start",
 		utils.Field("host", c.Request().Host),
 		utils.Field("remote_addr", c.Request().RemoteAddr),
@@ -71,48 +98,29 @@ func (h *Handler) HandleWS(c echo.Context) error {
 		utils.Field("user_agent", c.Request().UserAgent()),
 	)
 
-	// Manual check for common proxy issues
-	if !strings.EqualFold(c.Request().Header.Get("Upgrade"), "websocket") {
-		utils.Log.Warn("websocket upgrade header missing or invalid",
-			utils.Field("upgrade", c.Request().Header.Get("Upgrade")))
+	clientIP := utils.ExtractIP(c, utils.ProxyConfig{
+		TrustProxy:    h.AppConfig.TrustProxy,
+		UseCloudflare: h.AppConfig.UseCloudflare,
+	})
+	if err := h.reserveWebSocket(clientIP); err != nil {
+		return err
 	}
-	if !strings.Contains(strings.ToLower(c.Request().Header.Get("Connection")), "upgrade") {
-		utils.Log.Warn("websocket connection header does not contain upgrade",
-			utils.Field("connection", c.Request().Header.Get("Connection")))
-	}
-
-	h.wsConnMu.Lock()
-	if h.wsClosing {
-		h.wsConnMu.Unlock()
-		return echo.NewHTTPError(http.StatusServiceUnavailable, "server is shutting down")
-	}
-	h.wsWG.Add(1)
-	h.wsConnMu.Unlock()
-	defer h.wsWG.Done()
 
 	ws, err := h.Upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
-		utils.Log.Error("websocket upgrade failed",
-			utils.Field("error", err.Error()),
-			utils.Field("remote_addr", c.Request().RemoteAddr),
-			utils.Field("origin", c.Request().Header.Get("Origin")),
-		)
-		return err
+		h.releaseWebSocket(clientIP, nil)
+		return nil
 	}
 	h.wsConnMu.Lock()
 	if h.wsClosing {
 		h.wsConnMu.Unlock()
 		_ = ws.Close()
+		h.releaseWebSocket(clientIP, nil)
 		return nil
 	}
 	h.wsConns[ws] = struct{}{}
 	h.wsConnMu.Unlock()
-	defer func() {
-		h.wsConnMu.Lock()
-		delete(h.wsConns, ws)
-		h.wsConnMu.Unlock()
-		_ = ws.Close()
-	}()
+	defer h.releaseWebSocket(clientIP, ws)
 	ws.SetReadLimit(maxWSMessageBytes)
 	writer := &wsWriter{conn: ws}
 	ctx, cancel := context.WithCancel(c.Request().Context())
@@ -158,16 +166,22 @@ func (h *Handler) HandleWS(c echo.Context) error {
 	for {
 		_, msg, err := ws.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+			if websocket.IsUnexpectedCloseError(
+				err,
+				websocket.CloseNormalClosure,
+				websocket.CloseGoingAway,
+				websocket.CloseAbnormalClosure,
+			) {
 				utils.Log.Warn("websocket read error", utils.Field("error", err.Error()))
 			}
 			break
 		}
 
 		var input struct {
-			Type    string        `json:"type"`
-			Targets []string      `json:"targets"`
-			Config  wsQueryConfig `json:"config"`
+			Type      string        `json:"type"`
+			RequestID string        `json:"request_id"`
+			Targets   []string      `json:"targets"`
+			Config    wsQueryConfig `json:"config"`
 		}
 
 		if err := json.Unmarshal(msg, &input); err != nil {
@@ -180,9 +194,14 @@ func (h *Handler) HandleWS(c echo.Context) error {
 			_ = ws.SetReadDeadline(time.Now().Add(readWait))
 			continue
 		}
+		if !validWSRequestID(input.RequestID) {
+			payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "invalid request_id"})
+			_ = writer.write(websocket.TextMessage, payload)
+			continue
+		}
 
 		if len(input.Targets) > maxWSTargets {
-			payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "too many targets; maximum is " + strconv.Itoa(maxWSTargets)})
+			payload, _ := json.Marshal(WSMessage{Type: "error", RequestID: input.RequestID, Service: "system", Data: "too many targets; maximum is " + strconv.Itoa(maxWSTargets)})
 			_ = writer.write(websocket.TextMessage, payload)
 			continue
 		}
@@ -206,12 +225,12 @@ func (h *Handler) HandleWS(c echo.Context) error {
 			case <-ctx.Done():
 				return nil
 			default:
-				payload, _ := json.Marshal(WSMessage{Type: "error", Target: target, Service: "system", Data: "too many queued targets; maximum is " + strconv.Itoa(maxWSQueuedQueries)})
+				payload, _ := json.Marshal(WSMessage{Type: "error", RequestID: input.RequestID, Target: target, Service: "system", Data: "too many queued targets; maximum is " + strconv.Itoa(maxWSQueuedQueries)})
 				_ = writer.write(websocket.TextMessage, payload)
 				continue
 			}
 			queryWG.Add(1)
-			go func(target string, queryConfig wsQueryConfig) {
+			go func(target string, queryConfig wsQueryConfig, requestID string) {
 				defer queryWG.Done()
 				defer func() { <-querySlots }()
 				select {
@@ -226,14 +245,55 @@ func (h *Handler) HandleWS(c echo.Context) error {
 				case h.targetSem <- struct{}{}:
 				}
 				defer func() { <-h.targetSem }()
-				h.streamQuery(ctx, writer, target, queryConfig)
-			}(target, input.Config)
+				h.streamQuery(ctx, writer, target, queryConfig, requestID)
+			}(target, input.Config, input.RequestID)
 		}
 	}
 	return nil
 }
 
-func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target string, cfg wsQueryConfig) {
+func (h *Handler) reserveWebSocket(clientIP string) error {
+	h.wsConnMu.Lock()
+	defer h.wsConnMu.Unlock()
+
+	if h.wsClosing {
+		return echo.NewHTTPError(http.StatusServiceUnavailable, "server is shutting down")
+	}
+	if h.wsActive >= h.maxWSConns {
+		return echo.NewHTTPError(http.StatusTooManyRequests, "websocket connection limit reached")
+	}
+	if h.wsByIP[clientIP] >= h.maxWSPerIP {
+		return echo.NewHTTPError(http.StatusTooManyRequests, "websocket connection limit reached for client")
+	}
+
+	h.wsActive++
+	h.wsByIP[clientIP]++
+	h.wsWG.Add(1)
+	return nil
+}
+
+func (h *Handler) releaseWebSocket(clientIP string, connection *websocket.Conn) {
+	if connection != nil {
+		_ = connection.Close()
+	}
+
+	h.wsConnMu.Lock()
+	if connection != nil {
+		delete(h.wsConns, connection)
+	}
+	if h.wsActive > 0 {
+		h.wsActive--
+	}
+	if h.wsByIP[clientIP] <= 1 {
+		delete(h.wsByIP, clientIP)
+	} else {
+		h.wsByIP[clientIP]--
+	}
+	h.wsConnMu.Unlock()
+	h.wsWG.Done()
+}
+
+func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target string, cfg wsQueryConfig, requestID string) {
 	cardTarget := target
 	targetInfo := utils.EnrichTarget(ctx, target)
 	endpointTarget := targetInfo.Normalized
@@ -247,10 +307,11 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 	// Helper to send message
 	send := func(serviceName string, data interface{}) {
 		msg := WSMessage{
-			Type:    "result",
-			Target:  cardTarget,
-			Service: serviceName,
-			Data:    data,
+			Type:      "result",
+			RequestID: requestID,
+			Target:    cardTarget,
+			Service:   serviceName,
+			Data:      data,
 		}
 		b, _ := json.Marshal(msg)
 		_ = writer.write(websocket.TextMessage, b)
@@ -258,10 +319,11 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 
 	sendLog := func(message string) {
 		msg := WSMessage{
-			Type:    "log",
-			Target:  cardTarget,
-			Service: "system",
-			Data:    message,
+			Type:      "log",
+			RequestID: requestID,
+			Target:    cardTarget,
+			Service:   "system",
+			Data:      message,
 		}
 		b, _ := json.Marshal(msg)
 		_ = writer.write(websocket.TextMessage, b)
@@ -274,7 +336,7 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			reason = "this target type is profile-only in provider-free mode"
 		}
 		sendLog("Target cannot be queried: " + reason)
-		msg := WSMessage{Type: "all_done", Target: cardTarget}
+		msg := WSMessage{Type: "all_done", RequestID: requestID, Target: cardTarget}
 		b, _ := json.Marshal(msg)
 		_ = writer.write(websocket.TextMessage, b)
 		return
@@ -324,9 +386,10 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 	// Helper to send completion status
 	sendDone := func(serviceName string) {
 		msg := WSMessage{
-			Type:    "done",
-			Target:  cardTarget,
-			Service: serviceName,
+			Type:      "done",
+			RequestID: requestID,
+			Target:    cardTarget,
+			Service:   serviceName,
 		}
 		b, _ := json.Marshal(msg)
 		_ = writer.write(websocket.TextMessage, b)
@@ -488,9 +551,13 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 				sendLog("DNS Error: " + err.Error())
 			} else {
 				dmu.Lock()
-				send("dns", dnsData)
-				_ = h.Storage.AddDNSHistory(ctx, target, dnsData)
+				historyData := make(map[string]interface{}, len(dnsData))
+				for recordType, data := range dnsData {
+					historyData[recordType] = data
+				}
 				dmu.Unlock()
+				send("dns", historyData)
+				h.recordDNSHistory(ctx, target, historyData, sendLog)
 			}
 			sendLog("DNS resolution finished for " + target)
 			sendDone("dns")
@@ -629,7 +696,7 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 	wg.Wait()
 	sendLog("All tasks completed for " + target)
 
-	msg := WSMessage{Type: "all_done", Target: cardTarget}
+	msg := WSMessage{Type: "all_done", RequestID: requestID, Target: cardTarget}
 	b, _ := json.Marshal(msg)
 	_ = writer.write(websocket.TextMessage, b)
 }

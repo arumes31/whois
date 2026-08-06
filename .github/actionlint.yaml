@@ -1,0 +1,6 @@
+paths:
+  .github/workflows/docker-publish.yml:
+    # GitHub Actions supports concurrency.queue=max, but actionlint v1.7.12's
+    # bundled schema predates that key. Keep every other workflow check active.
+    ignore:
+      - 'unexpected key "queue" for "concurrency" section'

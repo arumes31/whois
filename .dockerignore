@@ -17,6 +17,7 @@ README.md
 .env.*
 !.env.example
 node_modules
+assets.sha256
 coverage
 coverage.*
 *.out
@@ -31,3 +32,4 @@ data/GeoLite2-City.mmdb
 data/*.tar.gz
 **/*_test.go
 internal/service/static/background.jpg
+static/background.jpg

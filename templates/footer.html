@@ -3,7 +3,7 @@
 </main>
 
 <!-- Shared modal (history viewer + quick tools) -->
-<div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+<div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true" tabindex="-1">
     <div class="modal-box">
         <div class="modal-box__head">
             <h2 id="modalTitle">TOOL</h2>
@@ -16,7 +16,7 @@
 </div>
 
 <!-- Security & legal disclosure -->
-<div class="modal-backdrop" id="disclosureBackdrop" role="dialog" aria-modal="true" aria-labelledby="disclosureTitle" aria-describedby="disclosureSummary">
+<div class="modal-backdrop" id="disclosureBackdrop" role="dialog" aria-modal="true" aria-labelledby="disclosureTitle" aria-describedby="disclosureSummary" aria-hidden="true" tabindex="-1">
     <div class="modal-box">
         <div class="modal-box__head">
             <h2 id="disclosureTitle">SECURITY &amp; LEGAL DISCLOSURE</h2>
@@ -35,20 +35,7 @@
     </div>
 </div>
 
-<script>
-    (function () {
-        var KEY = 'whois_disclosure_accepted';
-        var backdrop = document.getElementById('disclosureBackdrop');
-        if (!backdrop) return;
-        var accepted = false;
-        try { accepted = window.localStorage.getItem(KEY) === 'true'; } catch (e) { /* storage unavailable */ }
-        if (!accepted) backdrop.classList.add('is-open');
-        document.getElementById('disclosureAccept').addEventListener('click', function () {
-            try { window.localStorage.setItem(KEY, 'true'); } catch (e) { /* storage unavailable */ }
-            backdrop.classList.remove('is-open');
-        });
-    })();
-</script>
+<script type="module" src="/static/js/ui.js"></script>
 </body>
 </html>
 {{ end }}

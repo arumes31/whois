@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"sync"
 	"testing"
@@ -231,6 +233,168 @@ func TestStorage_DNSHistory(t *testing.T) {
 	}
 }
 
+func TestStorage_DNSHistoryConcurrentIdenticalWritesAreDeduplicated(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const writers = 32
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, writers)
+	for range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errCh <- s.AddDNSHistory(ctx, "concurrent.example", map[string][]string{
+				"A": {"192.0.2.1"},
+			})
+		}()
+	}
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent write failed: %v", err)
+		}
+	}
+
+	history, err := s.GetDNSHistory(ctx, "concurrent.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("identical concurrent writes produced %d entries, want 1", len(history))
+	}
+}
+
+func TestStorage_DNSHistoryRecoversFromScalarOrCorruptHead(t *testing.T) {
+	tests := []struct {
+		name string
+		head string
+	}{
+		{name: "JSON null", head: "null"},
+		{name: "JSON scalar", head: "42"},
+		{name: "malformed JSON", head: "not-json"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := setupMiniredis(t)
+			ctx := context.Background()
+			const target = "corrupt-head.example"
+			if err := s.Client.LPush(ctx, dnsHistoryKeyPrefix+target, tt.head).Err(); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := s.AddDNSHistory(ctx, target, map[string]string{"A": "192.0.2.1"}); err != nil {
+				t.Fatalf("write after corrupt head failed: %v", err)
+			}
+			head, err := s.Client.LIndex(ctx, dnsHistoryKeyPrefix+target, 0).Result()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var entry model.HistoryEntry
+			if err := json.Unmarshal([]byte(head), &entry); err != nil {
+				t.Fatalf("replacement head is not a history entry: %v", err)
+			}
+			if entry.Result != `{"A":"192.0.2.1"}` {
+				t.Fatalf("replacement result = %q", entry.Result)
+			}
+		})
+	}
+}
+
+func TestStorage_DNSHistoryPrunesStaleTargetsOnlyAtCapacity(t *testing.T) {
+	s := setupMiniredis(t)
+	s.ConfigureDNSHistory(3, time.Hour)
+	ctx := context.Background()
+
+	if err := s.Client.SAdd(ctx, dnsHistoryTargetsKey, "stale.example").Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"one.example", "two.example"} {
+		if err := s.AddDNSHistory(ctx, target, map[string]string{"A": "192.0.2.1"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tracked, err := s.Client.SCard(ctx, dnsHistoryTargetsKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracked != 3 {
+		t.Fatalf("below-capacity insertion unexpectedly pruned the stale member: count=%d", tracked)
+	}
+
+	if err := s.AddDNSHistory(ctx, "three.example", map[string]string{"A": "192.0.2.3"}); err != nil {
+		t.Fatalf("capacity-edge insertion did not reclaim stale member: %v", err)
+	}
+	tracked, err = s.Client.SCard(ctx, dnsHistoryTargetsKey).Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tracked != 3 {
+		t.Fatalf("tracked targets after capacity pruning = %d, want 3", tracked)
+	}
+	isStale, err := s.Client.(*redis.Client).SIsMember(ctx, dnsHistoryTargetsKey, "stale.example").Result()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if isStale {
+		t.Fatal("capacity-edge insertion left stale tracking member behind")
+	}
+}
+
+func TestStorage_DNSHistoryCapacityAndTTL(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	s := &Storage{Client: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
+	s.ConfigureDNSHistory(2, time.Hour)
+	ctx := context.Background()
+
+	for _, target := range []string{"one.example", "two.example"} {
+		if err := s.AddDNSHistory(ctx, target, map[string]string{"A": "203.0.113.1"}); err != nil {
+			t.Fatalf("add %s: %v", target, err)
+		}
+	}
+	if err := s.AddDNSHistory(ctx, "three.example", map[string]string{"A": "203.0.113.3"}); !errors.Is(err, ErrDNSHistoryCapacity) {
+		t.Fatalf("third target error = %v, want capacity error", err)
+	}
+	if err := s.AddDNSHistory(ctx, "one.example", map[string]string{"A": "203.0.113.2"}); err != nil {
+		t.Fatalf("existing target update at capacity: %v", err)
+	}
+	stats, err := s.GetSystemStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.HistoryCount != 2 {
+		t.Fatalf("history count = %d, want 2", stats.HistoryCount)
+	}
+
+	mr.FastForward(time.Hour + time.Second)
+	stats, err = s.GetSystemStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.HistoryCount != 0 {
+		t.Fatalf("expired history count = %d, want 0", stats.HistoryCount)
+	}
+	if err := s.AddDNSHistory(ctx, "three.example", map[string]string{"A": "203.0.113.3"}); err != nil {
+		t.Fatalf("add after expiry: %v", err)
+	}
+}
+
+func TestStorage_GetDNSHistoryReturnsEmptySlice(t *testing.T) {
+	s := setupMiniredis(t)
+	entries, err := s.GetDNSHistory(context.Background(), "missing.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries == nil || len(entries) != 0 {
+		t.Fatalf("entries = %#v, want non-nil empty slice", entries)
+	}
+}
+
 func TestStorage_AddDNSHistoryRejectsUnencodableValueBeforeMutation(t *testing.T) {
 	s := setupMiniredis(t)
 	ctx := context.Background()
@@ -433,6 +597,129 @@ func TestStorage_StatsBackfillsLegacyHistoryKeys(t *testing.T) {
 	}
 	if tracked != 1 {
 		t.Fatalf("backfilled targets = %d, want 1", tracked)
+	}
+}
+
+func TestStorage_StatsMigratesMixedTrackedAndUntrackedHistory(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	s := &Storage{Client: client}
+	s.ConfigureDNSHistory(10, time.Hour)
+	ctx := context.Background()
+
+	for _, target := range []string{"tracked.example", "untracked.example"} {
+		if err := client.LPush(ctx, dnsHistoryKeyPrefix+target, "legacy").Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := client.SAdd(ctx, dnsHistoryTargetsKey, "tracked.example").Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := s.GetSystemStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.HistoryCount != 2 {
+		t.Fatalf("mixed legacy history count = %d, want 2", stats.HistoryCount)
+	}
+	for _, target := range []string{"tracked.example", "untracked.example"} {
+		ttl, err := client.TTL(ctx, dnsHistoryKeyPrefix+target).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ttl <= 0 || ttl > time.Hour {
+			t.Fatalf("%s TTL = %s, want (0, 1h]", target, ttl)
+		}
+		tracked, err := client.SIsMember(ctx, dnsHistoryTargetsKey, target).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !tracked {
+			t.Fatalf("%s was not added to the tracking set", target)
+		}
+	}
+}
+
+func TestStorage_StatsLegacyMigrationIsBoundedAndResumable(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	s := &Storage{Client: client}
+	s.ConfigureDNSHistory(1000, time.Hour)
+	ctx := context.Background()
+	const total = dnsHistoryMigrationBatch + 37
+
+	for i := range total {
+		target := fmt.Sprintf("legacy-%03d.example", i)
+		if err := client.LPush(ctx, dnsHistoryKeyPrefix+target, "legacy").Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stats, err := s.GetSystemStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.HistoryCount <= 0 || stats.HistoryCount > dnsHistoryMigrationBatch {
+		t.Fatalf("first migration processed %d targets, want 1..%d", stats.HistoryCount, dnsHistoryMigrationBatch)
+	}
+
+	for attempts := 0; stats.HistoryCount < total && attempts < 10; attempts++ {
+		stats, err = s.GetSystemStats(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if stats.HistoryCount != total {
+		t.Fatalf("resumed migration count = %d, want %d", stats.HistoryCount, total)
+	}
+	for i := range total {
+		target := fmt.Sprintf("legacy-%03d.example", i)
+		ttl, err := client.TTL(ctx, dnsHistoryKeyPrefix+target).Result()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ttl <= 0 {
+			t.Fatalf("%s was not migrated to expiring retention", target)
+		}
+	}
+}
+
+func TestStorage_StatsStaleCleanupIsBoundedAndConverges(t *testing.T) {
+	s := setupMiniredis(t)
+	ctx := context.Background()
+	const total = dnsHistoryMigrationBatch + 37
+	members := make([]interface{}, 0, total)
+	for i := range total {
+		members = append(members, fmt.Sprintf("stale-%03d.example", i))
+	}
+	if err := s.Client.SAdd(ctx, dnsHistoryTargetsKey, members...).Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	stats, err := s.GetSystemStats(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.HistoryCount < total-dnsHistoryMigrationBatch || stats.HistoryCount >= total {
+		t.Fatalf("first bounded cleanup count = %d, want [%d, %d)", stats.HistoryCount, total-dnsHistoryMigrationBatch, total)
+	}
+	for attempts := 0; stats.HistoryCount > 0 && attempts < 10; attempts++ {
+		stats, err = s.GetSystemStats(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if stats.HistoryCount != 0 {
+		t.Fatalf("stale cleanup did not converge: count=%d", stats.HistoryCount)
 	}
 }
 

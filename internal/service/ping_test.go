@@ -16,20 +16,6 @@ func init() {
 	utils.SetAllowPrivateIPs(true)
 }
 
-func TestPing(t *testing.T) {
-	found := false
-	_ = Ping(context.Background(), "127.0.0.1", 1, func(line string) {
-		l := strings.ToLower(line)
-		if strings.Contains(l, "reply from") || strings.Contains(l, "64 bytes from") || strings.Contains(l, "127.0.0.1") {
-			found = true
-		}
-	})
-
-	if !found {
-		t.Log("Ping output did not contain expected patterns (might be environment specific)")
-	}
-}
-
 func TestPing_InvalidTarget(t *testing.T) {
 	hasError := false
 	err := Ping(context.Background(), "invalid!target", 1, func(line string) {

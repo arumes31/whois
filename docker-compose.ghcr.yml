@@ -1,16 +1,15 @@
-# Published-image deployment. Service settings are inherited from the local
-# Compose file so both installation paths share one security/config contract.
+# Published-image deployment. This leaf never inherits from the local-build
+# definition, so `docker compose config` cannot reintroduce a build rule.
 services:
   web:
     extends:
-      file: docker-compose.yml
+      file: docker-compose.common.yml
       service: web
     image: ghcr.io/arumes31/whois:latest
-    build: null
 
   redis:
     extends:
-      file: docker-compose.yml
+      file: docker-compose.common.yml
       service: redis
 
 networks:

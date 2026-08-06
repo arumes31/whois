@@ -28,7 +28,8 @@ func TestWebSocketHandshake(t *testing.T) {
 	}))
 
 	cfg := &config.Config{
-		SkipOriginCheck: true,
+		TrustProxy:     true,
+		TrustedProxies: "127.0.0.1/32",
 	}
 	h := NewHandler(&storage.Storage{}, cfg)
 
@@ -57,12 +58,14 @@ func TestWebSocketHandshake(t *testing.T) {
 
 		conn, resp, err := dialer.Dial(u, header)
 		if err != nil {
+			status := 0
+			var body []byte
 			if resp != nil {
-				body, _ := io.ReadAll(resp.Body)
-				t.Logf("Handshake failed with body: %s", string(body))
+				status = resp.StatusCode
+				body, _ = io.ReadAll(resp.Body)
+				_ = resp.Body.Close()
 			}
-			// If it fails with 400, it reproduces the issue
-			t.Fatalf("Handshake with proxy headers failed: %v", err)
+			t.Fatalf("trusted proxy handshake failed: %v (status=%d body=%q)", err, status, body)
 		}
 		_ = conn.Close()
 	})

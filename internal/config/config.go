@@ -45,9 +45,15 @@ type Config struct {
 	PortScanConcurrency   int
 	PortScanMaxPorts      int
 	DNSMaxAttempts        int
+	MaxWSConnections      int
+	MaxWSConnectionsPerIP int
+	DNSHistoryMaxTargets  int
+	DNSHistoryTTLHours    int
+	SessionCookieSecure   bool
 }
 
 func LoadConfig() (*Config, error) {
+	environment := strings.ToLower(strings.TrimSpace(getEnv("ENVIRONMENT", "development")))
 	cfg := &Config{
 		RedisHost:             getEnv("REDIS_HOST", "localhost"),
 		RedisPort:             getEnv("REDIS_PORT", "6379"),
@@ -78,13 +84,18 @@ func LoadConfig() (*Config, error) {
 		AllowLoopbackIPs:      getEnvBool("ALLOW_LOOPBACK_IPS", false),
 		AllowLinkLocalIPs:     getEnvBool("ALLOW_LINK_LOCAL_IPS", false),
 		CORSOrigins:           getEnv("CORS_ORIGINS", ""),
-		Environment:           getEnv("ENVIRONMENT", "development"),
+		Environment:           environment,
 		AllowDevCors:          getEnvBool("ALLOW_DEV_CORS", false),
 		MaxTargetConcurrency:  getEnvInt("MAX_TARGET_CONCURRENCY", 4, 1, 64),
 		MaxServiceConcurrency: getEnvInt("MAX_SERVICE_CONCURRENCY", 12, 1, 128),
 		PortScanConcurrency:   getEnvInt("PORT_SCAN_CONCURRENCY", 32, 1, 256),
 		PortScanMaxPorts:      getEnvInt("PORT_SCAN_MAX_PORTS", 1024, 1, 65535),
 		DNSMaxAttempts:        getEnvInt("DNS_MAX_ATTEMPTS", 3, 1, 10),
+		MaxWSConnections:      getEnvInt("MAX_WS_CONNECTIONS", 128, 1, 4096),
+		MaxWSConnectionsPerIP: getEnvInt("MAX_WS_CONNECTIONS_PER_IP", 8, 1, 512),
+		DNSHistoryMaxTargets:  getEnvInt("DNS_HISTORY_MAX_TARGETS", 1000, 1, 100000),
+		DNSHistoryTTLHours:    getEnvInt("DNS_HISTORY_TTL_HOURS", 720, 1, 8760),
+		SessionCookieSecure:   getEnvBool("SESSION_COOKIE_SECURE", environment == "production"),
 	}
 
 	if cfg.SecretKey == "" {
@@ -93,9 +104,14 @@ func LoadConfig() (*Config, error) {
 	if err := validateConfiguredValues(); err != nil {
 		return nil, err
 	}
-	cfg.Environment = strings.ToLower(strings.TrimSpace(cfg.Environment))
 	if cfg.Environment != "development" && cfg.Environment != "test" && cfg.Environment != "production" {
 		return nil, fmt.Errorf("ENVIRONMENT must be development, test, or production")
+	}
+	if cfg.MaxWSConnectionsPerIP > cfg.MaxWSConnections {
+		return nil, fmt.Errorf("MAX_WS_CONNECTIONS_PER_IP must not exceed MAX_WS_CONNECTIONS")
+	}
+	if cfg.AllowedDomain != "" && !isValidAllowedDomain(cfg.AllowedDomain) {
+		return nil, fmt.Errorf("ALLOWED_DOMAIN must be a hostname with at least two labels")
 	}
 	if cfg.Environment == "production" {
 		if cfg.ConfigUser == "" || strings.EqualFold(cfg.ConfigUser, "admin") || strings.EqualFold(cfg.ConfigUser, "change_me") {
@@ -128,11 +144,29 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
+func isValidAllowedDomain(value string) bool {
+	domain := strings.ToLower(strings.Trim(strings.TrimSpace(value), "."))
+	if len(domain) == 0 || len(domain) > 253 || !strings.Contains(domain, ".") || strings.ContainsAny(domain, "/:*") {
+		return false
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, char := range label {
+			if (char < 'a' || char > 'z') && (char < '0' || char > '9') && char != '-' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 func validateConfiguredValues() error {
 	boolKeys := []string{
 		"TRUST_PROXY", "USE_CLOUDFLARE", "ENABLE_GEO", "ENABLE_SSL", "ENABLE_WHOIS",
 		"ENABLE_DNS", "ENABLE_CT", "ENABLE_HTTP", "AUTO_UPDATE_DATABASES", "SEO_ENABLED", "WS_SKIP_ORIGIN_CHECK",
-		"ALLOW_PRIVATE_IPS", "ALLOW_LOOPBACK_IPS", "ALLOW_LINK_LOCAL_IPS", "ALLOW_DEV_CORS",
+		"ALLOW_PRIVATE_IPS", "ALLOW_LOOPBACK_IPS", "ALLOW_LINK_LOCAL_IPS", "ALLOW_DEV_CORS", "SESSION_COOKIE_SECURE",
 	}
 	for _, key := range boolKeys {
 		if value, ok := os.LookupEnv(key); ok {
@@ -150,6 +184,8 @@ func validateConfiguredValues() error {
 		{"MAX_TARGET_CONCURRENCY", 1, 64}, {"MAX_SERVICE_CONCURRENCY", 1, 128},
 		{"PORT_SCAN_CONCURRENCY", 1, 256}, {"PORT_SCAN_MAX_PORTS", 1, 65535},
 		{"DNS_MAX_ATTEMPTS", 1, 10},
+		{"MAX_WS_CONNECTIONS", 1, 4096}, {"MAX_WS_CONNECTIONS_PER_IP", 1, 512},
+		{"DNS_HISTORY_MAX_TARGETS", 1, 100000}, {"DNS_HISTORY_TTL_HOURS", 1, 8760},
 	}
 	for _, setting := range intSettings {
 		if value, ok := os.LookupEnv(setting.key); ok {

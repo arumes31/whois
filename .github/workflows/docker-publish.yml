@@ -7,54 +7,179 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Serialize all release events, including main and tag refs that may target the
+# same commit and therefore the same final SHA tag.
 concurrency:
-  group: docker-publish-${{ github.ref }}
-  cancel-in-progress: false
+  group: docker-publish-${{ github.repository }}
+  queue: max
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
+  BUILDX_VERSION: v0.36.1
+  BUILDKIT_IMAGE: moby/buildkit:buildx-stable-1@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
+  QEMU_IMAGE: tonistiigi/binfmt:latest@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
 jobs:
+  quality:
+    name: Full Go CI gate
+    permissions:
+      contents: read
+    uses: ./.github/workflows/go-ci.yml
+
   build:
+    name: Build and scan ${{ matrix.platform }}
+    needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            slug: linux-amd64
+          - platform: linux/arm64
+            slug: linux-arm64
     permissions:
       contents: read
       packages: write
-      security-events: write # Required for uploading Trivy scan results
+      security-events: write
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Run tests
-        run: go test -count=1 ./...
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6 (actions/setup-node@v6)
         with:
-          node-version: 24
+          node-version: 24.19.0
           cache: npm
 
-      - name: Install asset build dependencies
-        run: npm ci
+      - name: Verify deterministic asset build
+        run: |
+          npm ci --ignore-scripts
+          npm test
+          npm audit --audit-level=high
 
-      - name: Minify packaged JavaScript
-        run: npm run minify:js
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4 (docker/setup-qemu-action@v4)
+        with:
+          image: ${{ env.QEMU_IMAGE }}
+          platforms: arm64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4 (docker/setup-buildx-action@v4)
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Log in to the container registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4 (docker/login-action@v4)
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image labels
         id: meta
-        uses: docker/metadata-action@v6
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6 (docker/metadata-action@v6)
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      - name: Push architecture image by digest
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7 (docker/build-push-action@v7)
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          no-cache-filters: runtime
+          cache-from: type=gha,scope=publish-${{ matrix.slug }}
+          cache-to: type=gha,mode=max,scope=publish-${{ matrix.slug }}
+
+      - name: Verify scanned immutable image assets
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker run --rm --platform "$PLATFORM" --entrypoint /bin/sh "${REGISTRY}/${IMAGE_NAME}@${DIGEST}" -c 'cd /app && sha256sum -c assets.sha256'
+
+      - name: Scan immutable architecture digest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (aquasecurity/trivy-action@v0)
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-results-${{ matrix.slug }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '1'
+        env:
+          TRIVY_PLATFORM: ${{ matrix.platform }}
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@5595ccaf912efad79be6eef63a5619ff05969be3 # v4 (github/codeql-action@v4)
+        if: ${{ always() && hashFiles(format('trivy-results-{0}.sarif', matrix.slug)) != '' }}
+        with:
+          sarif_file: trivy-results-${{ matrix.slug }}.sarif
+          category: trivy-publish-${{ matrix.slug }}
+
+      - name: Record scanned digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM_SLUG: ${{ matrix.slug }}
+        run: |
+          mkdir -p "${RUNNER_TEMP}/digests"
+          touch "${RUNNER_TEMP}/digests/${PLATFORM_SLUG}-${DIGEST#sha256:}"
+
+      - name: Upload run-unique digest artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (actions/upload-artifact@v4)
+        with:
+          name: publish-digests-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.slug }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Assemble verified multi-architecture manifest
+    needs: [quality, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4 (docker/setup-buildx-action@v4)
+        with:
+          version: ${{ env.BUILDX_VERSION }}
+          driver-opts: image=${{ env.BUILDKIT_IMAGE }}
+
+      - name: Log in to the container registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4 (docker/login-action@v4)
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download this run's scanned digests
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4 (actions/download-artifact@v4)
+        with:
+          pattern: publish-digests-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Extract final tags
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6 (docker/metadata-action@v6)
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
@@ -63,50 +188,38 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
-      - name: Build Docker image for scanning
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: ./Dockerfile
-          load: true
-          platforms: linux/amd64
-          tags: whois:scan
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@v0.36.0
-        with:
-          image-ref: whois:scan
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-          vuln-type: 'os,library'
-          exit-code: '1'
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v4
-        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-      - name: Log in to the container registry
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Push the scanned image
+      - name: Assemble manifest from scanned immutable digests
         env:
+          DIGEST_DIR: ${{ runner.temp }}/digests
           IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
         run: |
+          mapfile -t digest_files < <(find "$DIGEST_DIR" -maxdepth 1 -type f -printf '%f\n' | sort)
+          if [ "${#digest_files[@]}" -ne 2 ]; then
+            echo "Expected exactly two scanned digest files, found ${#digest_files[@]}" >&2
+            exit 1
+          fi
+
+          sources=()
+          for file in "${digest_files[@]}"; do
+            sources+=("${REGISTRY}/${IMAGE_NAME}@sha256:${file##*-}")
+          done
+
+          tag_args=()
           while IFS= read -r tag; do
-            [ -n "$tag" ] || continue
-            docker tag whois:scan "$tag"
-            docker push "$tag"
-          done <<EOF
-          $IMAGE_TAGS
-          EOF
+            [ -n "$tag" ] && tag_args+=(--tag "$tag")
+          done <<< "$IMAGE_TAGS"
+          [ "${#tag_args[@]}" -gt 0 ] || { echo "No final image tags generated" >&2; exit 1; }
+          docker buildx imagetools create "${tag_args[@]}" "${sources[@]}"
+
+      - name: Verify final platforms, digests, tags, and attestations
+        env:
+          DIGEST_DIR: ${{ runner.temp }}/digests
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          mapfile -t image_tags < <(printf '%s\n' "$IMAGE_TAGS" | sed '/^$/d')
+          [ "${#image_tags[@]}" -gt 0 ] || { echo "No final image tags generated" >&2; exit 1; }
+          bash scripts/verify-image-index.sh \
+            "${image_tags[0]}" \
+            "$DIGEST_DIR" \
+            "${REGISTRY}/${IMAGE_NAME}" \
+            "${image_tags[@]:1}"

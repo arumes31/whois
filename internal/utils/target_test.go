@@ -37,12 +37,15 @@ func TestNormalizeTarget(t *testing.T) {
 		{name: "url strips path", input: "https://Example.COM:8443/a/b?q=1#x", kind: model.TargetKindDomain, normalized: "example.com:8443", valid: true},
 		{name: "bare domain path", input: "example.com/docs", kind: model.TargetKindDomain, normalized: "example.com", valid: true},
 		{name: "ipv4", input: "8.8.8.8", kind: model.TargetKindIPv4, normalized: "8.8.8.8", valid: true},
+		{name: "ipv4 trailing root", input: "8.8.8.8.", kind: model.TargetKindIPv4, normalized: "8.8.8.8", valid: true},
 		{name: "ipv6", input: "2001:4860:4860::8888", kind: model.TargetKindIPv6, normalized: "2001:4860:4860::8888", valid: true},
 		{name: "cidr masks host bits", input: "192.0.2.25/24", kind: model.TargetKindCIDR, normalized: "192.0.2.0/24", valid: true},
 		{name: "asn", input: "as64512", kind: model.TargetKindASN, normalized: "AS64512", valid: true},
 		{name: "reject credentials", input: "https://user:pass@example.com", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject scheme", input: "ftp://example.com/file", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject label", input: "bad_label.example", kind: model.TargetKindUnknown, valid: false},
+		{name: "reject trailing root on single label", input: "0.", kind: model.TargetKindUnknown, valid: false},
+		{name: "accept fully qualified domain", input: "Example.COM.", kind: model.TargetKindDomain, normalized: "example.com", valid: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

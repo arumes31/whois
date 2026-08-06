@@ -23,54 +23,11 @@
             <button type="submit" class="btn btn--solid" style="width:100%;justify-content:center" id="scanSubmit">INITIATE SCAN</button>
         </form>
 
-        <div id="scanIndicator" role="status" style="display:none;margin-top:18px" class="live-log__empty">Scanning ports…</div>
+        <div id="scanIndicator" role="status" hidden style="margin-top:18px" class="live-log__empty">Scanning ports…</div>
         <div id="scanResults" style="margin-top:22px" aria-live="polite" aria-atomic="false"></div>
     </div>
 </div>
 
-<script>
-    (function () {
-        var form = document.getElementById('scanForm');
-        var indicator = document.getElementById('scanIndicator');
-        var results = document.getElementById('scanResults');
-        var submit = document.getElementById('scanSubmit');
-
-        form.addEventListener('submit', async function (event) {
-            event.preventDefault();
-            indicator.style.display = 'block';
-            submit.disabled = true;
-            results.innerHTML = '';
-            try {
-                var resp = await fetch('/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                    body: new URLSearchParams({
-                        target: form.target.value,
-                        ports: form.ports.value,
-                    }),
-                });
-                results.innerHTML = await resp.text();
-            } catch (err) {
-                results.innerHTML = '<div class="alert-err">Scan request failed: ' + String(err.message || err) + '</div>';
-            } finally {
-                indicator.style.display = 'none';
-                submit.disabled = false;
-            }
-        });
-
-        // delegated copy for injected results
-        results.addEventListener('click', function (event) {
-            var el = event.target.closest('.clickable-record');
-            if (!el) return;
-            var text = el.innerText.trim();
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(text).then(function () {
-                    var toast = document.getElementById('toast');
-                    if (toast) { toast.classList.add('is-show'); setTimeout(function () { toast.classList.remove('is-show'); }, 1500); }
-                });
-            }
-        });
-    })();
-</script>
+<script type="module" src="/static/js/scanner.js"></script>
 
 {{ template "footer" . }}

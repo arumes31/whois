@@ -1,17 +1,14 @@
-import { copyFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { dirname, relative, resolve, sep } from "node:path";
 import process from "node:process";
 import { parse } from "parse5";
 import { minify } from "terser";
 
 const staticTarget = resolve(process.argv[2] ?? "static");
 const templateTarget = resolve(process.argv[3] ?? "templates");
+const manifestTarget = process.argv[4] ? resolve(process.argv[4]) : null;
 const licenseComment = /(?:^!|@preserve|@license|\blicense\b)/i;
-
-const domPurifySource = resolve("node_modules/dompurify/dist/purify.min.js");
-const domPurifyTarget = resolve(staticTarget, "vendor/purify.min.js");
-await mkdir(dirname(domPurifyTarget), { recursive: true });
-await copyFile(domPurifySource, domPurifyTarget);
 
 async function findFiles(directory, suffix) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -23,6 +20,22 @@ async function findFiles(directory, suffix) {
     if (entry.isDirectory()) {
       files.push(...(await findFiles(path, suffix)));
     } else if (entry.isFile() && entry.name.endsWith(suffix)) {
+      files.push(path);
+    }
+  }
+
+  return files;
+}
+
+async function findAllFiles(directory) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = [];
+
+  for (const entry of entries) {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await findAllFiles(path)));
+    } else if (entry.isFile()) {
       files.push(path);
     }
   }
@@ -143,6 +156,25 @@ for (const file of templates) {
 
 const saved = totalBefore - totalAfter;
 const reduction = totalBefore > 0 ? ((saved / totalBefore) * 100).toFixed(1) : "0.0";
+
+if (manifestTarget) {
+  const packagedFiles = [
+    ...(await findAllFiles(staticTarget)),
+    ...(await findAllFiles(templateTarget)),
+  ].sort();
+  const manifest = [];
+  for (const file of packagedFiles) {
+    const source = await readFile(file);
+    const digest = createHash("sha256").update(source).digest("hex");
+    const path = relative(dirname(manifestTarget), file);
+    if (path === ".." || path.startsWith(`..${sep}`)) {
+      throw new Error(`Packaged asset is outside the manifest root: ${file}`);
+    }
+    manifest.push(`${digest}  ${path.replaceAll("\\", "/")}`);
+  }
+  await writeAtomically(manifestTarget, `${manifest.join("\n")}\n`);
+  console.log(`Wrote SHA-256 manifest for ${packagedFiles.length} packaged assets`);
+}
 
 console.log(
   `Minified ${files.length} JavaScript files and ${inlineScriptCount} first-party inline scripts: ${formatBytes(totalBefore)} -> ${formatBytes(totalAfter)} (${reduction}% smaller)`,

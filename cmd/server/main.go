@@ -25,6 +25,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+const contentSecurityPolicyBase = "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'"
+
 func main() {
 	// Load .env file if it exists
 	_ = godotenv.Load()
@@ -72,6 +74,10 @@ func main() {
 func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	// Dependencies
 	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
+	store.ConfigureDNSHistory(
+		cfg.DNSHistoryMaxTargets,
+		time.Duration(cfg.DNSHistoryTTLHours)*time.Hour,
+	)
 	h := handler.NewHandler(store, cfg)
 	sched := service.NewScheduler(store, cfg.DNSServers, cfg.BootstrapDNS)
 	appCtx, appCancel := context.WithCancel(context.Background())
@@ -127,8 +133,9 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		}
 	}
 	e.Server.ReadHeaderTimeout = 5 * time.Second
+	e.Server.ReadTimeout = 15 * time.Second
 	e.Server.IdleTimeout = 60 * time.Second
-	e.Server.MaxHeaderBytes = 1 << 20
+	e.Server.MaxHeaderBytes = 64 << 10
 	e.Server.RegisterOnShutdown(func() {
 		appCancel()
 		h.Close()
@@ -175,9 +182,15 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		AllowOrigins: allowOrigins,
 		AllowMethods: []string{http.MethodGet, http.MethodPost},
 	}))
+	e.Use(middleware.GzipWithConfig(middleware.GzipConfig{
+		Skipper: wsSkipper,
+		Level:   5,
+	}))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
 		Skipper: wsSkipper,
-		Limit:   "2M",
+		// Multipart boundaries and part headers sit outside the uploaded file.
+		// BulkUpload independently keeps the actual file at 2 MiB.
+		Limit: "3M",
 	}))
 	e.Use(middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Store: middleware.NewRateLimiterMemoryStore(20),
@@ -190,16 +203,43 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		ContentTypeNosniff:    "nosniff",
 		XFrameOptions:         "SAMEORIGIN",
 		HSTSMaxAge:            31536000,
-		ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' ws: wss:;",
+		ContentSecurityPolicy: contentSecurityPolicyBase + ";",
 	}))
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			policy := contentSecurityPolicyBase
+			if source, ok := handler.WebSocketConnectSource(c.Request(), cfg); ok {
+				policy += " " + source
+			}
+			c.Response().Header().Set(echo.HeaderContentSecurityPolicy, policy+";")
+			c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			c.Response().Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+			if strings.HasPrefix(c.Request().URL.Path, "/static/") {
+				c.Response().Header().Set(echo.HeaderCacheControl, "public, max-age=3600, must-revalidate")
+			}
+			return next(c)
+		}
+	})
 
 	// CSRF Protection
-	// #nosec G101
+	csrfSkipper := func(c echo.Context) bool {
+		if wsSkipper(c) || strings.HasPrefix(c.Request().URL.Path, "/static/") {
+			return true
+		}
+		switch c.Request().URL.Path {
+		case "/livez", "/readyz", "/health", "/metrics", "/system-stats", "/robots.txt":
+			return true
+		default:
+			return false
+		}
+	}
+	// #nosec G101 -- TokenLookup and CookieName are CSRF field names, not credentials.
 	e.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
-		Skipper:        wsSkipper,
+		Skipper:        csrfSkipper,
 		TokenLookup:    "form:_csrf,header:X-CSRF-Token",
 		CookieName:     "_csrf",
 		CookieHTTPOnly: true,
+		CookieSecure:   cfg.SessionCookieSecure,
 		CookieSameSite: http.SameSiteLaxMode,
 	}))
 
@@ -210,8 +250,10 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		}).ParseGlob("templates/*.html")),
 	}
 
-	// Static
-	e.Static("/static", "static")
+	// Static assets use an explicit HEAD route and do not allocate CSRF cookies.
+	staticFiles := http.StripPrefix("/static/", http.FileServer(http.Dir("static")))
+	e.GET("/static/*", echo.WrapHandler(staticFiles))
+	e.HEAD("/static/*", echo.WrapHandler(staticFiles))
 
 	// Custom HTTP Error Handler
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
@@ -249,16 +291,25 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	e.POST("/login", h.Login)
 	e.GET("/scanner", h.Scanner)
 	e.POST("/scan", h.Scan)
-	e.GET("/history", h.GetHistory)
-	e.GET("/history/:item", h.GetHistory)
+	readOnlyDataLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+		Store: middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
+			Rate:      2,
+			Burst:     10,
+			ExpiresIn: 5 * time.Minute,
+		}),
+	})
+	// DNS answers are public data and the dashboard requires unauthenticated
+	// history reads. Normalization in GetHistory plus this per-IP limiter bounds
+	// the public surface without making the dashboard depend on config auth.
+	e.GET("/history", h.GetHistory, readOnlyDataLimiter)
+	e.GET("/history/:item", h.GetHistory, readOnlyDataLimiter)
+	e.GET("/system-stats", h.SystemStats, readOnlyDataLimiter)
 
-	// Protected
-	g := e.Group("")
-	g.Use(h.LoginRequired)
-	g.GET("/config", h.Config)
-	g.POST("/config", h.Config)
-	g.POST("/config/update-geo", h.UpdateGeoDB)
-	g.GET("/logout", h.Logout)
+	// Protected routes use route-local middleware so unrelated 404s remain 404s.
+	e.GET("/config", h.Config, h.LoginRequired)
+	e.POST("/config", h.Config, h.LoginRequired)
+	e.POST("/config/update-geo", h.UpdateGeoDB, h.LoginRequired)
+	e.POST("/logout", h.Logout, h.LoginRequired)
 
 	var closeOnce sync.Once
 	closeDone := make(chan struct{})

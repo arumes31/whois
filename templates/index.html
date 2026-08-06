@@ -29,7 +29,7 @@
                         placeholder="example.com, 1.1.1.1, https://example.org/path"
                         aria-describedby="targetHelp targetError" autocomplete="off"
                         autocapitalize="none" spellcheck="false"></textarea>
-                    <div id="targetHelp" class="field-help">Separate multiple targets with commas. URLs are normalized automatically.</div>
+                    <div id="targetHelp" class="field-help">Separate up to 25 targets with commas or new lines. URLs are normalized automatically.</div>
                     <div id="targetError" class="field-error" role="alert"></div>
                 </div>
                 <div>
@@ -45,10 +45,10 @@
                     <span id="moduleLegend" class="step-label" style="margin:0"><span class="step-no">03</span> DIAGNOSTIC MODULES <span class="step-hint">selection stays on this device</span></span>
                     <div class="module-presets">
                         <span>PRESETS</span>
-                        <button type="button" class="module-preset" data-module-preset="standard">Standard</button>
-                        <button type="button" class="module-preset" data-module-preset="web">Web</button>
-                        <button type="button" class="module-preset" data-module-preset="dns">DNS</button>
-                        <button type="button" class="module-preset" data-module-preset="full">Full audit</button>
+                        <button type="button" class="module-preset" data-module-preset="standard" aria-pressed="false">Standard</button>
+                        <button type="button" class="module-preset" data-module-preset="web" aria-pressed="false">Web</button>
+                        <button type="button" class="module-preset" data-module-preset="dns" aria-pressed="false">DNS</button>
+                        <button type="button" class="module-preset" data-module-preset="full" aria-pressed="false">Full audit</button>
                     </div>
                 </div>
                 <div class="module-picker">
@@ -57,7 +57,7 @@
                     <span class="module-toggle"><input type="checkbox" id="cfg-subdomains"><label for="cfg-subdomains">PREFIXES</label></span>
                     <span class="module-toggle"><input type="checkbox" id="cfg-ssl" {{ if .config.EnableSSL }}checked{{ end }}><label for="cfg-ssl">SSL/TLS</label></span>
                     <span class="module-toggle"><input type="checkbox" id="cfg-http" {{ if .config.EnableHTTP }}checked{{ end }}><label for="cfg-http">HTTP</label></span>
-                    <span class="module-toggle"><input type="checkbox" id="cfg-geo" {{ if .config.EnableGeo }}checked{{ end }}><label for="cfg-geo">GEO LOCATION</label></span>
+                    <span class="module-toggle"><input type="checkbox" id="cfg-geo" {{ if and .config.EnableGeo .geo_available }}checked{{ end }}{{ if not .geo_available }} disabled aria-describedby="geoUnavailableHelp"{{ end }}><label for="cfg-geo">GEO LOCATION</label></span>
                     <span class="module-toggle"><input type="checkbox" id="cfg-ct" {{ if .config.EnableCT }}checked{{ end }}><label for="cfg-ct">CT LOGS</label></span>
                     <span class="module-toggle"><input type="checkbox" id="cfg-ping"><label for="cfg-ping">PING</label></span>
                     <span class="module-toggle"><input type="checkbox" id="cfg-trace"><label for="cfg-trace">TRACE</label></span>
@@ -69,8 +69,8 @@
                     <input id="cfg-ports" class="ports-input" value="common" autocomplete="off" spellcheck="false">
                     <div class="field-help">Presets: common, web, mail, database, remote. Ranges such as 8000-8010 are supported.</div>
                 </div>
-                {{ if not .config.EnableGeo }}
-                <div class="field-help" style="margin-top:10px">Geo location is unavailable until a local GeoLite2 City database is installed.</div>
+                {{ if not .geo_available }}
+                <div class="field-help" id="geoUnavailableHelp" style="margin-top:10px">Geo location is unavailable until a local GeoLite2 City database is installed.</div>
                 {{ end }}
             </div>
         </section>
@@ -78,7 +78,7 @@
         <section style="margin-top:28px" aria-labelledby="resultsHeading">
             <div class="results-head">
                 <div>
-                    <h2 id="resultsHeading">DIAGNOSTIC RESULTS</h2>
+                    <h2 id="resultsHeading" tabindex="-1">DIAGNOSTIC RESULTS</h2>
                     <span class="results-summary" id="resultsSummary">NO SCANS IN THIS WORKSPACE</span>
                 </div>
                 <div class="results-actions">
@@ -106,7 +106,7 @@
             <button type="button" class="rail-link" data-tool="dns">SINGLE DNS LOOKUP</button>
             <button type="button" class="rail-link" data-tool="mac" {{ if not .mac_available }}disabled aria-describedby="macUnavailableHelp"{{ end }}>MAC VENDOR LOOKUP</button>
             {{ if not .mac_available }}<p id="macUnavailableHelp" class="rail-note">Install a local OUI database to enable MAC vendor lookup.</p>{{ end }}
-            <a class="rail-link" href="/metrics" target="_blank" rel="noopener" aria-label="System metrics (opens in a new tab)">SYSTEM METRICS</a>
+            <a class="rail-link" href="/system-stats" target="_blank" rel="noopener" aria-label="System summary (opens in a new tab)">SYSTEM SUMMARY</a>
         </div>
 
         <div class="rail-panel">
@@ -119,7 +119,7 @@
 
         <div class="rail-panel">
             <h3>LIVE ACTIVITY</h3>
-            <div id="liveLog" class="live-log" role="log" aria-live="polite" aria-relevant="additions">
+            <div id="liveLog" class="live-log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Live diagnostic activity" tabindex="0">
                 <div class="live-log__empty">Waiting for scan data...</div>
             </div>
         </div>

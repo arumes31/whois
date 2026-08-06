@@ -9,14 +9,14 @@
   </div>
 {{ else }}
   <div>
-    <div class="kv"><dt>TARGET</dt><dd class="clickable-record clickable-record--hot">{{ .target }}</dd></div>
-    <div class="kv"><dt>ELAPSED</dt><dd>{{ printf "%.3f" .result.Elapsed }}s</dd></div>
+    <dl class="kv"><dt>TARGET</dt><dd class="clickable-record clickable-record--hot">{{ .target }}</dd></dl>
+    <dl class="kv"><dt>ELAPSED</dt><dd>{{ printf "%.3f" .result.Elapsed }}s</dd></dl>
 
     {{ if .result.Open }}
       <div class="dns-type">OPEN PORTS ({{ len .result.Open }})</div>
       <div class="dns-values">
         {{ range $port, $banner := .result.Open }}
-          <div class="clickable-record" role="button" tabindex="0" aria-label="Copy details for open port {{ $port }}">
+          <div class="clickable-record">
             <span class="chip chip--ok">{{ $port }}</span>
             {{ if $banner }}
               <code style="font-size:11px">{{ $banner }}</code>
@@ -33,7 +33,7 @@
     {{ if .result.Closed }}
       <details style="margin-top:12px">
         <summary style="cursor:pointer;font-size:10px;letter-spacing:.2em;color:var(--phos-70)">CLOSED PORTS ({{ len .result.Closed }})</summary>
-        <div class="raw-block clickable-record" role="button" tabindex="0" aria-label="Copy closed port list">
+        <div class="raw-block clickable-record">
           {{- range $i, $p := .result.Closed }}{{ if $i }}, {{ end }}{{ $p }}{{ end -}}
         </div>
       </details>
