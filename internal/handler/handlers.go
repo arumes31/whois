@@ -707,9 +707,11 @@ func (h *Handler) Scanner(c echo.Context) error {
 	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 	realIP := utils.ExtractIP(c, pCfg)
 	return c.Render(http.StatusOK, "scanner.html", map[string]interface{}{
-		"real_ip": realIP,
-		"config":  h.templateConfig(),
-		"csrf":    c.Get(middleware.DefaultCSRFConfig.ContextKey),
+		"config":       h.templateConfig(),
+		"csrf":         c.Get(middleware.DefaultCSRFConfig.ContextKey),
+		"current_path": c.Request().URL.Path,
+		"page_title":   "Port Scanner",
+		"real_ip":      realIP,
 	})
 }
 
@@ -796,6 +798,21 @@ func (h *Handler) MacLookup(c echo.Context) error {
 func (h *Handler) Login(c echo.Context) error {
 	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 	realIP := utils.ExtractIP(c, pCfg)
+	next := c.QueryParam("next")
+	if c.Request().Method == http.MethodPost {
+		next = c.FormValue("next")
+	}
+	if next != "/config" {
+		next = "/config"
+	}
+	pageData := map[string]interface{}{
+		"config":       h.templateConfig(),
+		"csrf":         c.Get(middleware.DefaultCSRFConfig.ContextKey),
+		"current_path": c.Request().URL.Path,
+		"next":         next,
+		"page_title":   "Configuration Access",
+		"real_ip":      realIP,
+	}
 
 	if c.Request().Method == http.MethodPost {
 		user := c.FormValue("username")
@@ -823,11 +840,12 @@ func (h *Handler) Login(c echo.Context) error {
 				MaxAge:   int(sessionTTL.Seconds()),
 				Expires:  time.Now().Add(sessionTTL),
 			})
-			return c.Redirect(http.StatusFound, "/config")
+			return c.Redirect(http.StatusFound, next)
 		}
-		return c.Render(http.StatusOK, "login.html", map[string]interface{}{"error": "Invalid credentials", "csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey), "real_ip": realIP})
+		pageData["error"] = "Invalid credentials"
+		return c.Render(http.StatusOK, "login.html", pageData)
 	}
-	return c.Render(http.StatusOK, "login.html", map[string]interface{}{"csrf": c.Get(middleware.DefaultCSRFConfig.ContextKey), "real_ip": realIP})
+	return c.Render(http.StatusOK, "login.html", pageData)
 }
 
 func (h *Handler) Config(c echo.Context) error {
@@ -865,10 +883,15 @@ func (h *Handler) Config(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "unable to load monitored targets").SetInternal(err)
 	}
+	viewConfig := h.templateConfig()
 	return c.Render(http.StatusOK, "config.html", map[string]interface{}{
-		"monitored": items,
-		"real_ip":   realIP,
-		"csrf":      c.Get(middleware.DefaultCSRFConfig.ContextKey),
+		"config":        viewConfig,
+		"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
+		"current_path":  c.Request().URL.Path,
+		"geo_available": viewConfig.EnableGeo,
+		"monitored":     items,
+		"page_title":    "Monitoring Configuration",
+		"real_ip":       realIP,
 	})
 }
 

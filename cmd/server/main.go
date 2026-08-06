@@ -266,9 +266,12 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		}
 
 		errorData := map[string]interface{}{
-			"Code":    code,
-			"Message": http.StatusText(code),
-			"real_ip": utils.ExtractIP(c, utils.ProxyConfig{TrustProxy: cfg.TrustProxy, UseCloudflare: cfg.UseCloudflare}),
+			"Code":         code,
+			"Message":      http.StatusText(code),
+			"config":       cfg,
+			"current_path": c.Request().URL.Path,
+			"page_title":   "Request Error",
+			"real_ip":      utils.ExtractIP(c, utils.ProxyConfig{TrustProxy: cfg.TrustProxy, UseCloudflare: cfg.UseCloudflare}),
 		}
 
 		if renderErr := c.Render(code, "error.html", errorData); renderErr != nil {

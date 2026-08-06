@@ -46,6 +46,30 @@ function preLines(lines, extraClass = '') {
   return `<pre class="raw-block clickable-record ${extraClass}">${escapeHTML(lines.join('\n'))}</pre>`;
 }
 
+function queryButton(target, label = 'QUERY') {
+  return `<button type="button" class="inline-action" data-query-target="${escapeHTML(target)}" aria-label="Run diagnostics for ${escapeHTML(target)}">${label}</button>`;
+}
+
+function spfRecord(record) {
+  const parts = String(record).trim().split(/\s+/);
+  const mechanisms = parts.slice(1).map((part) => {
+    const qualifier = /^[+?~-]/.test(part) ? part[0] : '+';
+    const value = /^[+?~-]/.test(part) ? part.slice(1) : part;
+    const tone = qualifier === '-' ? 'chip--ok' : (qualifier === '~' || qualifier === '?' ? 'chip--warn' : '');
+    return `<span class="chip ${tone}" title="SPF qualifier ${escapeHTML(qualifier)}">${escapeHTML(value)}</span>`;
+  }).join('');
+  return `<div class="dns-policy"><strong>SPF POLICY</strong><div class="chips">${mechanisms}</div><code>${escapeHTML(record)}</code></div>`;
+}
+
+function dmarcRecord(record) {
+  const policy = /(?:^|;)\s*p\s*=\s*([^;\s]+)/i.exec(record)?.[1]?.toLowerCase() || 'none';
+  const percent = Number(/(?:^|;)\s*pct\s*=\s*(\d+)/i.exec(record)?.[1] || 100);
+  const strong = ['reject', 'quarantine'].includes(policy) && percent === 100;
+  const tone = strong ? 'chip--ok' : 'chip--warn';
+  const label = strong ? 'ENFORCED' : 'MONITORING / PARTIAL';
+  return `<div class="dns-policy"><strong>DMARC STRENGTH</strong><div class="chips"><span class="chip ${tone}">${label}</span><span class="chip">p=${escapeHTML(policy)}</span><span class="chip">pct=${percent}</span></div><code>${escapeHTML(record)}</code></div>`;
+}
+
 /* ---------- individual services ---------- */
 
 function renderTarget(data) {
@@ -61,7 +85,7 @@ function renderTarget(data) {
       <div><span class="chip">IPv${escapeHTML(ip.version)}</span>
       <span class="clickable-record clickable-record--hot"> ${escapeHTML(ip.address)}</span></div>
       <div style="color:var(--phos-50);font-size:10px">SCOPE: ${escapeHTML(ip.scope)}${flags.length ? ` · ${flags.join(' · ')}` : ''}</div>
-      ${ip.reverse_dns?.length ? `<div style="color:var(--phos-50);font-size:10px">PTR: ${escapeHTML(ip.reverse_dns.join(', '))}</div>` : ''}
+      ${ip.reverse_dns?.length ? `<div class="reverse-hosts">PTR: ${ip.reverse_dns.map((host) => `<span>${escapeHTML(host)} ${queryButton(host)}</span>`).join('')}</div>` : ''}
     </div>`;
   }).join('');
   const warnings = (data.warnings || [])
@@ -116,7 +140,12 @@ function renderDns(data) {
     for (const [type, val] of Object.entries(data)) {
       inner += `<div class="dns-type">${escapeHTML(type)}</div><div class="dns-values">`;
       if (Array.isArray(val)) {
-        val.forEach((v) => { inner += `<div class="clickable-record">${escapeHTML(v)}</div>`; });
+        val.forEach((v) => {
+          const record = String(v);
+          if (/^v=spf1\b/i.test(record)) inner += spfRecord(record);
+          else if (/^v=dmarc1\b/i.test(record)) inner += dmarcRecord(record);
+          else inner += `<div class="dns-record"><span class="clickable-record">${escapeHTML(record)}</span>${/^(?:[a-z0-9-]+\.)+[a-z]{2,}\.?$/i.test(record) ? queryButton(record.replace(/\.$/, '')) : ''}</div>`;
+        });
       } else if (type === 'Subdomains') {
         inner += `<div style="color:var(--phos-50)">Found ${Object.keys(val).length} prefixes</div>`;
       } else {
@@ -137,7 +166,7 @@ function renderSubdomains(data) {
     let inner = '';
     for (const [fqdn, records] of Object.entries(data)) {
       inner += `<div style="margin-bottom:10px;border-bottom:1px dashed var(--line);padding-bottom:6px">
-        <div class="clickable-record clickable-record--hot" style="font-weight:600">${escapeHTML(fqdn)}</div>`;
+        <div class="queryable-host"><span class="clickable-record clickable-record--hot">${escapeHTML(fqdn)}</span>${queryButton(fqdn)}</div>`;
       for (const [type, vals] of Object.entries(records || {})) {
         const list = Array.isArray(vals) ? vals.join(', ') : String(vals);
         inner += `<div style="font-size:11px;color:var(--phos-70)"><span style="color:var(--phos-bright)">${escapeHTML(type)}</span> ▸ <span class="clickable-record">${escapeHTML(list)}</span></div>`;
@@ -184,11 +213,11 @@ function renderPing(data, target, section) {
   });
   const chartId = `ping-${Math.random().toString(36).slice(2, 10)}`;
   const chartHtml = rtts.length
-    ? `<div class="ping-chart"><canvas id="${chartId}" aria-label="Ping RTT chart"></canvas></div>` : '';
+    ? `<div class="ping-chart"><canvas id="${chartId}" aria-label="Ping round-trip time chart" aria-describedby="${chartId}-summary"></canvas></div>` : '';
   const avg = rtts.length ? (rtts.reduce((a, b) => a + b, 0) / rtts.length).toFixed(1) : null;
   const body = `
     ${failed ? `<div class="findings findings--err">${escapeHTML(errorMessage || 'Ping failed.')}</div>` : ''}
-    ${avg ? `<div class="chips"><span class="chip chip--ok">AVG ${avg} ms</span><span class="chip">N=${rtts.length}</span></div>` : ''}
+    ${avg ? `<div class="chips" id="${chartId}-summary"><span class="chip chip--ok">AVG ${avg} ms</span><span class="chip">MIN ${Math.min(...rtts)} ms</span><span class="chip">MAX ${Math.max(...rtts)} ms</span><span class="chip">N=${rtts.length}</span></div>` : ''}
     ${chartHtml}
     <div class="stream-lines">${lines.map((l) => `<div>${escapeHTML(l)}</div>`).join('')}</div>`;
   // chart wiring happens in cards.js after insertion
@@ -279,7 +308,7 @@ function renderCt(data) {
   if (data && data.error) return errorDetails('ct', data.error);
   if (data && Object.keys(data).length > 0) {
     const items = Object.keys(data)
-      .map((sub) => `<li class="clickable-record" style="padding:2px 0">▸ ${escapeHTML(sub)}</li>`).join('');
+      .map((sub) => `<li class="queryable-host"><span class="clickable-record">▸ ${escapeHTML(sub)}</span>${queryButton(sub)}</li>`).join('');
     return openDetails('ct', 'success', `<ul style="font-size:11px">${items}</ul>`);
   }
   return openDetails('ct', 'success', `<div style="color:var(--phos-50)">No subdomains found in CT logs.</div>`);

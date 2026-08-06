@@ -22,6 +22,23 @@
                 <div><span class="telemetry__label">HISTORY</span><strong class="telemetry__value">{{ .stats.HistoryCount }}</strong></div>
             </div>
 
+            <section class="scan-lifecycle" id="scanLifecycle" aria-labelledby="scanPhaseLabel">
+                <div class="scan-lifecycle__status">
+                    <span class="telemetry__label">SCAN PHASE</span>
+                    <strong id="scanPhaseLabel">READY</strong>
+                    <span id="scanPhaseDetail">Awaiting an authorized target queue.</span>
+                </div>
+                <div class="scan-lifecycle__progress">
+                    <div><span>TOTAL PROGRESS</span><b id="totalProgressText">0%</b></div>
+                    <progress id="totalProgress" max="100" value="0">0%</progress>
+                </div>
+                <dl class="scan-lifecycle__counts">
+                    <div><dt>QUEUED</dt><dd id="queuedCount">0</dd></div>
+                    <div><dt>ACTIVE</dt><dd id="activeCount">0</dd></div>
+                </dl>
+                <button type="button" id="cancelAllBtn" class="btn btn--sm btn--danger" disabled>Cancel all</button>
+            </section>
+
             <form id="queryForm" class="command-form" novalidate>
                 <div>
                     <label class="step-label" for="targetInput"><span class="step-no">01</span> TARGET QUEUE</label>
@@ -30,12 +47,12 @@
                         aria-describedby="targetHelp targetError" autocomplete="off"
                         autocapitalize="none" spellcheck="false"></textarea>
                     <div id="targetHelp" class="field-help">Separate up to 25 targets with commas or new lines. URLs are normalized automatically.</div>
-                    <div id="targetError" class="field-error" role="alert"></div>
+                    <div id="targetError" class="field-error" role="alert" tabindex="-1"></div>
                 </div>
                 <div>
                     <span class="step-label" aria-hidden="true"><span class="step-no">02</span> EXECUTE</span>
-                    <button type="submit" id="runBtn" class="btn btn--solid run-btn">
-                        RUN DIAGNOSTICS <small>CTRL + ENTER</small>
+                    <button type="submit" id="runBtn" class="btn btn--solid run-btn" data-idle-label="RUN DIAGNOSTICS">
+                        <span>RUN DIAGNOSTICS</span> <small>CTRL + ENTER</small>
                     </button>
                 </div>
             </form>
@@ -95,7 +112,7 @@
                 <strong>WORKSPACE READY</strong>
                 <span>Enter one or more authorized targets, select the modules you need, then run diagnostics.</span>
             </div>
-            <div id="resultsGrid" class="results-grid" aria-live="off"></div>
+            <div id="resultsGrid" class="results-grid" aria-live="off" aria-busy="false"></div>
             <!-- Result cards are constructed in static/js/cards.js (aria-label="Close widget" on the close control). -->
         </section>
     </div>

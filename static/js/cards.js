@@ -8,10 +8,20 @@ import {
   identityIsInFlight, getResults, getAllResultsData, getCard,
   registerChart, destroyCharts, destroySectionChart, removeCard, clearWorkspace, cardCount,
   appendLog, readModuleConfig, enabledServiceCount, hasExportableResults,
+  notifyScanState,
 } from './store.js';
 import { renderService, skeletonHtml, skippedDetails, serviceLabel } from './render.js';
 
 const SERVICE_ORDER = ['target', 'geo', 'whois', 'dns', 'subdomains', 'portscan', 'ping', 'route', 'trace', 'ssl', 'http', 'ct'];
+
+function targetType(target) {
+  const value = String(target).trim();
+  if (/^AS\d+$/i.test(value)) return 'ASN';
+  if (/^[a-z][a-z\d+.-]*:\/\//i.test(value)) return 'URL';
+  if (value.includes('/')) return 'CIDR';
+  if (/^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(value) || value.includes(':')) return 'IP';
+  return 'HOST';
+}
 
 /* ---------- workspace chrome ---------- */
 
@@ -52,6 +62,7 @@ export function createCard(target) {
       <div class="result-card__id">
         <span class="result-card__eyebrow">TARGET / LIVE ANALYSIS</span>
         <h3 class="result-card__target" id="${titleId}">${escapeHTML(target)}</h3>
+        <span class="target-kind">${targetType(target)}</span>
       </div>
       <div class="result-card__meta">
         <span class="badge finding-count" hidden>0 findings</span>
@@ -132,6 +143,13 @@ export function createCard(target) {
   article.querySelector('[data-card-action="history"]').addEventListener('click', () => {
     window.dispatchEvent(new CustomEvent('console:history', { detail: { target } }));
   });
+  article.addEventListener('click', (event) => {
+    const trigger = event.target.closest('[data-query-target]');
+    if (!trigger) return;
+    window.dispatchEvent(new CustomEvent('console:query-target', {
+      detail: { target: trigger.dataset.queryTarget },
+    }));
+  });
 
   // drag to reorder
   const handle = article.querySelector('.result-card__handle');
@@ -155,6 +173,15 @@ export function createCard(target) {
   });
 
   document.getElementById('resultsGrid').appendChild(article);
+  window.setTimeout(() => {
+    const scan = getScan(target);
+    if (!article.isConnected || !scan || !['queued', 'running'].includes(scan.status)) return;
+    article.querySelectorAll('.service-section').forEach((section) => {
+      if (!section.querySelector('.skel')) return;
+      section.innerHTML = `<div class="slow-module" role="status"><strong>${escapeHTML(serviceLabel(section.dataset.service))}</strong> is taking longer than expected. The scan is still active; partial results are retained and you can cancel safely.</div>`;
+    });
+    announce(`${target}: some diagnostic modules are taking longer than expected.`);
+  }, 30000);
   syncCardStatus(target);
   updateWorkspaceState();
 }
@@ -241,6 +268,7 @@ export function routeRequestEvent(event) {
   } else if (event.type === 'interrupted') {
     finishWithTransportFailure(scan, 'interrupted', event.message || 'The diagnostic stream was interrupted.');
   }
+  notifyScanState();
 }
 
 export function updateProgressBar(target) {
@@ -314,6 +342,7 @@ export function routeMessage(msg) {
         scan.completed = scan.completedServices.size;
       }
       updateProgressBar(scan.target);
+      notifyScanState();
       const failed = scan.failures.has(msg.service);
       const flagged = scan.findings.has(msg.service);
       appendLog(scan.target, failed
@@ -388,6 +417,7 @@ function handleAllDone(scan) {
       : `Diagnostics completed for ${target}.`);
   }
   updateWorkspaceState();
+  notifyScanState();
 }
 
 function handleResult(msg, scan) {
@@ -428,10 +458,30 @@ function handleResult(msg, scan) {
     mountPingChart(section);
   }
   wireCopyable(section);
+  section.classList.remove('is-updating');
+  void section.offsetWidth;
+  section.classList.add('is-updating');
   updateWorkspaceState();
+  notifyScanState();
 }
 
 function mountPingChart(section) {
+  if ('IntersectionObserver' in window && section.dataset.chartVisible !== 'true') {
+    if (section._chartObserver) return;
+    section._chartObserver = new IntersectionObserver((entries, observer) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return;
+      section.dataset.chartVisible = 'true';
+      observer.disconnect();
+      section._chartObserver = undefined;
+      mountPingChartNow(section);
+    }, { rootMargin: '180px' });
+    section._chartObserver.observe(section);
+    return;
+  }
+  mountPingChartNow(section);
+}
+
+function mountPingChartNow(section) {
   const canvas = document.getElementById(section.dataset.chartId);
   if (!canvas || !window.Chart) return;
   let rtts = [];

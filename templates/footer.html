@@ -2,6 +2,19 @@
     </div> <!-- End app-shell -->
 </main>
 
+<nav class="bottom-nav" aria-label="Mobile primary navigation">
+    <a href="/" data-nav-path="/"><span aria-hidden="true">⌂</span>Workspace</a>
+    <a href="/#queryForm"><span aria-hidden="true">▶</span>Run</a>
+    <a href="/scanner" data-nav-path="/scanner"><span aria-hidden="true">⌁</span>Scanner</a>
+    <a href="/config" data-nav-path="/config"><span aria-hidden="true">⚙</span>Config</a>
+</nav>
+
+<div class="mobile-scan-status" id="mobileScanStatus" hidden>
+    <span><strong id="mobileScanPhase">READY</strong><small id="mobileScanCounts">0 active</small></span>
+    <progress id="mobileScanProgress" max="100" value="0">0%</progress>
+    <a href="/#resultsHeading">View</a>
+</div>
+
 <!-- Shared modal (history viewer + quick tools) -->
 <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle" aria-hidden="true" tabindex="-1">
     <div class="modal-box">
@@ -25,12 +38,24 @@
             <h2>AUTHORIZED USE ONLY</h2>
             <p id="disclosureSummary">This platform is designed for professional network diagnostics and reconnaissance. By proceeding, you acknowledge that you are authorized to scan the targets you enter and that your actions comply with local laws and regulations.</p>
             <h3>DATA &amp; COOKIES</h3>
-            <p>We use local storage and functional cookies to remember your UI configuration and scan settings. No tracking or marketing data is collected.</p>
+            <p>We use local and session storage plus functional cookies to remember UI configuration, disclosure acceptance, scan input, and recent on-device activity. No tracking or marketing data is collected.</p>
             <h3>TERMS OF SERVICE</h3>
             <p>Service is provided "as-is" without warranty. Users assume all liability for scan traffic and resource consumption on target networks.</p>
         </div>
         <div style="margin-top:18px;text-align:right">
             <button type="button" class="btn btn--solid" id="disclosureAccept">I understand — continue</button>
+        </div>
+        <p class="disclosure-meta" id="disclosureAcceptedAt"></p>
+    </div>
+</div>
+
+<div class="modal-backdrop" id="accessibilityBackdrop" role="dialog" aria-modal="true" aria-labelledby="accessibilityTitle" aria-hidden="true" tabindex="-1">
+    <div class="modal-box">
+        <div class="modal-box__head"><h2 id="accessibilityTitle">ACCESSIBILITY STATEMENT</h2><button type="button" class="icon-btn" data-close-accessibility aria-label="Close accessibility statement">×</button></div>
+        <div class="disclosure">
+            <p>This console is designed for keyboard, touch, screen-reader, zoom, reduced-motion, high-contrast, and forced-colors use. Status is communicated with text as well as color, charts include textual summaries, and dynamic scan updates are announced in batches.</p>
+            <h3>KEYBOARD</h3><p>Use Tab to move through controls, Ctrl/Command + Enter to run diagnostics, / to focus the target queue, and Escape to close menus or dialogs.</p>
+            <h3>SUPPORT</h3><p>If an interface barrier prevents you from completing a diagnostic task, report the page, control label, browser, and assistive technology used to the service operator.</p>
         </div>
     </div>
 </div>

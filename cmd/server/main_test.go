@@ -85,6 +85,37 @@ func TestNewServer(t *testing.T) {
 		if !strings.Contains(rec.Body.String(), "405") {
 			t.Error("error page does not contain expected status code 405")
 		}
+		if strings.Contains(rec.Body.String(), "&lt;no value&gt;") || strings.Contains(rec.Body.String(), "<no value>") {
+			t.Fatal("error page rendered with missing shared template data")
+		}
+	})
+
+	t.Run("SharedPagesReceiveHeaderContext", func(t *testing.T) {
+		tests := []struct {
+			name       string
+			path       string
+			wantMarker string
+		}{
+			{name: "login", path: "/login?next=https://example.invalid", wantMarker: `name="next" value="/config"`},
+			{name: "scanner", path: "/scanner", wantMarker: `data-page-path="/scanner"`},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+				rec := httptest.NewRecorder()
+				e.ServeHTTP(rec, req)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("GET %s = %d, want 200", tt.path, rec.Code)
+				}
+				body := rec.Body.String()
+				if !strings.Contains(body, tt.wantMarker) {
+					t.Fatalf("GET %s missing %q", tt.path, tt.wantMarker)
+				}
+				if strings.Contains(body, "&lt;no value&gt;") || strings.Contains(body, "<no value>") {
+					t.Fatalf("GET %s rendered with missing shared template data", tt.path)
+				}
+			})
+		}
 	})
 
 	t.Run("UnknownRouteRemainsNotFound", func(t *testing.T) {

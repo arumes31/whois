@@ -1,15 +1,24 @@
 {{ template "header" . }}
 
-<div style="max-width:1080px;margin:0 auto">
+<div class="config-page">
   <span class="command-eyebrow">ADMINISTRATION</span>
   <h1 class="page-title" style="font-size:20px;margin-bottom:6px">Monitoring Configuration</h1>
   <p class="page-sub" style="margin-bottom:24px">Automated snapshots run every <strong>24 hours</strong>. Add only targets you are authorized to monitor.</p>
 
+  <nav class="config-toc" aria-label="Configuration sections">
+    <a href="#monitoringSettings">Monitoring</a><a href="#databaseSettings">Databases</a><a href="#runtimeSettings">Runtime</a><a href="#sessionSettings">Session</a>
+  </nav>
+
+  <div id="configSaveBar" class="config-save-bar" hidden role="status">
+    <span>Unsaved monitoring target</span><button type="button" class="btn btn--sm" id="configDiscard">Discard</button><button type="submit" form="monitorForm" name="action" value="add" class="btn btn--solid btn--sm">Save</button>
+  </div>
+
   <div style="display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:22px" class="config-grid">
     <div>
-      <div class="rail-panel" style="margin-bottom:22px">
+      <section class="rail-panel config-section" id="monitoringSettings">
         <h2>ADD NEW ITEM</h2>
-        <form method="post">
+        <p class="config-section__hint">Stored in the monitoring database · applies immediately</p>
+        <form method="post" id="monitorForm" data-dirty-form>
           <input type="hidden" name="_csrf" value="{{ .csrf }}">
           <div class="form-field">
             <label for="monitorItem">DOMAIN OR IP ADDRESS</label>
@@ -19,38 +28,61 @@
           </div>
           <button type="submit" name="action" value="add" class="btn btn--solid" style="width:100%;justify-content:center">ADD TO MONITORING</button>
         </form>
-      </div>
+      </section>
 
-      <div class="rail-panel">
+      <section class="rail-panel config-section" id="databaseSettings">
         <h2>GEOIP DATABASE</h2>
+        <p class="config-section__hint">External data source · no restart required</p>
+        <dl class="config-facts"><div><dt>Availability</dt><dd><span class="chip {{ if .geo_available }}chip--ok{{ else }}chip--warn{{ end }}">{{ if .geo_available }}READY{{ else }}UNAVAILABLE{{ end }}</span></dd></div><div><dt>Last browser update</dt><dd id="geoFreshness">Not updated in this browser session</dd></div></dl>
         <button id="geoUpdateBtn" class="btn" style="width:100%;justify-content:center">FORCE DATABASE UPDATE</button>
+        <button id="healthTestBtn" class="btn" style="width:100%;justify-content:center;margin-top:8px">TEST SERVICE HEALTH</button>
         <div id="geoUpdateRes" style="margin-top:12px;font-size:11px" aria-live="polite"></div>
-      </div>
+      </section>
 
-      <form method="post" action="/logout" style="margin-top:22px">
+      <section class="rail-panel config-section" id="runtimeSettings">
+        <h2>RUNTIME CAPABILITIES</h2>
+        <p class="config-section__hint">Environment configuration · restart required to change</p>
+        <dl class="config-facts">
+          <div><dt>WHOIS</dt><dd><span class="chip {{ if .config.EnableWhois }}chip--ok{{ else }}chip--warn{{ end }}">{{ if .config.EnableWhois }}ENABLED{{ else }}DISABLED{{ end }}</span></dd></div>
+          <div><dt>DNS</dt><dd><span class="chip {{ if .config.EnableDNS }}chip--ok{{ else }}chip--warn{{ end }}">{{ if .config.EnableDNS }}ENABLED{{ else }}DISABLED{{ end }}</span></dd></div>
+          <div><dt>TLS / HTTP</dt><dd><span class="chip {{ if and .config.EnableSSL .config.EnableHTTP }}chip--ok{{ else }}chip--warn{{ end }}">{{ if and .config.EnableSSL .config.EnableHTTP }}ENABLED{{ else }}PARTIAL{{ end }}</span></dd></div>
+        </dl>
+      </section>
+
+      <form method="post" action="/logout" class="rail-panel config-section" id="sessionSettings">
         <input type="hidden" name="_csrf" value="{{ .csrf }}">
+        <h2>ADMIN SESSION</h2>
+        <p class="config-section__hint">Authenticated session active · sign out when configuration work is complete</p>
+        <p class="field-help" id="sessionLastLogin">This browser has no recent sign-in timestamp.</p>
         <button type="submit" class="btn" style="width:100%;justify-content:center">SIGN OUT</button>
       </form>
     </div>
 
-    <div class="rail-panel">
-      <h2>CURRENTLY MONITORED ({{ len .monitored }})</h2>
+    <section class="rail-panel monitored-panel">
+      <div class="monitored-panel__head"><h2>CURRENTLY MONITORED (<span id="monitoredVisibleCount">{{ len .monitored }}</span>)</h2><div><label class="visually-hidden" for="monitorSearch">Filter monitored targets</label><input id="monitorSearch" class="text-input" type="search" placeholder="Filter targets…"><label class="visually-hidden" for="monitorSort">Sort monitored targets</label><select id="monitorSort" class="text-input"><option value="asc">A–Z</option><option value="desc">Z–A</option></select></div></div>
       {{ if .monitored }}
+        <div class="monitor-bulk"><button type="button" class="btn btn--sm" id="monitorSelectAll" aria-pressed="false">Select visible</button><button type="button" class="btn btn--sm" id="monitorCopySelected" disabled>Copy selected</button><button type="button" class="btn btn--sm" id="monitorExportSelected" disabled>Export selected</button><span id="monitorSelectionCount">0 selected</span></div>
+        <div id="monitoredList">
         {{ range .monitored }}
-          <div class="monitor-row">
+          <div class="monitor-row" data-monitor-target="{{ . }}">
+            <input type="checkbox" class="monitor-select" aria-label="Select {{ . }}">
             <code class="monitor-row__target">{{ . }}</code>
-            <form method="post" data-confirm="Remove this target from monitoring?">
+            <form method="post" data-remove-monitor>
               <input type="hidden" name="_csrf" value="{{ $.csrf }}">
               <input type="hidden" name="item" value="{{ . }}">
               <button type="submit" name="action" value="remove" class="btn btn--sm" aria-label="Remove {{ . }} from monitoring">REMOVE</button>
             </form>
           </div>
         {{ end }}
+        </div>
+        <p id="monitorEmptyFilter" class="field-help" hidden>No monitored targets match this filter.</p>
       {{ else }}
         <p style="color:var(--phos-50);font-size:12px;margin:0">No items are being monitored.</p>
       {{ end }}
-    </div>
+    </section>
   </div>
+
+  <section class="rail-panel config-audit" aria-labelledby="configAuditTitle"><h2 id="configAuditTitle">RECENT CONFIGURATION ACTIVITY</h2><ol id="configAuditLog"><li>No configuration actions recorded in this browser yet.</li></ol></section>
 </div>
 
 <script type="module" src="/static/js/config.js"></script>

@@ -13,6 +13,7 @@ let pageHidden = false;
 let messageHandler = () => {};
 let logHandler = () => {};
 let requestEventHandler = () => {};
+let connectionState = 'ready';
 const sentRequestsBySocket = new WeakMap();
 
 export function onMessage(handler) { messageHandler = handler; }
@@ -99,12 +100,27 @@ function interruptSentRequests(connection) {
 }
 
 function setConnectionStatus(state, label) {
+  connectionState = state;
   const status = document.getElementById('systemStatus');
-  if (!status) return;
-  status.dataset.state = state;
-  status.classList.toggle('system-status--connecting', state === 'connecting');
-  status.classList.toggle('system-status--down', state === 'offline');
-  if (status.textContent !== label) status.textContent = label;
+  if (status) {
+    status.dataset.state = state;
+    status.classList.toggle('system-status--connecting', state === 'connecting');
+    status.classList.toggle('system-status--down', state === 'offline');
+    const text = status.querySelector?.('span') || status;
+    if (text.textContent !== label) text.textContent = label;
+  }
+  if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('console:connection', {
+      detail: { state, label, queued: messageQueue.length },
+    }));
+  }
+}
+
+function emitQueueState() {
+  if (typeof window.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') return;
+  window.dispatchEvent(new CustomEvent('console:queue', {
+    detail: { queued: messageQueue.length, connection: connectionState },
+  }));
 }
 
 function clearHeartbeat() {
@@ -143,6 +159,7 @@ export function queueMessage(data) {
   }
   messageQueue.push(data);
   emitRequestEvent('queued', data);
+  emitQueueState();
   return true;
 }
 
@@ -150,7 +167,26 @@ export function cancelQueued(requestIDValue) {
   const id = String(requestIDValue || '');
   const before = messageQueue.length;
   messageQueue = messageQueue.filter((data) => requestID(data) !== id);
+  emitQueueState();
   return messageQueue.length !== before;
+}
+
+export function cancelAll() {
+  const queued = messageQueue.splice(0);
+  queued.forEach((data) => emitRequestEvent(
+    'interrupted', data, 'Canceled before the request reached the diagnostic uplink.',
+  ));
+  emitQueueState();
+  const connection = socket;
+  if (connection && (connection.readyState === WebSocket.OPEN || connection.readyState === WebSocket.CONNECTING)) {
+    transportLog('Canceling all active diagnostics and restarting the uplink.');
+    try { connection.close(1000, 'Operator canceled diagnostics'); } catch { /* already closing */ }
+  }
+  return queued.length > 0 || Boolean(connection);
+}
+
+export function getTransportState() {
+  return { state: connectionState, queued: messageQueue.length };
 }
 
 export function connect() {
@@ -181,6 +217,7 @@ export function connect() {
       try {
         sendRequest(connection, messageQueue[0]);
         messageQueue.shift();
+        emitQueueState();
       } catch (error) {
         console.warn('Failed to flush queued message:', error);
         connection.close();

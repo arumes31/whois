@@ -307,7 +307,7 @@ export function csrfToken() {
     || '';
 }
 
-export function fetchWithCSRF(input, init = {}) {
+export async function fetchWithCSRF(input, init = {}) {
   const options = { credentials: 'same-origin', ...init };
   const method = String(options.method || 'GET').toUpperCase();
   const headers = new Headers(options.headers || {});
@@ -316,7 +316,15 @@ export function fetchWithCSRF(input, init = {}) {
     if (token && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', token);
   }
   options.headers = headers;
-  return window.fetch(input, options);
+  const response = await window.fetch(input, options);
+  if (response.status === 401) {
+    window.dispatchEvent(new CustomEvent('console:session-expired', { detail: { input: String(input) } }));
+  } else if (response.status === 429) {
+    window.dispatchEvent(new CustomEvent('console:rate-limited', {
+      detail: { retryAfter: Number(response.headers.get('retry-after') || 0) },
+    }));
+  }
+  return response;
 }
 
 function responseMessage(payload, fallback) {
@@ -343,7 +351,16 @@ export async function readResponse(response, { json = false } = {}) {
     payload = await response.text();
   }
   if (!response.ok) {
-    throw new Error(responseMessage(payload, `Request failed (${response.status})`));
+    const requestID = response.headers.get('x-request-id');
+    const fallbackCode = globalThis.crypto?.randomUUID?.().slice(0, 8).toUpperCase() || String(Date.now()).slice(-8);
+    const code = String(requestID || fallbackCode).replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 32);
+    const base = response.status === 403
+      ? 'The request was refused. Refresh the page to renew its security token, then try again.'
+      : responseMessage(payload, `Request failed (${response.status})`);
+    const error = new Error(`${base} Reference: ${code}`);
+    error.code = code;
+    error.status = response.status;
+    throw error;
   }
   if (json && (!payload || typeof payload !== 'object')) {
     throw new Error('The server returned an invalid response.');

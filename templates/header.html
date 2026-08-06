@@ -31,7 +31,7 @@
     <link rel="shortcut icon" href="/static/favicon.ico" type="image/x-icon">
     <link rel="stylesheet" href="/static/css/main.css">
 </head>
-<body data-csrf-token="{{ .csrf }}">
+<body data-csrf-token="{{ .csrf }}" data-page-path="{{ .current_path }}">
 
 <a class="skip-link" href="#main-content">Skip to diagnostic console</a>
 
@@ -47,13 +47,44 @@
             </svg>
             <span class="app-brand__copy"><strong>WHOIS</strong><small>NETWORK COMMAND</small></span>
         </a>
+        <nav class="primary-nav" aria-label="Primary navigation">
+            <a href="/" data-nav-path="/">Workspace</a>
+            <a href="/scanner" data-nav-path="/scanner">Port scanner</a>
+            <a href="/config" data-nav-path="/config">Configuration</a>
+        </nav>
         <div class="app-header__status">
-            <span class="system-status" id="systemStatus" role="status" aria-live="polite" aria-atomic="true">SYSTEM READY</span>
-            <span class="remote-ip"><span class="remote-ip__label">REMOTE IP</span><b>{{ .real_ip }}</b></span>
-            <a href="/login" class="btn btn--sm">▸ CONFIG</a>
+            <span class="system-status" id="systemStatus" role="status" aria-live="polite" aria-atomic="true" data-state="ready"><i aria-hidden="true"></i><span>SYSTEM READY</span></span>
+            <span class="remote-ip data-private"><span class="remote-ip__label">REMOTE IP</span><b>{{ .real_ip }}</b></span>
+            <details class="overflow-menu">
+                <summary class="icon-btn" aria-label="Open application menu" title="Application menu">•••</summary>
+                <div class="overflow-menu__panel">
+                    <a href="/login">Configuration access</a>
+                    <button type="button" id="notificationToggle" aria-pressed="false">Scan notifications: off</button>
+                    <button type="button" id="screenshotMode" aria-pressed="false">Screenshot privacy: off</button>
+                    <button type="button" data-open-accessibility>Accessibility statement</button>
+                    <button type="button" data-open-disclosure>Security disclosure</button>
+                </div>
+            </details>
+            <button type="button" class="nav-toggle icon-btn" id="navToggle" aria-label="Open navigation" aria-expanded="false" aria-controls="mobileDrawer">☰</button>
         </div>
     </div>
 </header>
+
+<div class="connection-banner" id="connectionBanner" role="status" aria-live="polite" hidden>
+    <strong>DEGRADED MODE</strong><span id="connectionBannerText">The uplink is reconnecting. New scans will stay queued; existing results remain available.</span>
+</div>
+
+<div class="mobile-drawer" id="mobileDrawer" aria-hidden="true" inert>
+    <button type="button" class="mobile-drawer__scrim" data-close-drawer aria-label="Close navigation"></button>
+    <nav aria-label="Mobile navigation">
+        <div class="mobile-drawer__head"><strong>NAVIGATION</strong><button type="button" class="icon-btn" data-close-drawer aria-label="Close navigation">×</button></div>
+        <a href="/" data-nav-path="/">Workspace</a>
+        <a href="/scanner" data-nav-path="/scanner">Port scanner</a>
+        <a href="/config" data-nav-path="/config">Configuration</a>
+        <button type="button" data-open-accessibility>Accessibility statement</button>
+        <button type="button" data-open-disclosure>Security disclosure</button>
+    </nav>
+</div>
 
 <main id="main-content" tabindex="-1">
     <div class="app-shell">

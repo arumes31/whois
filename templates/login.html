@@ -5,11 +5,11 @@
     <span class="command-eyebrow">RESTRICTED CHANNEL</span>
     <h1 class="page-title" style="font-size:18px">Configuration Access</h1>
     <hr style="border:0;border-top:1px solid var(--line);margin:16px 0 20px">
-    <form method="post">
+    <form method="post" id="loginForm" data-auth-form>
       <input type="hidden" name="_csrf" value="{{ .csrf }}">
       <input type="hidden" name="next" value="{{ .next }}">
       {{ if .error }}
-        <div class="alert-err" role="alert">{{ .error }}</div>
+        <div class="alert-err" role="alert" tabindex="-1">{{ .error }}</div>
       {{ end }}
       <div class="form-field">
         <label for="username">IDENTIFIER</label>
@@ -17,11 +17,15 @@
       </div>
       <div class="form-field">
         <label for="password">PASSCODE</label>
-        <input id="password" type="password" name="password" class="text-input" autocomplete="current-password" required>
+        <div class="password-field"><input id="password" type="password" name="password" class="text-input" autocomplete="current-password" required aria-describedby="capsLockStatus"><button type="button" id="passwordToggle" class="btn btn--sm" aria-pressed="false">Show</button></div>
+        <div id="capsLockStatus" class="field-help" role="status" aria-live="polite"></div>
       </div>
-      <button type="submit" class="btn btn--solid" style="width:100%;justify-content:center;margin-top:8px">LOGON</button>
+      <button type="submit" id="loginSubmit" class="btn btn--solid" style="width:100%;justify-content:center;margin-top:8px"><span>LOGON</span></button>
+      <p class="field-help login-session-note">Authentication uses an HttpOnly session cookie. The requested destination is restored after successful sign-in.</p>
     </form>
   </div>
 </div>
+
+<script type="module" src="/static/js/login.js"></script>
 
 {{ template "footer" . }}

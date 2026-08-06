@@ -6,7 +6,8 @@
         <h1 class="page-title" style="font-size:18px">Port Scanner</h1>
         <p class="page-sub" style="margin-bottom:18px">Test TCP ports on an authorized target. Presets and inclusive ranges are supported.</p>
 
-        <form id="scanForm">
+        <form id="scanForm" novalidate>
+            <div id="scannerErrorSummary" class="alert-err" role="alert" tabindex="-1" hidden></div>
             <div class="form-field">
                 <label for="scanTarget">TARGET IP OR DOMAIN</label>
                 <input id="scanTarget" type="text" name="target" class="text-input" placeholder="192.168.1.1 or example.com"

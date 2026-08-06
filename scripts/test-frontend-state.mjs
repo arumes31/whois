@@ -82,6 +82,20 @@ function testErrorRendering() {
     assert.match(html, /data-status="error"/);
     assert.ok(html.includes(expected), `${service} should retain its error text`);
   });
+  const dnsPolicy = renderService('dns', {
+    TXT: ['v=spf1 include:_spf.example.test -all', 'v=DMARC1; p=reject; pct=100'],
+  }, 'example.test', { dataset: {} });
+  assert.match(dnsPolicy, /SPF POLICY/);
+  assert.match(dnsPolicy, /DMARC STRENGTH/);
+  assert.match(dnsPolicy, /ENFORCED/);
+
+  const target = renderService('target', {
+    valid: true,
+    input: '192.0.2.1',
+    normalized: '192.0.2.1',
+    ips: [{ version: 4, address: '192.0.2.1', scope: 'documentation', reverse_dns: ['ptr.example.test'] }],
+  }, '192.0.2.1', { dataset: {} });
+  assert.match(target, /data-query-target="ptr\.example\.test"/);
 }
 
 const listeners = new Map();
@@ -176,6 +190,12 @@ function testQueue() {
   for (let index = 0; index < 50; index += 1) assert.equal(ws.cancelQueued(`queue-${index}`), true);
   assert.equal(ws.queueMessage({ request_id: '-_.:', targets: ['punctuation.test'] }), true);
   assert.equal(ws.cancelQueued('-_.:'), true);
+  requestEvents.length = 0;
+  assert.equal(ws.queueMessage({ request_id: 'cancel-all-a', targets: ['a.test'] }), true);
+  assert.equal(ws.queueMessage({ request_id: 'cancel-all-b', targets: ['b.test'] }), true);
+  assert.equal(ws.cancelAll(), true);
+  assert.deepEqual(eventsFor('cancel-all-a'), ['queued', 'interrupted']);
+  assert.deepEqual(eventsFor('cancel-all-b'), ['queued', 'interrupted']);
 }
 
 function testMultiTargetTracking() {

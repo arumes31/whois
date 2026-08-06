@@ -9,6 +9,13 @@ const pingCharts = new Map();        // canvas id -> chart
 
 const TERMINAL_SCAN_STATES = new Set(['completed', 'failed', 'interrupted']);
 
+export function notifyScanState() {
+  if (typeof document?.dispatchEvent !== 'function' || typeof CustomEvent !== 'function') return;
+  document.dispatchEvent(new CustomEvent('console:scan-state', {
+    detail: { scans: getCurrentScans() },
+  }));
+}
+
 export function getScan(target) { return activeScans.get(target); }
 
 export function getScanByRequestID(requestID) {
@@ -35,6 +42,7 @@ export function setScan(target, scan) {
   if (next.identity && !TERMINAL_SCAN_STATES.has(next.status)) {
     activeIdentityRequests.set(next.identity, next.requestID);
   }
+  notifyScanState();
   return next;
 }
 
@@ -70,6 +78,7 @@ export function setScanStatusByRequestID(requestID, status, outcome = '') {
       activeIdentityRequests.delete(scan.identity);
     }
   }
+  notifyScanState();
   return scan;
 }
 
@@ -84,6 +93,7 @@ export function getCurrentScans() {
 export function dropScan(target) {
   detachScan(activeScans.get(target));
   activeScans.delete(target);
+  notifyScanState();
 }
 
 export function getResults(target) {
@@ -138,6 +148,8 @@ export function registerChart(id, chart) { pingCharts.set(id, chart); }
 
 export function destroySectionChart(section) {
   if (!section) return;
+  section._chartObserver?.disconnect();
+  section._chartObserver = undefined;
   const id = section.dataset.chartId;
   const registered = id ? pingCharts.get(id) : null;
   if (registered) {
@@ -149,6 +161,7 @@ export function destroySectionChart(section) {
   section._pingChart = undefined;
   delete section.dataset.chartId;
   delete section.dataset.chartRtts;
+  delete section.dataset.chartVisible;
 }
 
 export function destroyCharts(container) {
@@ -179,6 +192,7 @@ export function clearWorkspace() {
   activeIdentityRequests.clear();
   diagnosticResults.clear();
   resetColors();
+  notifyScanState();
 }
 
 export function cardCount() {
