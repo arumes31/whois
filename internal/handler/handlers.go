@@ -627,21 +627,21 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 
 	targetInfo := utils.NormalizeTarget(domain)
 	if !targetInfo.Valid || !targetInfo.Networkable {
-		return c.HTML(http.StatusBadRequest, "<div class='alert alert-danger'>Error: invalid DNS target</div>")
+		return c.HTML(http.StatusBadRequest, "<div class='alert-err'>Error: invalid DNS target</div>")
 	}
 	isIP := targetInfo.Kind == model.TargetKindIPv4 || targetInfo.Kind == model.TargetKindIPv6
 	results, err := h.DNS.LookupType(c.Request().Context(), targetInfo.Host, rtype, isIP)
 	if err != nil {
-		return c.HTML(http.StatusBadRequest, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", html.EscapeString(err.Error())))
+		return c.HTML(http.StatusBadRequest, fmt.Sprintf("<div class='alert-err'>Error: %v</div>", html.EscapeString(err.Error())))
 	}
 
 	if len(results) == 0 {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-warning'>No %s records found for %s</div>", html.EscapeString(rtype), html.EscapeString(domain)))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert-ok'>No %s records found for %s</div>", html.EscapeString(rtype), html.EscapeString(domain)))
 	}
 
-	htmlRes := fmt.Sprintf("<div class='glass-panel p-3 border-nordic'><strong class='text-nordic-blue d-block mb-2'>%s RECORDS FOR %s</strong>", html.EscapeString(rtype), html.EscapeString(domain))
+	htmlRes := fmt.Sprintf("<div class='dns-type'>%s RECORDS FOR %s</div><div class='dns-values'>", html.EscapeString(rtype), html.EscapeString(domain))
 	for _, res := range results {
-		htmlRes += fmt.Sprintf("<div class='clickable-record p-1 small border-bottom border-secondary border-opacity-10' onclick='copyToClipboard(this)'>%s</div>", html.EscapeString(res))
+		htmlRes += fmt.Sprintf("<div class='clickable-record'>%s</div>", html.EscapeString(res))
 	}
 	htmlRes += "</div>"
 
@@ -656,17 +656,17 @@ func (h *Handler) MacLookup(c echo.Context) error {
 	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
 		var vendor string
 		if json.Unmarshal([]byte(cached), &vendor) == nil {
-			return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", html.EscapeString(mac), html.EscapeString(vendor)))
+			return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert-ok'>MAC vendor for %s ▸ %s</div>", html.EscapeString(mac), html.EscapeString(vendor)))
 		}
 	}
 
 	vendor, err := service.LookupMacVendor(ctx, mac)
 	if err != nil {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-danger'>Error: %v</div>", html.EscapeString(err.Error())))
+		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert-err'>Error: %v</div>", html.EscapeString(err.Error())))
 	}
 
 	_ = h.Storage.SetCache(ctx, cacheKey, vendor, 24*time.Hour)
-	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert alert-success'><strong>MAC Vendor for %s:</strong><br>%s</div>", html.EscapeString(mac), html.EscapeString(vendor)))
+	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert-ok'>MAC vendor for %s ▸ %s</div>", html.EscapeString(mac), html.EscapeString(vendor)))
 }
 
 func (h *Handler) Login(c echo.Context) error {
