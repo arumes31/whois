@@ -1,88 +1,75 @@
 {{ template "header" . }}
 
-<div class="container mt-4">
-  <h1 class="page-title h2 mb-4 fw-bold"><svg style="width:24px;height:24px;margin-right:12px;fill:currentColor" viewBox="0 0 576 512"><path d="M64 0C28.7 0 0 28.7 0 64V352c0 35.3 28.7 64 64 64H240l-10.7 32H160c-17.7 0-32 14.3-32 32s14.3 32 32 32H416c17.7 0 32-14.3 32-32s-14.3-32-32-32H346.7L336 416H512c35.3 0 64-28.7 64-64V64c0-35.3-28.7-64-64-64H64zM512 64V288H64V64H512z"/></svg> MONITORING CONFIGURATION</h1>
-  <p class="text-white small italic">Automated snapshots run every <strong>24 hours</strong>. Add only targets you are authorized to monitor.</p>
+<div style="max-width:1080px;margin:0 auto">
+  <span class="command-eyebrow">ADMINISTRATION</span>
+  <h1 class="page-title" style="font-size:20px;margin-bottom:6px">Monitoring Configuration</h1>
+  <p class="page-sub" style="margin-bottom:24px">Automated snapshots run every <strong>24 hours</strong>. Add only targets you are authorized to monitor.</p>
 
-  <div class="row g-4">
-    <div class="col-md-5">
-      <div class="glass-panel p-4 mb-4">
-        <div class="mb-4">
-          <h5 class="mb-0 fw-bold text-success"><svg style="width:16px;height:16px;margin-right:8px;fill:currentColor" viewBox="0 0 448 512"><path d="M256 80c0-17.7-14.3-32-32-32s-32 14.3-32 32V224H48c-17.7 0-32 14.3-32 32s14.3 32 32 32H192V432c0 17.7 14.3 32 32 32s32-14.3 32-32V288H400c17.7 0 32-14.3 32-32s-14.3-32-32-32H256V80z"/></svg> ADD NEW ITEM</h5>
-          <hr class="border-secondary opacity-25">
-        </div>
-        <div>
-          <form method="post">
-            <input type="hidden" name="_csrf" value="{{ .csrf }}">
-            <div class="mb-3">
-              <label class="form-label" for="monitorItem">Domain or IP address</label>
-              <input
-                id="monitorItem"
-                type="text" 
-                class="form-control matrix-input" 
-                name="item" 
-                placeholder="example.com or 8.8.8.8" 
-                aria-describedby="monitorItemHelp"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-                required>
-              <small id="monitorItemHelp" class="field-help">Example: example.com or 8.8.8.8</small>
-            </div>
-            <button type="submit" name="action" value="add" class="btn btn-danger w-100">ADD TO MONITORING</button>
-          </form>
-        </div>
+  <div style="display:grid;grid-template-columns:minmax(0,5fr) minmax(0,7fr);gap:22px" class="config-grid">
+    <div>
+      <div class="rail-panel" style="margin-bottom:22px">
+        <h3>ADD NEW ITEM</h3>
+        <form method="post">
+          <input type="hidden" name="_csrf" value="{{ .csrf }}">
+          <div class="form-field">
+            <label for="monitorItem">DOMAIN OR IP ADDRESS</label>
+            <input id="monitorItem" type="text" class="text-input" name="item" placeholder="example.com or 8.8.8.8"
+              aria-describedby="monitorItemHelp" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+            <div id="monitorItemHelp" class="field-help">Example: example.com or 8.8.8.8</div>
+          </div>
+          <button type="submit" name="action" value="add" class="btn btn--solid" style="width:100%;justify-content:center">ADD TO MONITORING</button>
+        </form>
       </div>
 
-      <div class="glass-panel p-4">
-        <div class="mb-4">
-          <h5 class="mb-0 fw-bold text-warning"><svg style="width:16px;height:16px;margin-right:8px;fill:currentColor" viewBox="0 0 512 512"><path d="M57.7 193l9.4 16.4c8.3 14.5 21.9 25.2 38 29.8L163 255.7c17.2 4.9 29 20.6 29 38.5v39.9c0 11 6.2 21 16 25.9s16 14.9 16 25.9v39c0 15.6 14.9 26.9 29.9 22.6c16.1-4.6 28.6-17.5 32.7-33.8l2.8-11.2c4.2-16.9 15.2-31.4 30.3-40l8.1-4.6c15-8.5 24.2-24.5 24.2-41.7v-8.3c0-12.7-5.1-24.9-14.1-33.9l-3.9-3.9c-9-9-21.2-14.1-33.9-14.1H257c-11.1 0-22.1-2.9-31.8-8.4l-34.5-19.7c-4.3-2.5-7.6-6.5-9.2-11.2l-3.2-9.6c-1.1-3.3-3.1-6.2-5.8-8.5L142 171.2c-7.9-6.7-11.7-17.3-9.9-27.6l3.2-18.8c1.7-10.2-1.7-20.4-9.3-27.3l-3.6-3.3c-15.9-14.4-40-13-54.2 3.3L13 161.5C3 173 1.3 189.3 8.8 202.5l4.1 7.1c7.1 12.3 18.1 22.2 31.3 28l13.5 6zM497 273.9c4.9-18.2 1.3-37.5-9.8-52.5l-7.1-9.4c-23.4-31.2-64.1-41.3-99.2-24.4l-30 14.4c-15.6 7.5-25.6 23.3-25.6 40.7v57.4c0 16.9 9.1 32.6 24 41.2l62.7 36c13.2 7.6 27.3 12.7 42 15.1l15 2.5c10.3 1.7 20.4-2.1 27-9.8l14.9-17.6c12.7-14.9 15.3-35.6 6.9-53.1l-1.1-2.4zM256 512A256 256 0 1 0 256 0a256 256 0 1 0 0 512z"/></svg> GEOIP DATABASE</h5>
-          <hr class="border-secondary opacity-25">
-        </div>
-        <div>
-            <button 
-                hx-post="/config/update-geo" 
-                hx-target="#geoUpdateRes" 
-                hx-indicator="#geoSpin"
-                class="btn btn-outline-warning w-100 fw-bold">
-                FORCE DATABASE UPDATE
-            </button>
-            <div id="geoSpin" class="htmx-indicator text-center mt-3" role="status">
-                <div class="spinner-border spinner-border-sm text-warning" aria-hidden="true"></div>
-                <span class="small text-white ms-2">Updating database...</span>
-            </div>
-            <div id="geoUpdateRes" class="mt-3 small font-monospace" aria-live="polite"></div>
-        </div>
+      <div class="rail-panel">
+        <h3>GEOIP DATABASE</h3>
+        <button id="geoUpdateBtn" class="btn" style="width:100%;justify-content:center">FORCE DATABASE UPDATE</button>
+        <div id="geoUpdateRes" style="margin-top:12px;font-size:11px" aria-live="polite"></div>
       </div>
     </div>
 
-    <div class="col-md-7">
-      <div class="glass-panel p-4">
-        <div class="mb-4">
-          <h5 class="mb-0 fw-bold text-info"><svg style="width:16px;height:16px;margin-right:8px;fill:currentColor" viewBox="0 0 512 512"><path d="M40 48C26.7 48 16 58.7 16 72v48c0 13.3 10.7 24 24 24H472c13.3 0 24-10.7 24-24V72c0-13.3-10.7-24-24-24H40zM192 240v48c0 13.3 10.7 24 24 24H472c13.3 0 24-10.7 24-24V240c0-13.3-10.7-24-24-24H216c-13.3 0-24 10.7-24 24zM16 408v48c0 13.3 10.7 24 24 24H472c13.3 0 24-10.7 24-24V408c0-13.3-10.7-24-24-24H40c-13.3 0-24 10.7-24 24zM72 272a40 40 0 1 0 0-80 40 40 0 1 0 0 80z"/></svg> CURRENTLY MONITORED ({{ len .monitored }})</h5>
-          <hr class="border-secondary opacity-25">
-        </div>
-        <div>
-          {{ if .monitored }}
-            <ul class="list-group list-group-flush bg-transparent">
-              {{ range .monitored }}
-                <li class="list-group-item bg-transparent d-flex justify-content-between align-items-center gap-3 border-secondary opacity-75">
-                  <code class="text-info">{{ . }}</code>
-                  <form method="post" class="d-inline" onsubmit="return confirm('Remove this target from monitoring?')">
-                    <input type="hidden" name="_csrf" value="{{ $.csrf }}">
-                    <input type="hidden" name="item" value="{{ . }}">
-                    <button type="submit" name="action" value="remove" class="btn btn-sm btn-outline-danger px-3" aria-label="Remove {{ . }} from monitoring">REMOVE</button>
-                  </form>
-                </li>
-              {{ end }}
-            </ul>
-          {{ else }}
-            <p class="text-white mb-0 italic">No items are being monitored.</p>
-          {{ end }}
-        </div>
-      </div>
+    <div class="rail-panel">
+      <h3>CURRENTLY MONITORED ({{ len .monitored }})</h3>
+      {{ if .monitored }}
+        {{ range .monitored }}
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;border-bottom:1px dashed var(--line);padding:8px 0">
+            <code style="color:var(--phos-bright)">{{ . }}</code>
+            <form method="post" onsubmit="return confirm('Remove this target from monitoring?')">
+              <input type="hidden" name="_csrf" value="{{ $.csrf }}">
+              <input type="hidden" name="item" value="{{ . }}">
+              <button type="submit" name="action" value="remove" class="btn btn--sm" aria-label="Remove {{ . }} from monitoring">REMOVE</button>
+            </form>
+          </div>
+        {{ end }}
+      {{ else }}
+        <p style="color:var(--phos-50);font-size:12px;margin:0">No items are being monitored.</p>
+      {{ end }}
     </div>
   </div>
 </div>
+
+<style>
+  @media (max-width: 900px) { .config-grid { grid-template-columns: 1fr !important; } }
+</style>
+
+<script>
+  (function () {
+    var btn = document.getElementById('geoUpdateBtn');
+    var out = document.getElementById('geoUpdateRes');
+    btn.addEventListener('click', async function () {
+      btn.disabled = true;
+      out.innerHTML = '<span class="live-log__empty">Updating database…</span>';
+      try {
+        var resp = await fetch('/config/update-geo', { method: 'POST' });
+        var text = await resp.text();
+        out.innerHTML = '<pre class="raw-block">' + text.replace(/</g, '&lt;') + '</pre>';
+      } catch (err) {
+        out.innerHTML = '<div class="alert-err">' + String(err.message || err) + '</div>';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  })();
+</script>
 
 {{ template "footer" . }}
