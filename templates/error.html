@@ -1,15 +1,12 @@
 {{ template "header" . }}
 
-<div class="row justify-content-center mt-5">
-    <div class="col-md-8 text-center">
-        <div class="glass-panel p-5" role="alert">
-            <h1 class="display-1 text-danger fw-bold">ERROR</h1>
-            <h2 class="mb-4 text-nordic-blue">{{ .Code }}</h2>
-            <p class="lead mb-4 text-muted font-monospace italic">{{ .Message }}</p>
-            <hr class="border-secondary opacity-25">
-            <a href="/" class="btn btn-danger btn-lg px-5 fw-bold">RETURN TO CONSOLE</a>
-        </div>
-    </div>
+<div class="narrow-page" style="text-align:center">
+  <div class="command-deck" role="alert">
+    <div class="error-code">{{ .Code }}</div>
+    <p style="color:var(--phos-70);margin:10px 0 22px">{{ .Message }}</p>
+    <hr style="border:0;border-top:1px solid var(--line);margin:0 0 22px">
+    <a href="/" class="btn btn--solid">RETURN TO CONSOLE</a>
+  </div>
 </div>
 
 {{ template "footer" . }}
