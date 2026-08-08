@@ -116,6 +116,7 @@ function filterAndSort() {
   const visible = rows.filter((row) => !row.hidden).length;
   document.getElementById('monitoredVisibleCount').textContent = String(visible);
   document.getElementById('monitorEmptyFilter').hidden = visible > 0;
+  syncSelection();
 }
 search?.addEventListener('input', filterAndSort);
 sort?.addEventListener('change', filterAndSort);
@@ -132,15 +133,20 @@ function syncSelection() {
     const control = document.getElementById(id);
     if (control) control.disabled = selected.length === 0;
   });
+  const visible = [...document.querySelectorAll('.monitor-row:not([hidden]) .monitor-select')];
+  const allVisibleSelected = visible.length > 0 && visible.every((checkbox) => checkbox.checked);
+  const selectAll = document.getElementById('monitorSelectAll');
+  if (selectAll) {
+    selectAll.setAttribute('aria-pressed', String(allVisibleSelected));
+    selectAll.textContent = allVisibleSelected ? 'Clear visible' : 'Select visible';
+  }
 }
 
 document.querySelectorAll('.monitor-select').forEach((checkbox) => checkbox.addEventListener('change', syncSelection));
-document.getElementById('monitorSelectAll')?.addEventListener('click', (event) => {
+document.getElementById('monitorSelectAll')?.addEventListener('click', () => {
   const visible = [...document.querySelectorAll('.monitor-row:not([hidden]) .monitor-select')];
   const select = visible.some((checkbox) => !checkbox.checked);
   visible.forEach((checkbox) => { checkbox.checked = select; });
-  event.currentTarget.setAttribute('aria-pressed', String(select));
-  event.currentTarget.textContent = select ? 'Clear visible' : 'Select visible';
   syncSelection();
 });
 document.getElementById('monitorCopySelected')?.addEventListener('click', () => copyText(selectedTargets().join('\n'), 'Selected targets copied'));
@@ -149,19 +155,32 @@ document.getElementById('monitorExportSelected')?.addEventListener('click', () =
   announce('Selected monitored targets exported.');
 });
 
+let pendingRemoval;
+
+function cancelPendingRemoval({ announceCancellation = true, restoreFocus = true } = {}) {
+  const pending = pendingRemoval;
+  if (!pending) return;
+  pendingRemoval = undefined;
+  window.clearTimeout(pending.timer);
+  delete pending.row.dataset.pendingRemoval;
+  pending.row.hidden = false;
+  if (pending.undo.isConnected) {
+    pending.toast.replaceChildren();
+    pending.toast.classList.remove('is-show');
+  }
+  filterAndSort();
+  if (announceCancellation) announce(`${pending.target} was not removed.`);
+  if (restoreFocus) pending.row.querySelector('button')?.focus();
+}
+
 document.querySelectorAll('[data-remove-monitor]').forEach((removeForm) => {
   removeForm.addEventListener('submit', (event) => {
     event.preventDefault();
+    cancelPendingRemoval({ announceCancellation: true, restoreFocus: false });
     const row = removeForm.closest('.monitor-row');
     const target = row.dataset.monitorTarget;
     row.dataset.pendingRemoval = 'true';
     row.hidden = true;
-    let committed = false;
-    const timer = window.setTimeout(() => {
-      committed = true;
-      audit(`Removed monitoring target ${target}`);
-      removeForm.submit();
-    }, 5000);
     const toastElement = document.getElementById('toast');
     toastElement.replaceChildren(document.createTextNode(`${target} scheduled for removal. `));
     const undo = document.createElement('button');
@@ -169,20 +188,38 @@ document.querySelectorAll('[data-remove-monitor]').forEach((removeForm) => {
     undo.className = 'toast__action';
     undo.textContent = 'Undo';
     undo.addEventListener('click', () => {
-      if (committed) return;
-      window.clearTimeout(timer);
-      delete row.dataset.pendingRemoval;
-      row.hidden = false;
-      toastElement.classList.remove('is-show');
-      filterAndSort();
-      announce(`${target} was not removed.`);
-      row.querySelector('button')?.focus();
+      if (pendingRemoval?.undo !== undo) return;
+      cancelPendingRemoval();
     });
     toastElement.appendChild(undo);
     toastElement.classList.add('is-show');
-    window.setTimeout(() => { if (!committed) toastElement.classList.remove('is-show'); }, 4800);
+    const pending = {
+      row, target, toast: toastElement, undo, timer: undefined,
+    };
+    pending.timer = window.setTimeout(() => {
+      if (pendingRemoval !== pending) return;
+      if (!undo.isConnected) {
+        cancelPendingRemoval({ announceCancellation: false, restoreFocus: false });
+        return;
+      }
+      pendingRemoval = undefined;
+      toastElement.replaceChildren();
+      toastElement.classList.remove('is-show');
+      audit(`Removed monitoring target ${target}`);
+      removeForm.submit();
+    }, 5000);
+    pendingRemoval = pending;
     filterAndSort();
   });
 });
+
+const removalToast = document.getElementById('toast');
+if (removalToast && 'MutationObserver' in window) {
+  new MutationObserver(() => {
+    if (pendingRemoval && !pendingRemoval.undo.isConnected) {
+      cancelPendingRemoval({ announceCancellation: false, restoreFocus: false });
+    }
+  }).observe(removalToast, { childList: true });
+}
 
 renderAudit();

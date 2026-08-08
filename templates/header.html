@@ -74,10 +74,10 @@
     <strong>DEGRADED MODE</strong><span id="connectionBannerText">The uplink is reconnecting. New scans will stay queued; existing results remain available.</span>
 </div>
 
-<div class="mobile-drawer" id="mobileDrawer" aria-hidden="true" inert>
+<div class="mobile-drawer" id="mobileDrawer" role="dialog" aria-modal="true" aria-labelledby="mobileDrawerTitle" aria-hidden="true" inert>
     <button type="button" class="mobile-drawer__scrim" data-close-drawer aria-label="Close navigation"></button>
     <nav aria-label="Mobile navigation">
-        <div class="mobile-drawer__head"><strong>NAVIGATION</strong><button type="button" class="icon-btn" data-close-drawer aria-label="Close navigation">×</button></div>
+        <div class="mobile-drawer__head"><strong id="mobileDrawerTitle">NAVIGATION</strong><button type="button" class="icon-btn" data-close-drawer aria-label="Close navigation">×</button></div>
         <a href="/" data-nav-path="/">Workspace</a>
         <a href="/scanner" data-nav-path="/scanner">Port scanner</a>
         <a href="/config" data-nav-path="/config">Configuration</a>

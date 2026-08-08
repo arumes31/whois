@@ -320,8 +320,13 @@ export async function fetchWithCSRF(input, init = {}) {
   if (response.status === 401) {
     window.dispatchEvent(new CustomEvent('console:session-expired', { detail: { input: String(input) } }));
   } else if (response.status === 429) {
+    const header = response.headers.get('retry-after');
+    const numericDelay = header !== null && header.trim() !== '' ? Number(header) : NaN;
+    const retryAfter = Number.isFinite(numericDelay) && numericDelay >= 0
+      ? numericDelay
+      : Math.max(0, Math.ceil((Date.parse(header || '') - Date.now()) / 1000) || 0);
     window.dispatchEvent(new CustomEvent('console:rate-limited', {
-      detail: { retryAfter: Number(response.headers.get('retry-after') || 0) },
+      detail: { retryAfter },
     }));
   }
   return response;

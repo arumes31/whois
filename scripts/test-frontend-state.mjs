@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 import {
-  canonicalTargetIdentity, createRequestID, splitTargets,
+  canonicalTargetIdentity, createRequestID, fetchWithCSRF, splitTargets,
 } from '../static/js/util.js';
 import { renderService } from '../static/js/render.js';
 import * as store from '../static/js/store.js';
@@ -119,6 +119,7 @@ globalThis.window = {
     return id;
   },
   clearInterval(id) { timers.delete(id); },
+  dispatchEvent() {},
 };
 
 const systemStatus = {
@@ -294,6 +295,80 @@ function testRequestLevelUIError() {
   assert.equal(badge.textContent, 'FAILED');
 }
 
+function terminalCard(target, section) {
+  const progressBar = { style: {} };
+  const progress = { setAttribute() {} };
+  const status = {};
+  const finding = { className: '', hidden: true };
+  const rescan = {};
+  return {
+    dataset: { target },
+    querySelector(selector) {
+      if (selector === '.result-card__progress i') return progressBar;
+      if (selector === '.result-card__progress') return progress;
+      if (selector === '.status-badge') return status;
+      if (selector === '.finding-count') return finding;
+      if (selector === '[data-card-action="rescan"]') return rescan;
+      return null;
+    },
+    querySelectorAll(selector) { return selector === '.service-section' ? [section] : []; },
+    setAttribute() {},
+  };
+}
+
+function testSlowModuleTerminalCleanup() {
+  ['done', 'all_done', 'error'].forEach((eventType) => {
+    const target = `${eventType}.slow.test`;
+    const section = {
+      dataset: { service: 'dns' },
+      innerHTML: '<div class="slow-module">scan is still active</div>',
+      querySelector(selector) {
+        return selector.includes('.slow-module') && this.innerHTML.includes('slow-module') ? {} : null;
+      },
+    };
+    const card = terminalCard(target, section);
+    globalThis.document = {
+      getElementById() { return null; },
+      querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; },
+    };
+    store.beginScan(target, {
+      requestID: `${eventType}-slow`, identity: `|${target}`, config: { dns: true }, total: 1,
+    });
+    assert.equal(cards.routeMessage({
+      type: eventType, request_id: `${eventType}-slow`, target, service: 'dns', data: 'request failed',
+    }), true);
+    assert.doesNotMatch(section.innerHTML, /scan is still active|slow-module/);
+  });
+}
+
+async function testRetryAfterParsing() {
+  const events = [];
+  globalThis.document = {
+    body: { dataset: {} },
+    cookie: '',
+    querySelector() { return null; },
+  };
+  window.dispatchEvent = (event) => events.push(event);
+  const cases = [
+    { header: '12', validate: (value) => assert.equal(value, 12) },
+    {
+      header: new Date(Date.now() + 5000).toUTCString(),
+      validate: (value) => assert.ok(value >= 3 && value <= 5, `HTTP-date delay was ${value}`),
+    },
+    { header: 'not-a-date', validate: (value) => assert.equal(value, 0) },
+  ];
+  for (const testCase of cases) {
+    window.fetch = async () => new Response('', {
+      status: 429,
+      headers: { 'Retry-After': testCase.header },
+    });
+    await fetchWithCSRF('/rate-limited');
+    const value = events.pop().detail.retryAfter;
+    assert.equal(Number.isNaN(value), false);
+    testCase.validate(value);
+  }
+}
+
 testCanonicalTargets();
 testGenerationState();
 testErrorRendering();
@@ -301,5 +376,7 @@ testQueue();
 testMultiTargetTracking();
 testGlobalErrorAndPageLifecycle();
 testRequestLevelUIError();
+testSlowModuleTerminalCleanup();
+await testRetryAfterParsing();
 
 console.log('Frontend state/protocol checks passed.');

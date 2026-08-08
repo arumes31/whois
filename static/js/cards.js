@@ -246,7 +246,9 @@ function finishWithTransportFailure(scan, status, message, explicitOutcome = '')
   const card = getCard(scan.target);
   if (!card) return;
   card.querySelectorAll('.service-section').forEach((section) => {
-    if (section.querySelector('.skel')) section.innerHTML = skippedDetails(section.dataset.service, status);
+    if (section.querySelector('.skel, .slow-module')) {
+      section.innerHTML = skippedDetails(section.dataset.service, status);
+    }
   });
   syncCardStatus(scan.target);
   appendLog(scan.target, message);
@@ -333,7 +335,7 @@ export function routeMessage(msg) {
     if (scan) {
       const section = [...(getCard(scan.target)?.querySelectorAll('.service-section') || [])]
         .find((candidate) => candidate.dataset.service === msg.service);
-      if (section?.querySelector('.skel')) {
+      if (section?.querySelector('.skel, .slow-module')) {
         const profileOnly = scan.targetProfile?.valid && !scan.targetProfile?.networkable;
         section.innerHTML = skippedDetails(msg.service, profileOnly ? 'profile-only' : '');
       }
@@ -399,7 +401,7 @@ function handleAllDone(scan) {
   const rescan = card.querySelector('[data-card-action="rescan"]');
   if (rescan) rescan.disabled = false;
   card.querySelectorAll('.service-section').forEach((section) => {
-    if (section.querySelector('.skel')) {
+    if (section.querySelector('.skel, .slow-module')) {
       const reason = invalidTarget ? 'invalid-target' : (profileOnly ? 'profile-only' : '');
       section.innerHTML = skippedDetails(section.dataset.service, reason);
     }
