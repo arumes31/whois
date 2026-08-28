@@ -18,7 +18,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
   BUILDX_VERSION: v0.36.1
   BUILDKIT_IMAGE: moby/buildkit:buildx-stable-1@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
-  QEMU_IMAGE: tonistiigi/binfmt:latest@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+  QEMU_IMAGE: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
 jobs:
   quality:
@@ -47,10 +47,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
 
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6 (actions/setup-node@v6)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7 (actions/setup-node@v7)
         with:
           node-version: 24.19.0
           cache: npm
@@ -137,7 +137,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${PLATFORM_SLUG}-${DIGEST#sha256:}"
 
       - name: Upload run-unique digest artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4 (actions/upload-artifact@v4)
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 (actions/upload-artifact@v6)
         with:
           name: publish-digests-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.slug }}
           path: ${{ runner.temp }}/digests/*
@@ -155,7 +155,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4 (docker/setup-buildx-action@v4)

@@ -33,6 +33,8 @@ var (
 	GeoUpdateInterval = 6 * time.Hour
 )
 
+const maxMindCityDownloadURL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&suffix=tar.gz"
+
 type GeoInfo struct {
 	Country      string  `json:"country"`
 	CountryCode  string  `json:"countryCode"`
@@ -89,12 +91,10 @@ func InitializeGeoDBContext(ctx context.Context, licenseKey, accountID string) {
 	_ = os.MkdirAll("data", 0750)
 
 	updateURL := ""
-	if licenseKey != "" {
-		// Using the direct download URL for GeoLite2-City
-		updateURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", licenseKey)
-	} else {
-		// Fallback to a common public mirror if no key is provided (behavior like rauth)
-		updateURL = "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
+	if licenseKey != "" && accountID != "" {
+		updateURL = maxMindCityDownloadURL
+	} else if licenseKey != "" || accountID != "" {
+		utils.Log.Warn("GeoIP updates require both MAXMIND_ACCOUNT_ID and MAXMIND_LICENSE_KEY")
 	}
 
 	_, err := os.Stat(path)
@@ -200,17 +200,16 @@ func ManualUpdateGeoDB() error {
 	client := GeoHTTPClient
 	geoMu.RUnlock()
 
-	if licenseKey == "" {
-		return fmt.Errorf("MAXMIND_LICENSE_KEY is not set")
+	if licenseKey == "" || accountID == "" {
+		return fmt.Errorf("both MAXMIND_ACCOUNT_ID and MAXMIND_LICENSE_KEY must be set")
 	}
-	url := fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=%s&suffix=tar.gz", licenseKey)
 	geoUpdateMu.Lock()
 	defer geoUpdateMu.Unlock()
 
 	// Close the reader before downloading to avoid file locking on Windows
 	CloseGeoDB()
 
-	err := downloadGeoDB(context.Background(), url, path, client, accountID, licenseKey)
+	err := downloadGeoDB(context.Background(), maxMindCityDownloadURL, path, client, accountID, licenseKey)
 	reloadGeoDB(path)
 	return err
 }
@@ -257,7 +256,7 @@ func reloadGeoDB(path string) {
 	}
 }
 
-var GeoHTTPClient = &http.Client{Timeout: 5 * time.Minute}
+var GeoHTTPClient = newGeoHTTPClient()
 
 const maxGeoDBDownloadBytes = 150 * 1024 * 1024
 
@@ -279,8 +278,10 @@ func downloadGeoDB(ctx context.Context, url, path string, client *http.Client, a
 		return err
 	}
 
-	// If license_key is not in the URL, try using Basic Auth
-	if !strings.Contains(url, "license_key=") && accountID != "" && licenseKey != "" {
+	if isMaxMindDownloadURL(url) {
+		if accountID == "" || licenseKey == "" {
+			return errors.New("maxmind download credentials are incomplete")
+		}
 		req.SetBasicAuth(accountID, licenseKey)
 	}
 
@@ -303,6 +304,31 @@ func downloadGeoDB(ctx context.Context, url, path string, client *http.Client, a
 
 	// Preserve the live database if the update is interrupted or oversized.
 	return writeFileAtomically(path, resp.Body, maxGeoDBDownloadBytes)
+}
+
+func newGeoHTTPClient() *http.Client {
+	return &http.Client{
+		Timeout: 5 * time.Minute,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// Credentials are valid only for the original MaxMind endpoint and
+			// must never follow a redirect to another download host.
+			req.Header.Del("Authorization")
+			if len(via) >= 5 {
+				return errors.New("geo database download stopped after 5 redirects")
+			}
+			return nil
+		},
+	}
+}
+
+func isMaxMindDownloadURL(rawURL string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return parsed.Scheme == "https" &&
+		strings.EqualFold(parsed.Hostname(), "download.maxmind.com") &&
+		parsed.Path == "/app/geoip_download"
 }
 
 func isTarGzDownload(rawURL string) bool {
@@ -350,7 +376,7 @@ func extractTarGzTo(r io.Reader, path string) error {
 		// Look specifically for the City database filename
 		if strings.HasSuffix(header.Name, "GeoLite2-City.mmdb") {
 			if header.Size < 0 || header.Size > maxGeoDBDownloadBytes {
-				return fmt.Errorf("GeoIP archive entry exceeds download limit")
+				return fmt.Errorf("geo database archive entry exceeds download limit")
 			}
 			return writeFileAtomically(path, tr, maxGeoDBDownloadBytes)
 		}

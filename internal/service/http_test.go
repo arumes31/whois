@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 	"whois/internal/utils"
 )
 
@@ -242,9 +243,26 @@ func TestGetHTTPInfo_RedirectLimit(t *testing.T) {
 
 	host := strings.TrimPrefix(ts.URL, "http://")
 	info := GetHTTPInfo(context.Background(), host)
-	// Redirection limit should trigger or at least return a 200/302 depending on client.Do behavior with context
-	if info.Error != "" && !strings.Contains(info.Error, "stopped after 10 redirects") {
-		t.Logf("Redirect limit info: %v", info.Error)
+	if !strings.Contains(info.Error, "stopped after 10 redirects") {
+		t.Fatalf("redirect loop error = %q, want bounded redirect failure", info.Error)
+	}
+}
+
+func TestGetHTTPInfoHonorsContextDeadline(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	info := GetHTTPInfo(ctx, strings.TrimPrefix(ts.URL, "http://"))
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("HTTP probe ignored context deadline for %s", elapsed)
+	}
+	if info.Error == "" {
+		t.Fatal("HTTP probe unexpectedly succeeded after context deadline")
 	}
 }
 

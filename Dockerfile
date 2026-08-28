@@ -7,7 +7,7 @@ COPY static ./static
 COPY templates ./templates
 RUN npm run build:assets && npm run assets:check
 
-FROM golang:1.26-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
+FROM golang:1.27-alpine@sha256:4c9fe60190a2a3350ddc51de80d0224b8a6698d12bdfc999fee45ea9d6c46dbc AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -23,6 +23,7 @@ WORKDIR /app
 # patch. Package names deliberately follow v3.24 security patches; see README.
 RUN addgroup -S -g 101 whoisgroup \
     && adduser -S -D -H -u 100 -G whoisgroup whoisuser \
+    && apk upgrade --no-cache \
     && apk add --no-cache tzdata ca-certificates traceroute iputils
 
 COPY --from=builder --chown=100:101 /out/whois-app ./whois-app

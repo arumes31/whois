@@ -79,9 +79,10 @@ func TestInitializeGeoDB(t *testing.T) {
 	oldClient := GeoHTTPClient
 	oldTestMode := GeoTestMode
 	oldPath := geoPath
-	GeoHTTPClient = &http.Client{
-		Transport: &mockGeoTransport{},
-	}
+	var captured *http.Request
+	GeoHTTPClient = &http.Client{Transport: &mockGeoTransport{request: func(req *http.Request) {
+		captured = req.Clone(req.Context())
+	}}}
 	GeoTestMode = true
 	geoPath = "test_init_geo.mmdb"
 	geoMu.Unlock()
@@ -96,15 +97,26 @@ func TestInitializeGeoDB(t *testing.T) {
 		ReloadGeoDB()
 	}()
 
-	// Test with no keys (public mirror fallback)
+	// Missing credentials leave remote updates disabled.
 	InitializeGeoDB("", "")
 
-	// Test with keys
+	// Complete credentials use HTTP Basic authentication and never enter the URL.
 	InitializeGeoDB("testkey", "testaccount")
+	if captured == nil {
+		t.Fatal("credentialed initialization did not request the MaxMind database")
+	}
+	if key := captured.URL.Query().Get("license_key"); key != "" {
+		t.Fatalf("MaxMind license key leaked into request URL: %q", key)
+	}
+	username, password, ok := captured.BasicAuth()
+	if !ok || username != "testaccount" || password != "testkey" {
+		t.Fatalf("MaxMind Basic Auth = (%q, %q, %v)", username, password, ok)
+	}
 }
 
 type mockGeoTransport struct {
-	called chan<- struct{}
+	called  chan<- struct{}
+	request func(*http.Request)
 }
 
 func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -113,6 +125,9 @@ func (t *mockGeoTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 		case t.called <- struct{}{}:
 		default:
 		}
+	}
+	if t.request != nil {
+		t.request(req)
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
@@ -250,6 +265,7 @@ func TestManualUpdateGeoDB(t *testing.T) {
 	oldClient := GeoHTTPClient
 	oldPath := geoPath
 	oldLicenseKey := geoLicenseKey
+	oldAccountID := geoAccountID
 	GeoHTTPClient = &http.Client{Transport: &mockGeoTransport{}}
 	geoPath = path
 	geoMu.Unlock()
@@ -258,6 +274,7 @@ func TestManualUpdateGeoDB(t *testing.T) {
 		GeoHTTPClient = oldClient
 		geoPath = oldPath
 		geoLicenseKey = oldLicenseKey
+		geoAccountID = oldAccountID
 		geoMu.Unlock()
 		ReloadGeoDB()
 	}()
@@ -273,6 +290,7 @@ func TestManualUpdateGeoDB(t *testing.T) {
 
 	geoMu.Lock()
 	geoLicenseKey = "testkey"
+	geoAccountID = "testaccount"
 	geoMu.Unlock()
 	// The injected transport keeps this path deterministic and offline.
 	_ = ManualUpdateGeoDB()
@@ -302,39 +320,63 @@ func TestDownloadGeoDB_Errors(t *testing.T) {
 }
 
 func TestDownloadGeoDB_BasicAuth(t *testing.T) {
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
+	var captured *http.Request
+	client := &http.Client{Transport: &mockGeoTransport{request: func(req *http.Request) {
+		captured = req.Clone(req.Context())
+	}}}
+	_ = downloadGeoDB(context.Background(), maxMindCityDownloadURL, path, client, "user", "pass")
+	if captured == nil {
+		t.Fatal("MaxMind request was not sent")
+	}
+	if captured.URL.RawQuery == "" || captured.URL.Query().Get("license_key") != "" {
+		t.Fatalf("MaxMind URL contains credential or lost non-secret query: %q", captured.URL.String())
+	}
+	username, password, ok := captured.BasicAuth()
+	if !ok || username != "user" || password != "pass" {
+		t.Fatalf("Basic Auth = (%q, %q, %v)", username, password, ok)
+	}
+}
+
+func TestDownloadGeoDB_DoesNotLeakCredentialsToOtherHosts(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username, password, ok := r.BasicAuth()
-		if !ok || username != "user" || password != "pass" {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
+		if _, _, ok := r.BasicAuth(); ok || r.Header.Get("Authorization") != "" {
+			t.Error("MaxMind credentials were sent to a non-MaxMind host")
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		_, _ = w.Write([]byte("database"))
 	}))
 	defer ts.Close()
 
 	path := t.TempDir() + "/GeoLite2-City.mmdb"
-	geoMu.Lock()
-	oldPath := geoPath
-	oldAccountID := geoAccountID
-	oldLicenseKey := geoLicenseKey
-	geoPath = path
-	geoAccountID = "user"
-	geoLicenseKey = "pass"
-	geoMu.Unlock()
-	defer func() {
-		geoMu.Lock()
-		geoPath = oldPath
-		geoAccountID = oldAccountID
-		geoLicenseKey = oldLicenseKey
-		geoMu.Unlock()
-		ReloadGeoDB()
-	}()
-
-	err := DownloadGeoDB(ts.URL)
-	if err != nil {
-		t.Fatalf("DownloadGeoDB with basic auth failed: %v", err)
+	if err := downloadGeoDB(context.Background(), ts.URL, path, ts.Client(), "account", "license"); err != nil {
+		t.Fatalf("downloadGeoDB: %v", err)
 	}
+}
+
+func TestGeoHTTPClientStripsAuthorizationOnRedirect(t *testing.T) {
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("redirect leaked Authorization header %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer destination.Close()
+
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL, http.StatusFound)
+	}))
+	defer source.Close()
+
+	req, err := http.NewRequest(http.MethodGet, source.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.SetBasicAuth("account", "license")
+	resp, err := newGeoHTTPClient().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
 }
 
 func TestDownloadGeoDB_MaxMindSuffixArchive(t *testing.T) {

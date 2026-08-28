@@ -183,13 +183,13 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 
 Target classification, TLS/HTTP inspection, DNS failover, and port scanning are performed directly by the application and do not require a paid intelligence provider. GeoIP, CT, WHOIS/RDAP, and configured public DNS resolvers remain optional external data sources.
 
-Startup is network-silent by default. For automatic GeoIP/OUI downloads set `AUTO_UPDATE_DATABASES=true`; otherwise pre-populate the persistent lookup-data volume. For a more isolated deployment, also disable unneeded external-source feature flags and point DNS settings at internal resolvers. The application is not fully offline merely because its browser assets are local.
+Startup is network-silent by default. For automatic GeoIP/OUI downloads set `AUTO_UPDATE_DATABASES=true`; otherwise pre-populate the persistent lookup-data volume. MaxMind downloads require both account variables below and use HTTP Basic Authentication exclusively against MaxMind's HTTPS download endpoint; credentials are never placed in a URL or forwarded across redirects. There is no unauthenticated third-party GeoIP mirror fallback. For a more isolated deployment, also disable unneeded external-source feature flags and point DNS settings at internal resolvers. The application is not fully offline merely because its browser assets are local.
 
 #### 🌍 External API Keys
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `MAXMIND_ACCOUNT_ID` | MaxMind Account ID for GeoIP database updates | - |
-| `MAXMIND_LICENSE_KEY` | MaxMind License Key for GeoIP database updates | - |
+| `MAXMIND_ACCOUNT_ID` | MaxMind Account ID; required together with the license key | - |
+| `MAXMIND_LICENSE_KEY` | MaxMind License Key; required together with the account ID | - |
 
 ## 🔄 Development Lifecycle
 
