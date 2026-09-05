@@ -133,7 +133,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${PLATFORM_SLUG}-${DIGEST#sha256:}"
 
       - name: Upload run-unique digest artifact
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6 (actions/upload-artifact@v6)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v6 (actions/upload-artifact@v6)
         with:
           name: test-digests-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.slug }}
           path: ${{ runner.temp }}/digests/*
