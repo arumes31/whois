@@ -84,6 +84,180 @@ func (c *failingEvalClient) Eval(ctx context.Context, script string, keys []stri
 	return cmd
 }
 
+type failingSessionRedisClient struct {
+	storage.RedisClient
+	setErr error
+	getErr error
+	delErr error
+}
+
+func (c *failingSessionRedisClient) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
+	if c.setErr == nil {
+		return c.RedisClient.Set(ctx, key, value, expiration)
+	}
+	cmd := redis.NewStatusCmd(ctx)
+	cmd.SetErr(c.setErr)
+	return cmd
+}
+
+func (c *failingSessionRedisClient) Get(ctx context.Context, key string) *redis.StringCmd {
+	if c.getErr == nil {
+		return c.RedisClient.Get(ctx, key)
+	}
+	cmd := redis.NewStringCmd(ctx)
+	cmd.SetErr(c.getErr)
+	return cmd
+}
+
+func (c *failingSessionRedisClient) Del(ctx context.Context, keys ...string) *redis.IntCmd {
+	if c.delErr == nil {
+		return c.RedisClient.Del(ctx, keys...)
+	}
+	cmd := redis.NewIntCmd(ctx)
+	cmd.SetErr(c.delErr)
+	return cmd
+}
+
+func TestLogoutRevokesSession(t *testing.T) {
+	t.Setenv("CONFIG_USER", "admin")
+	t.Setenv("CONFIG_PASS", "correct horse battery staple")
+	t.Setenv("SECRET_KEY", "test-session-signing-key")
+
+	e := echo.New()
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{})
+	form := url.Values{
+		"username": {"admin"},
+		"password": {"correct horse battery staple"},
+		"next":     {"/config"},
+	}
+	loginRequest := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	loginRequest.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+	loginResponse := httptest.NewRecorder()
+	if err := h.Login(e.NewContext(loginRequest, loginResponse)); err != nil {
+		t.Fatal(err)
+	}
+	cookies := loginResponse.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != "session_id" {
+		t.Fatalf("login cookies = %#v", cookies)
+	}
+	sessionCookie := cookies[0]
+
+	protected := h.LoginRequired(func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+	authenticatedRequest := httptest.NewRequest(http.MethodGet, "/config", nil)
+	authenticatedRequest.AddCookie(sessionCookie)
+	authenticatedResponse := httptest.NewRecorder()
+	if err := protected(e.NewContext(authenticatedRequest, authenticatedResponse)); err != nil {
+		t.Fatal(err)
+	}
+	if authenticatedResponse.Code != http.StatusOK {
+		t.Fatalf("registered session status = %d, want 200", authenticatedResponse.Code)
+	}
+
+	logoutRequest := httptest.NewRequest(http.MethodPost, "/logout", nil)
+	logoutRequest.AddCookie(sessionCookie)
+	logoutResponse := httptest.NewRecorder()
+	if err := h.Logout(e.NewContext(logoutRequest, logoutResponse)); err != nil {
+		t.Fatal(err)
+	}
+	if logoutResponse.Code != http.StatusFound {
+		t.Fatalf("logout status = %d, want 302", logoutResponse.Code)
+	}
+
+	replayRequest := httptest.NewRequest(http.MethodGet, "/config", nil)
+	replayRequest.AddCookie(sessionCookie)
+	replayResponse := httptest.NewRecorder()
+	if err := protected(e.NewContext(replayRequest, replayResponse)); err != nil {
+		t.Fatal(err)
+	}
+	if replayResponse.Code != http.StatusFound {
+		t.Fatalf("post-logout replay status = %d, want 302", replayResponse.Code)
+	}
+}
+
+func TestSignedButUnregisteredSessionIsRejected(t *testing.T) {
+	const secret = "test-session-signing-key"
+	t.Setenv("SECRET_KEY", secret)
+
+	token, err := generateSessionToken(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{})
+	request := httptest.NewRequest(http.MethodGet, "/config", nil)
+	request.AddCookie(&http.Cookie{Name: "session_id", Value: token})
+	response := httptest.NewRecorder()
+	protected := h.LoginRequired(func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+	if err := protected(e.NewContext(request, response)); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusFound {
+		t.Fatalf("unregistered signed session status = %d, want 302", response.Code)
+	}
+}
+
+func TestSessionLifecycleFailsClosedWhenRedisIsUnavailable(t *testing.T) {
+	t.Setenv("CONFIG_USER", "admin")
+	t.Setenv("CONFIG_PASS", "correct horse battery staple")
+	t.Setenv("SECRET_KEY", "test-session-signing-key")
+	backendErr := errors.New("redis unavailable")
+
+	t.Run("login", func(t *testing.T) {
+		store := setupMiniredisStorage(t)
+		store.Client = &failingSessionRedisClient{RedisClient: store.Client, setErr: backendErr}
+		h := NewHandler(store, &config.Config{})
+		form := url.Values{"username": {"admin"}, "password": {"correct horse battery staple"}}
+		request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+		request.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		err := h.Login(echo.New().NewContext(request, httptest.NewRecorder()))
+		var httpErr *echo.HTTPError
+		if !errors.As(err, &httpErr) || httpErr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("login error = %#v, want HTTP 503", err)
+		}
+	})
+
+	t.Run("authorization", func(t *testing.T) {
+		store := setupMiniredisStorage(t)
+		store.Client = &failingSessionRedisClient{RedisClient: store.Client, getErr: backendErr}
+		h := NewHandler(store, &config.Config{})
+		token, err := generateSessionToken(os.Getenv("SECRET_KEY"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodGet, "/config", nil)
+		request.AddCookie(&http.Cookie{Name: "session_id", Value: token})
+		protected := h.LoginRequired(func(c echo.Context) error {
+			return c.NoContent(http.StatusOK)
+		})
+		err = protected(echo.New().NewContext(request, httptest.NewRecorder()))
+		var httpErr *echo.HTTPError
+		if !errors.As(err, &httpErr) || httpErr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("authorization error = %#v, want HTTP 503", err)
+		}
+	})
+
+	t.Run("logout", func(t *testing.T) {
+		store := setupMiniredisStorage(t)
+		store.Client = &failingSessionRedisClient{RedisClient: store.Client, delErr: backendErr}
+		h := NewHandler(store, &config.Config{})
+		request := httptest.NewRequest(http.MethodPost, "/logout", nil)
+		request.AddCookie(&http.Cookie{Name: "session_id", Value: "token"})
+		response := httptest.NewRecorder()
+		err := h.Logout(echo.New().NewContext(request, response))
+		var httpErr *echo.HTTPError
+		if !errors.As(err, &httpErr) || httpErr.Code != http.StatusServiceUnavailable {
+			t.Fatalf("logout error = %#v, want HTTP 503", err)
+		}
+		if cookies := response.Result().Cookies(); len(cookies) != 0 {
+			t.Fatalf("logout cleared cookie before revocation: %#v", cookies)
+		}
+	})
+}
+
 func startEmptyDNSServer(t *testing.T) string {
 	t.Helper()
 	packetConn, err := net.ListenPacket("udp", "127.0.0.1:0")
@@ -878,6 +1052,9 @@ func TestHandlers(t *testing.T) {
 		// Compute the expected HMAC-SHA256 session token
 		expected, err := generateSessionToken("test")
 		if err != nil {
+			t.Fatal(err)
+		}
+		if err := h.Storage.StoreConfigSession(context.Background(), expected, sessionTTL); err != nil {
 			t.Fatal(err)
 		}
 

@@ -30,7 +30,7 @@
   --red: #ff5566;             /* errors */
   --amber-15: rgba(255, 180, 84, 0.15);
   --red-15: rgba(255, 85, 102, 0.15);
-  --font-mono: 'Cascadia Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  --font-mono: 'Cascadia Mono', 'SFMono-Regular', consolas, 'Liberation Mono', monospace;
   --font-sans: var(--font-mono);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --glow: 0 0 8px rgba(36, 233, 143, 0.14);
@@ -52,7 +52,7 @@ body {
   line-height: 1.55;
   min-height: 100dvh;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
+  text-rendering: optimizelegibility;
 }
 
 ::selection { background: var(--phos); color: var(--ink); }

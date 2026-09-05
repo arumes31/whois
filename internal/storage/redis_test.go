@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -720,6 +721,60 @@ func TestStorage_StatsStaleCleanupIsBoundedAndConverges(t *testing.T) {
 	}
 	if stats.HistoryCount != 0 {
 		t.Fatalf("stale cleanup did not converge: count=%d", stats.HistoryCount)
+	}
+}
+
+func TestStorage_ConfigSessionLifecycle(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	s := &Storage{Client: client}
+	ctx := context.Background()
+	const token = "bearer-token-that-must-not-appear-in-redis"
+	const ttl = 30 * time.Minute
+
+	if err := s.StoreConfigSession(ctx, token, ttl); err != nil {
+		t.Fatal(err)
+	}
+	keys := mr.Keys()
+	if len(keys) != 1 {
+		t.Fatalf("Redis keys = %#v, want one session key", keys)
+	}
+	if strings.Contains(keys[0], token) {
+		t.Fatalf("Redis key exposes bearer token: %q", keys[0])
+	}
+	active, err := s.ConfigSessionActive(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !active {
+		t.Fatal("stored configuration session is not active")
+	}
+
+	if err := s.DeleteConfigSession(ctx, token); err != nil {
+		t.Fatal(err)
+	}
+	active, err = s.ConfigSessionActive(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active {
+		t.Fatal("deleted configuration session remains active")
+	}
+
+	if err := s.StoreConfigSession(ctx, token, ttl); err != nil {
+		t.Fatal(err)
+	}
+	mr.FastForward(ttl + time.Second)
+	active, err = s.ConfigSessionActive(ctx, token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active {
+		t.Fatal("expired configuration session remains active")
 	}
 }
 

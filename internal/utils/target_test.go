@@ -43,6 +43,7 @@ func TestNormalizeTarget(t *testing.T) {
 		{name: "asn", input: "as64512", kind: model.TargetKindASN, normalized: "AS64512", valid: true},
 		{name: "reject credentials", input: "https://user:pass@example.com", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject scheme", input: "ftp://example.com/file", kind: model.TargetKindUnknown, valid: false},
+		{name: "reject leading hyphen", input: "-c 4 example.com", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject label", input: "bad_label.example", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject trailing root on single label", input: "0.", kind: model.TargetKindUnknown, valid: false},
 		{name: "accept fully qualified domain", input: "Example.COM.", kind: model.TargetKindDomain, normalized: "example.com", valid: true},

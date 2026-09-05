@@ -51,7 +51,7 @@ graph TD
 |---|---|
 | **Backend** | Go 1.26.4+, Echo v4, Zap Logging |
 | **Frontend** | Vanilla ES modules, custom phosphor design system, Chart.js (vendored) |
-| **Storage** | Redis with bounded DNS history and set-backed dashboard counters |
+| **Storage** | Redis with bounded DNS history, dashboard counters, and revocable administrator sessions |
 | **Networking** | DoH (DNS-over-HTTPS), RDAP, ICMP, TCP |
 | **DevOps** | Docker, GitHub Actions, golangci-lint |
 
@@ -76,6 +76,8 @@ Access the dashboard at `http://localhost:14400`.
 Compose binds port 14400 to `127.0.0.1` by default and runs both services with read-only root filesystems, bounded process counts, and writable named volumes only for application data. Set `WHOIS_BIND_ADDRESS` only when remote access is intentional.
 
 Local Compose uses plain HTTP, so `.env.example` sets `SESSION_COOKIE_SECURE=false`. When the browser reaches the application through an HTTPS reverse proxy, set `SESSION_COOKIE_SECURE=true`; otherwise the browser will not send the administrator session cookie. Plain HTTP administration should remain limited to a trusted loopback workstation.
+
+Administrator sessions use signed cookies plus expiring Redis allowlist records. Logout deletes the server-side record, so a copied cookie cannot be replayed afterward. Configuration login and protected configuration routes fail closed with HTTP 503 when Redis is unavailable. Upgrading from a version with stateless sessions requires administrators to sign in again.
 
 ### Run the Published GHCR Image
 
