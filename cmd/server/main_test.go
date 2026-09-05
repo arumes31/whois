@@ -233,6 +233,23 @@ func TestNewServer(t *testing.T) {
 			t.Fatalf("POST /logout without CSRF = %d, want 400", rec.Code)
 		}
 	})
+
+	t.Run("GlobalRateLimitRejectsBurst", func(t *testing.T) {
+		limited := false
+		for range 25 {
+			req := httptest.NewRequest(http.MethodGet, "/livez", nil)
+			req.RemoteAddr = "203.0.113.99:43210"
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code == http.StatusTooManyRequests {
+				limited = true
+				break
+			}
+		}
+		if !limited {
+			t.Fatal("global rate limiter accepted an unbounded request burst")
+		}
+	})
 }
 
 func TestTrustedProxyNetworksNormalizeBareAddresses(t *testing.T) {

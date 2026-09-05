@@ -20,16 +20,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
+        with:
+          persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 (actions/setup-go@v7)
         with:
           go-version-file: go.mod
           cache: true
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9 (golangci/golangci-lint-action@v9)
         with:
-          version: v2.11.4
+          version: v2.13.2
       - name: Go vet
         run: go vet ./...
 
@@ -38,9 +40,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
+        with:
+          persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 (actions/setup-go@v7)
         with:
           go-version-file: go.mod
           cache: true
@@ -58,14 +62,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
+        with:
+          persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 (actions/setup-go@v7)
         with:
           go-version-file: go.mod
           cache: true
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
       - name: Scan reachable dependencies
         run: govulncheck ./...
 
@@ -75,9 +81,11 @@ jobs:
     timeout-minutes: 15
     needs: [lint, test, vulnerability]
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
+        with:
+          persist-credentials: false
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6 (actions/setup-go@v6)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7 (actions/setup-go@v7)
         with:
           go-version-file: go.mod
           cache: true
@@ -90,9 +98,11 @@ jobs:
     timeout-minutes: 20
     needs: build
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6 (actions/checkout@v6)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
+        with:
+          persist-credentials: false
       - name: Set up Node.js
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6 (actions/setup-node@v6)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7 (actions/setup-node@v7)
         with:
           node-version: 24.19.0
           cache: npm

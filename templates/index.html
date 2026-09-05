@@ -119,7 +119,7 @@
 
     <aside class="side-rail" aria-label="Operator utilities and activity">
         <div class="rail-panel">
-            <h3>QUICK TOOLS</h3>
+            <h2>QUICK TOOLS</h2>
             <button type="button" class="rail-link" data-tool="dns">SINGLE DNS LOOKUP</button>
             <button type="button" class="rail-link" data-tool="mac" {{ if not .mac_available }}disabled aria-describedby="macUnavailableHelp"{{ end }}>MAC VENDOR LOOKUP</button>
             {{ if not .mac_available }}<p id="macUnavailableHelp" class="rail-note">Install a local OUI database to enable MAC vendor lookup.</p>{{ end }}
@@ -127,7 +127,7 @@
         </div>
 
         <div class="rail-panel">
-            <h3>SYSTEM STATISTICS</h3>
+            <h2>SYSTEM STATISTICS</h2>
             <div class="telemetry" style="grid-template-columns:1fr 1fr;border:0;margin:0">
                 <div><span class="telemetry__label">MONITORED</span><strong class="telemetry__value">{{ .stats.MonitoredCount }}</strong></div>
                 <div style="border-left:1px solid var(--line);padding-left:14px"><span class="telemetry__label">HISTORY</span><strong class="telemetry__value">{{ .stats.HistoryCount }}</strong></div>
@@ -135,7 +135,7 @@
         </div>
 
         <div class="rail-panel">
-            <h3>LIVE ACTIVITY</h3>
+            <h2>LIVE ACTIVITY</h2>
             <div id="liveLog" class="live-log" role="log" aria-live="polite" aria-relevant="additions" aria-label="Live diagnostic activity" tabindex="0">
                 <div class="live-log__empty">Waiting for scan data...</div>
             </div>

@@ -2,6 +2,8 @@ package storage
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,6 +61,7 @@ const (
 	dnsHistoryKeyPrefix         = "dns_history:"
 	dnsHistoryMigrationBatch    = 100
 	dnsHistoryMigrationMaxScans = 4
+	configSessionKeyPrefix      = "config_session:"
 )
 
 // ErrDNSHistoryCapacity indicates that a new target would exceed retention policy.
@@ -150,6 +153,45 @@ func (s *Storage) ConfigureDNSHistory(maxTargets int, ttl time.Duration) {
 	if ttl > 0 {
 		s.DNSHistoryTTL = ttl
 	}
+}
+
+func configSessionKey(token string) string {
+	digest := sha256.Sum256([]byte(token))
+	return configSessionKeyPrefix + hex.EncodeToString(digest[:])
+}
+
+// StoreConfigSession registers a bearer token without exposing the token in
+// Redis keys. The record expires alongside the signed session token.
+func (s *Storage) StoreConfigSession(ctx context.Context, token string, ttl time.Duration) error {
+	if token == "" {
+		return errors.New("configuration session token is empty")
+	}
+	if ttl <= 0 {
+		return errors.New("configuration session TTL must be positive")
+	}
+	return s.Client.Set(ctx, configSessionKey(token), "active", ttl).Err()
+}
+
+// ConfigSessionActive reports whether a signed token is still registered.
+func (s *Storage) ConfigSessionActive(ctx context.Context, token string) (bool, error) {
+	if token == "" {
+		return false, nil
+	}
+	if _, err := s.Client.Get(ctx, configSessionKey(token)).Result(); err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// DeleteConfigSession revokes a bearer token immediately.
+func (s *Storage) DeleteConfigSession(ctx context.Context, token string) error {
+	if token == "" {
+		return nil
+	}
+	return s.Client.Del(ctx, configSessionKey(token)).Err()
 }
 
 func (s *Storage) GetMonitoredItems(ctx context.Context) ([]string, error) {

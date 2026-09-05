@@ -327,6 +327,14 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 		if sess == nil || sess.Value == "" || !validateSessionToken(sess.Value, os.Getenv("SECRET_KEY")) {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
 		}
+		active, err := h.Storage.ConfigSessionActive(c.Request().Context(), sess.Value)
+		if err != nil {
+			utils.Log.Error("failed to verify config session", utils.Field("error", err.Error()))
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").SetInternal(err)
+		}
+		if !active {
+			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
+		}
 		return next(c)
 	}
 }
@@ -829,6 +837,10 @@ func (h *Handler) Login(c echo.Context) error {
 				utils.Log.Error("failed to generate config session", utils.Field("error", err.Error()))
 				return echo.NewHTTPError(http.StatusInternalServerError, "Unable to create session")
 			}
+			if err := h.Storage.StoreConfigSession(c.Request().Context(), token, sessionTTL); err != nil {
+				utils.Log.Error("failed to register config session", utils.Field("error", err.Error()))
+				return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").SetInternal(err)
+			}
 			// #nosec G124 -- secureCookie enforces Secure in production and for HTTPS requests.
 			c.SetCookie(&http.Cookie{
 				Name:     "session_id",
@@ -896,6 +908,13 @@ func (h *Handler) Config(c echo.Context) error {
 }
 
 func (h *Handler) Logout(c echo.Context) error {
+	sess, _ := c.Cookie("session_id")
+	if sess != nil && sess.Value != "" {
+		if err := h.Storage.DeleteConfigSession(c.Request().Context(), sess.Value); err != nil {
+			utils.Log.Error("failed to revoke config session", utils.Field("error", err.Error()))
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").SetInternal(err)
+		}
+	}
 	// #nosec G124 -- secureCookie enforces Secure in production and for HTTPS requests.
 	c.SetCookie(&http.Cookie{
 		Name:     "session_id",

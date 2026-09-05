@@ -47,7 +47,7 @@ func TestV2Integration(t *testing.T) {
 	// 3.1 Go Version Validation
 	// =========================================================================
 	t.Run("GoVersion", func(t *testing.T) {
-		t.Run("GoModVersionAtLeast1264", func(t *testing.T) {
+		t.Run("GoModVersionAtLeast127", func(t *testing.T) {
 			data, err := os.ReadFile("go.mod")
 			if err != nil {
 				t.Fatalf("failed to read go.mod: %v", err)
@@ -58,8 +58,8 @@ func TestV2Integration(t *testing.T) {
 				t.Fatal("no Go version directive found in go.mod")
 			}
 			version := string(matches[1])
-			if semver.Compare("v"+version, "v1.26.4") < 0 {
-				t.Errorf("expected Go version >= 1.26.4 in go.mod, got %q", version)
+			if semver.Compare("v"+version, "v1.27.0") < 0 {
+				t.Errorf("expected Go version >= 1.27.0 in go.mod, got %q", version)
 			}
 		})
 
@@ -68,8 +68,8 @@ func TestV2Integration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read Dockerfile: %v", err)
 			}
-			if !strings.Contains(string(data), "golang:1.26-alpine") {
-				t.Error("expected Dockerfile builder image to use golang:1.26-alpine, but it was not found")
+			if !strings.Contains(string(data), "golang:1.27-alpine@sha256:") {
+				t.Error("expected Dockerfile builder image to use a digest-pinned golang:1.27-alpine image")
 			}
 		})
 
