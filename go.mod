@@ -11,13 +11,13 @@ require (
 	github.com/likexian/whois v1.15.7
 	github.com/likexian/whois-parser v1.24.21
 	github.com/miekg/dns v1.1.73
-	github.com/openrdap/rdap v0.10.1
+	github.com/openrdap/rdap v0.10.2
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/robfig/cron/v3 v3.0.1
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/mod v0.40.0
 )
 
