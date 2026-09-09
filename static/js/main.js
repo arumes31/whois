@@ -12,6 +12,7 @@ import {
   createCard, updateProgressBar, routeMessage, updateWorkspaceState,
   initDragOrdering, clearWorkspace, exportJSON, exportCSV, copyAllJSON,
   routeRequestEvent,
+  collapseCompletedCards, refreshCardTimings,
 } from './cards.js';
 import { initModal, openTool } from './history.js';
 
@@ -290,6 +291,12 @@ function init() {
   initDragOrdering();
   initModal();
   initRescanBridge();
+  document.getElementById('collapseCompletedBtn')?.addEventListener('click', collapseCompletedCards);
+  window.addEventListener('console:reconnect', () => ws.connect());
+  window.addEventListener('online', () => ws.connect());
+  window.setInterval(() => {
+    if (!document.hidden) refreshCardTimings();
+  }, 1000);
   document.addEventListener('console:scan-state', syncScanLifecycle);
   restoreActivity();
   ws.onMessage(routeMessage);

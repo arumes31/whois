@@ -71,7 +71,7 @@ func LoadConfig() (*Config, error) {
 		EnableDNS:             getEnvBool("ENABLE_DNS", true),
 		EnableCT:              getEnvBool("ENABLE_CT", true),
 		EnableHTTP:            getEnvBool("ENABLE_HTTP", true),
-		AutoUpdateDatabases:   getEnvBool("AUTO_UPDATE_DATABASES", false),
+		AutoUpdateDatabases:   getEnvBool("AUTO_UPDATE_DATABASES", true),
 		MaxMindLicenseKey:     os.Getenv("MAXMIND_LICENSE_KEY"),
 		MaxMindAccountID:      os.Getenv("MAXMIND_ACCOUNT_ID"),
 		DNSServers:            getEnv("DNS_SERVERS", "https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query"),

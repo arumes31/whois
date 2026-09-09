@@ -172,7 +172,7 @@ type originAddress struct {
 	port   string
 }
 
-func websocketOriginAllowed(r *http.Request, cfg *config.Config) bool {
+func websocketOriginAllowed(r *http.Request, cfg *config.Config) (allowed bool) {
 	if cfg.SkipOriginCheck {
 		return true
 	}
@@ -185,6 +185,25 @@ func websocketOriginAllowed(r *http.Request, cfg *config.Config) bool {
 	}
 
 	expected, err := expectedWebSocketOrigin(r, cfg)
+	expectedOrigin := "invalid"
+	if err == nil {
+		expectedOrigin = expected.scheme + "://" + net.JoinHostPort(expected.host, expected.port)
+	}
+	defer func() {
+		if allowed {
+			return
+		}
+		utils.Log.Warn("websocket origin rejected",
+			utils.Field("origin", originValue),
+			utils.Field("request_host", r.Host),
+			utils.Field("allowed_domain", cfg.AllowedDomain),
+			utils.Field("expected_origin", expectedOrigin),
+			utils.Field("remote_addr", r.RemoteAddr),
+			utils.Field("trusted_proxy", requestFromTrustedProxy(r, cfg)),
+			utils.Field("forwarded_proto", firstForwardedValue(r.Header.Get("X-Forwarded-Proto"))),
+			utils.Field("forwarded_host", firstForwardedValue(r.Header.Get("X-Forwarded-Host"))),
+		)
+	}()
 	if err != nil {
 		return false
 	}
@@ -203,11 +222,6 @@ func websocketOriginAllowed(r *http.Request, cfg *config.Config) bool {
 		return true
 	}
 
-	utils.Log.Warn("websocket origin rejected",
-		utils.Field("origin", originValue),
-		utils.Field("request_host", r.Host),
-		utils.Field("allowed_domain", cfg.AllowedDomain),
-	)
 	return false
 }
 

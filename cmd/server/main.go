@@ -83,8 +83,8 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	appCtx, appCancel := context.WithCancel(context.Background())
 	var initializerWG sync.WaitGroup
 
-	// Load local lookup data without generating startup traffic. Operators can
-	// explicitly opt into remote database downloads and periodic updates.
+	// Load local lookup data immediately, then refresh it in the background
+	// unless automatic database updates are explicitly disabled.
 	if cfg.EnableGeo {
 		service.ReloadGeoDB()
 	}

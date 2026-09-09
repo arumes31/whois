@@ -93,16 +93,38 @@ function initNavigation() {
 function initConnectivity() {
   const banner = document.getElementById('connectionBanner');
   const text = document.getElementById('connectionBannerText');
-  const sync = ({ state = navigator.onLine ? 'ready' : 'offline', queued = 0 } = {}) => {
-    const degraded = state === 'offline' || state === 'connecting' || !navigator.onLine;
+  const readiness = document.getElementById('connectionReadiness');
+  const retry = document.getElementById('reconnectBtn');
+  let state = document.getElementById('systemStatus')?.dataset.state || 'ready';
+  let queued = 0;
+  const sync = (update = {}) => {
+    state = update.state ?? state;
+    queued = update.queued ?? queued;
+    const effectiveState = !navigator.onLine ? 'offline' : state;
+    const degraded = effectiveState === 'offline' || effectiveState === 'connecting';
+    if (readiness) {
+      readiness.textContent = effectiveState === 'online' ? 'CONNECTED'
+        : effectiveState === 'offline' ? 'OFFLINE' : 'CONNECTING';
+      readiness.dataset.state = effectiveState === 'ready' ? 'connecting' : effectiveState;
+    }
+    if (retry) {
+      retry.hidden = !readiness || !degraded;
+      retry.disabled = !navigator.onLine || effectiveState === 'connecting';
+      retry.textContent = effectiveState === 'connecting' ? 'Connecting…' : 'Connect now';
+    }
     if (banner) banner.hidden = !degraded;
     if (text && degraded) {
+      const waiting = queued ? `${queued} scan request${queued === 1 ? ' is' : 's are'} waiting and will start automatically when connected. ` : 'New scans will wait until connected. ';
       text.textContent = !navigator.onLine
-        ? `This device is offline. ${queued ? `${queued} scan request${queued === 1 ? '' : 's'} will remain queued. ` : ''}Existing results and exports remain available.`
-        : `The diagnostic uplink is reconnecting. ${queued ? `${queued} request${queued === 1 ? '' : 's'} queued. ` : ''}Existing results remain available.`;
+        ? `This device is offline. ${waiting}Existing results and exports remain available.`
+        : `${effectiveState === 'connecting' ? 'Connecting to the diagnostic service.' : 'The diagnostic connection is unavailable. Retrying automatically; you can also connect now.'} ${waiting}Existing results remain available.`;
     }
     document.body.classList.toggle('is-degraded', degraded);
   };
+  retry?.addEventListener('click', () => {
+    if (retry.disabled) return;
+    window.dispatchEvent(new CustomEvent('console:reconnect'));
+  });
   window.addEventListener('console:connection', (event) => sync(event.detail));
   window.addEventListener('console:queue', (event) => sync({ state: event.detail.connection, queued: event.detail.queued }));
   window.addEventListener('online', () => sync({ state: 'connecting' }));

@@ -263,7 +263,7 @@ export function connect() {
     if (socket !== connection) return;
     socket = undefined;
     clearHeartbeat();
-    setConnectionStatus('connecting', 'SYSTEM RECONNECTING');
+    setConnectionStatus('offline', 'SYSTEM OFFLINE');
     if (!event.wasClean) {
       transportLog(`Uplink dropped (code ${event.code}). Re-establishing...`);
     }
@@ -273,7 +273,7 @@ export function connect() {
   connection.onerror = () => {
     if (socket !== connection) return;
     setConnectionStatus('offline', 'SYSTEM OFFLINE');
-    transportLog('Uplink protocol error. Check proxy headers.');
+    transportLog('The diagnostic connection could not be established. Retrying automatically.');
   };
 }
 
