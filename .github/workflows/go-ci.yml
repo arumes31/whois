@@ -93,10 +93,18 @@ jobs:
         run: go build -trimpath -o whois-app ./cmd/server
 
   docker:
-    name: Docker build
-    runs-on: ubuntu-latest
+    name: Docker build and scan (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 20
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7 (actions/checkout@v7)
         with:
@@ -104,17 +112,17 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7 (actions/setup-node@v7)
         with:
-          node-version: 24.19.0
+          node-version: 26.8.2
           cache: npm
       - name: Build packaged assets
         run: |
           npm ci --ignore-scripts
           npm test
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4 (docker/setup-buildx-action@v4)
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4 (docker/setup-buildx-action@v4)
         with:
-          version: v0.36.1
-          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
+          version: v0.37.0
+          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
       - name: Assert published Compose is image-only
         env:
           CONFIG_USER: ci-user
@@ -132,11 +140,22 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7 (docker/build-push-action@v7)
         with:
           context: .
+          platforms: ${{ matrix.platform }}
           load: true
           push: false
           tags: whois:ci
           no-cache-filters: runtime
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=ci-${{ matrix.runner }}
+          cache-to: type=gha,scope=ci-${{ matrix.runner }},mode=max
       - name: Verify final image asset manifest
         run: docker run --rm --entrypoint /bin/sh whois:ci -c 'cd /app && sha256sum -c assets.sha256'
+      - name: Scan the runtime image before merge
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (aquasecurity/trivy-action@v0)
+        with:
+          version: v0.74.0
+          image-ref: whois:ci
+          format: table
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+          exit-code: '1'

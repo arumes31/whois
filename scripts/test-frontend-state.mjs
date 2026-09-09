@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
+import { parseFragment } from 'parse5';
 
 import {
   canonicalTargetIdentity, createRequestID, fetchWithCSRF, splitTargets,
 } from '../static/js/util.js';
-import { renderService } from '../static/js/render.js';
+import { renderService, skippedDetails } from '../static/js/render.js';
 import * as store from '../static/js/store.js';
 import * as cards from '../static/js/cards.js';
 
@@ -52,6 +53,27 @@ function testCanonicalTargets() {
   assert.equal(splitTargets('example.com, example.com:80').length, 2, 'explicit default port must be preserved');
   assert.equal(splitTargets('example.com:, example.com').length, 2, 'empty port must remain invalid and distinct');
   assert.match(createRequestID(), /^[A-Za-z0-9._:-]{1,128}$/);
+}
+
+function testUntrustedServiceRendering() {
+  const payload = '<img src=x onerror=alert(1)>';
+  const services = ['constructor', '__proto__', 'toString', 'hasOwnProperty',
+    '<IMG SRC=X ONERROR=&#97;&#108;&#101;&#114;&#116;(1)>'];
+  function assertSafeMarkup(html) {
+    assert.equal(typeof html, 'string');
+    function visit(node) {
+      assert.notEqual(node.tagName, 'img', 'untrusted data must not create elements');
+      for (const attr of node.attrs || []) {
+        assert.equal(attr.name.startsWith('on'), false, 'untrusted event attribute');
+      }
+      for (const child of node.childNodes || []) visit(child);
+    }
+    visit(parseFragment(html));
+  }
+  for (const service of services) {
+    assertSafeMarkup(renderService(service, payload, 'example.test', { dataset: {} }));
+    assertSafeMarkup(skippedDetails(service));
+  }
 }
 
 function testGenerationState() {
@@ -316,6 +338,28 @@ function terminalCard(target, section) {
   };
 }
 
+function testUntrustedMessageServices() {
+  const target = 'untrusted-service.test';
+  const section = { dataset: { service: 'dns' }, innerHTML: '<div class="skel"></div>' };
+  const card = terminalCard(target, section);
+  globalThis.document = {
+    getElementById() { return null; },
+    querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; },
+  };
+  store.beginScan(target, {
+    requestID: 'untrusted-service', identity: `|${target}`, config: { dns: true }, total: 1,
+  });
+  for (const type of ['done', 'result']) {
+    for (const service of ['constructor', '__proto__', 'toString', '<img src=x onerror=alert(1)>']) {
+      assert.equal(cards.routeMessage({ type, service, target, request_id: 'untrusted-service', data: '<img src=x>' }), false);
+      assert.equal(section.innerHTML, '<div class="skel"></div>');
+      assert.deepEqual(store.getResults(target), {});
+      assert.equal(store.getScanByRequestID('untrusted-service').completedServices.size, 0);
+    }
+  }
+  for (const msg of [null, [], 'result']) assert.equal(cards.routeMessage(msg), false);
+}
+
 function testSlowModuleTerminalCleanup() {
   ['done', 'all_done', 'error'].forEach((eventType) => {
     const target = `${eventType}.slow.test`;
@@ -372,11 +416,13 @@ async function testRetryAfterParsing() {
 testCanonicalTargets();
 testGenerationState();
 testErrorRendering();
+testUntrustedServiceRendering();
 testQueue();
 testMultiTargetTracking();
 testGlobalErrorAndPageLifecycle();
 testRequestLevelUIError();
 testSlowModuleTerminalCleanup();
+testUntrustedMessageServices();
 await testRetryAfterParsing();
 
 console.log('Frontend state/protocol checks passed.');

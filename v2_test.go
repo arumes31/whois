@@ -68,8 +68,17 @@ func TestV2Integration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read Dockerfile: %v", err)
 			}
-			if !strings.Contains(string(data), "golang:1.27-alpine@sha256:") {
-				t.Error("expected Dockerfile builder image to use a digest-pinned golang:1.27-alpine image")
+			image := regexp.MustCompile(`(?m)^FROM golang:(\d+\.\d+\.\d+)-alpine\d+\.\d+@sha256:[a-f0-9]{64} AS builder\s*$`).FindSubmatch(data)
+			if len(image) != 2 {
+				t.Fatal("expected a patch-versioned, digest-pinned Go Alpine builder image")
+			}
+			module, err := os.ReadFile("go.mod")
+			if err != nil {
+				t.Fatal(err)
+			}
+			version := regexp.MustCompile(`(?m)^go\s+(\d+\.\d+\.\d+)\s*$`).FindSubmatch(module)
+			if len(version) != 2 || string(image[1]) != string(version[1]) {
+				t.Fatal("Docker builder Go version must match go.mod")
 			}
 		})
 

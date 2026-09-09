@@ -852,7 +852,7 @@ func (h *Handler) Login(c echo.Context) error {
 				MaxAge:   int(sessionTTL.Seconds()),
 				Expires:  time.Now().Add(sessionTTL),
 			})
-			return c.Redirect(http.StatusFound, next)
+			return c.Redirect(http.StatusFound, "/config")
 		}
 		pageData["error"] = "Invalid credentials"
 		return c.Render(http.StatusOK, "login.html", pageData)

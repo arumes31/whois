@@ -381,8 +381,8 @@ func (s *Storage) SetCache(ctx context.Context, key string, value interface{}, e
 }
 
 type SystemStats struct {
-	MonitoredCount int `json:"monitored_count"`
-	HistoryCount   int `json:"history_count"`
+	MonitoredCount int   `json:"monitored_count"`
+	HistoryCount   int64 `json:"history_count"`
 }
 
 func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
@@ -401,7 +401,7 @@ func (s *Storage) GetSystemStats(ctx context.Context) (SystemStats, error) {
 	utils.Log.Debug("redis stats gathered", utils.Field("monitored", len(monitored)), utils.Field("history", historyCount))
 	return SystemStats{
 		MonitoredCount: len(monitored),
-		HistoryCount:   int(historyCount),
+		HistoryCount:   historyCount,
 	}, nil
 }
 
