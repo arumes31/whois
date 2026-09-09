@@ -111,7 +111,7 @@ jobs:
           npm ci --ignore-scripts
           npm test
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4 (docker/setup-buildx-action@v4)
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4 (docker/setup-buildx-action@v4)
         with:
           version: v0.36.1
           driver-opts: image=moby/buildkit:buildx-stable-1@sha256:2f5adac4ecd194d9f8c10b7b5d7bceb5186853db1b26e5abd3a657af0b7e26ec
