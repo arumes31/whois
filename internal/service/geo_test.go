@@ -354,7 +354,7 @@ func TestDownloadGeoDB_DoesNotLeakCredentialsToOtherHosts(t *testing.T) {
 }
 
 func TestGeoHTTPClientStripsAuthorizationOnRedirect(t *testing.T) {
-	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	destination := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "" {
 			t.Errorf("redirect leaked Authorization header %q", got)
 		}
@@ -372,11 +372,41 @@ func TestGeoHTTPClientStripsAuthorizationOnRedirect(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.SetBasicAuth("account", "license")
-	resp, err := newGeoHTTPClient().Do(req)
+	client := newGeoHTTPClient()
+	client.Transport = destination.Client().Transport
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = resp.Body.Close()
+}
+
+func TestGeoHTTPClientRejectsHTTPRedirect(t *testing.T) {
+	destinationRequests := make(chan struct{}, 1)
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destinationRequests <- struct{}{}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer destination.Close()
+
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL, http.StatusFound)
+	}))
+	defer source.Close()
+
+	resp, err := newGeoHTTPClient().Get(source.URL)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	if err == nil {
+		t.Fatal("expected HTTP redirect to be rejected")
+	}
+
+	select {
+	case <-destinationRequests:
+		t.Fatal("HTTP redirect destination received a request")
+	default:
+	}
 }
 
 func TestDownloadGeoDB_MaxMindSuffixArchive(t *testing.T) {

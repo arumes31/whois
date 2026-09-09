@@ -16,7 +16,7 @@
             </div>
 
             <div class="telemetry" aria-label="System statistics">
-                <div><span class="telemetry__label">READINESS</span><strong class="telemetry__value telemetry__value--hot">OPERATIONAL</strong></div>
+                <div><span class="telemetry__label">CONNECTION</span><strong class="telemetry__value" id="connectionReadiness" data-state="connecting">CONNECTING</strong></div>
                 <div><span class="telemetry__label">ACTIVE MODULES</span><strong class="telemetry__value" id="activeModuleCount">0 / 11</strong></div>
                 <div><span class="telemetry__label">MONITORED</span><strong class="telemetry__value">{{ .stats.MonitoredCount }}</strong></div>
                 <div><span class="telemetry__label">HISTORY</span><strong class="telemetry__value">{{ .stats.HistoryCount }}</strong></div>
@@ -101,6 +101,7 @@
                 <div class="results-actions">
                     <span class="shortcut-hint" aria-hidden="true"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> run · <kbd>/</kbd> focus</span>
                     <button type="button" id="bulkUploadBtn" class="btn btn--sm">BULK UPLOAD</button>
+                    <button type="button" id="collapseCompletedBtn" class="btn btn--sm" disabled>Collapse finished</button>
                     <input type="file" id="bulkFileInput" accept=".txt,.csv" class="visually-hidden" aria-hidden="true" tabindex="-1">
                     <button type="button" id="copyJsonBtn" class="btn btn--sm" data-result-action disabled>Copy JSON</button>
                     <button type="button" id="exportJsonBtn" class="btn btn--sm" data-result-action disabled>JSON</button>

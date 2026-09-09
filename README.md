@@ -176,7 +176,7 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `ENABLE_GEO` | Enable local GeoIP city/location lookups when a database is installed | `true` |
-| `AUTO_UPDATE_DATABASES` | Download and periodically refresh GeoIP/OUI databases; keep disabled for offline startup | `false` |
+| `AUTO_UPDATE_DATABASES` | Download and periodically refresh GeoIP/OUI databases; set to `false` for offline startup | `true` |
 | `ENABLE_DNS` | Enable authoritative DNS record retrieval | `true` |
 | `ENABLE_WHOIS` | Enable WHOIS and RDAP data retrieval | `true` |
 | `ENABLE_SSL` | Enable SSL/TLS certificate analysis | `true` |
@@ -185,7 +185,7 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 
 Target classification, TLS/HTTP inspection, DNS failover, and port scanning are performed directly by the application and do not require a paid intelligence provider. GeoIP, CT, WHOIS/RDAP, and configured public DNS resolvers remain optional external data sources.
 
-Startup is network-silent by default. For automatic GeoIP/OUI downloads set `AUTO_UPDATE_DATABASES=true`; otherwise pre-populate the persistent lookup-data volume. MaxMind downloads require both account variables below and use HTTP Basic Authentication exclusively against MaxMind's HTTPS download endpoint; credentials are never placed in a URL or forwarded across redirects. There is no unauthenticated third-party GeoIP mirror fallback. For a more isolated deployment, also disable unneeded external-source feature flags and point DNS settings at internal resolvers. The application is not fully offline merely because its browser assets are local.
+Automatic GeoIP/OUI downloads and periodic updates are enabled by default. Set `AUTO_UPDATE_DATABASES=false` for offline startup and pre-populate the persistent lookup-data volume. An existing explicit `false` remains effective after upgrading. MaxMind downloads require both account variables below and use HTTP Basic Authentication exclusively against MaxMind's HTTPS download endpoint; credentials are never placed in a URL or forwarded across redirects. There is no unauthenticated third-party GeoIP mirror fallback. For a more isolated deployment, also disable unneeded external-source feature flags and point DNS settings at internal resolvers. The application is not fully offline merely because its browser assets are local.
 
 #### 🌍 External API Keys
 

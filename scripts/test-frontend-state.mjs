@@ -256,6 +256,34 @@ function testMultiTargetTracking() {
   assert.deepEqual(eventsFor('invalid-multi'), ['sent', 'interrupted']);
 }
 
+function testManualReconnect() {
+  const connection = openConnection();
+  closeConnection(connection);
+  ws.queueMessage({ request_id: 'manual-reconnect', targets: ['retry.test'], config: {} });
+  const before = MockWebSocket.instances.length;
+  ws.connect();
+  ws.connect();
+  assert.equal(MockWebSocket.instances.length, before + 1, 'repeated retry must reuse the pending connection');
+  assert.equal([...timers.values()].filter((timer) => timer.kind === 'timeout').length, 0, 'manual retry cancels backoff');
+  const retry = MockWebSocket.instances.at(-1);
+  retry.readyState = MockWebSocket.OPEN;
+  retry.onopen();
+  assert.equal(retry.sent.filter((request) => request.request_id === 'manual-reconnect').length, 1);
+  assert.equal(ws.getTransportState().queued, 0);
+  ws.connect();
+  assert.equal(MockWebSocket.instances.length, before + 1, 'retry must not interrupt a healthy connection');
+  closeConnection(retry);
+}
+
+function testScanTiming() {
+  const scan = { startedAt: '2026-09-09T10:00:00Z', completedAt: '' };
+  assert.equal(cards.scanDuration(scan, Date.parse('2026-09-09T10:01:05Z')), '1m 5s');
+  scan.completedAt = '2026-09-09T10:00:04Z';
+  assert.equal(cards.scanDuration(scan, Date.parse('2026-09-09T11:00:00Z')), '4s', 'completed duration must freeze');
+  assert.equal(cards.scanDuration({ startedAt: 'invalid' }), '—');
+  assert.equal(cards.scanDuration({ startedAt: scan.startedAt }, Date.parse(scan.startedAt) - 1000), '0s');
+}
+
 function testGlobalErrorAndPageLifecycle() {
   requestEvents.length = 0;
   const errorConnection = openConnection();
@@ -419,6 +447,8 @@ testErrorRendering();
 testUntrustedServiceRendering();
 testQueue();
 testMultiTargetTracking();
+testManualReconnect();
+testScanTiming();
 testGlobalErrorAndPageLifecycle();
 testRequestLevelUIError();
 testSlowModuleTerminalCleanup();

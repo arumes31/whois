@@ -313,6 +313,9 @@ func newGeoHTTPClient() *http.Client {
 			// Credentials are valid only for the original MaxMind endpoint and
 			// must never follow a redirect to another download host.
 			req.Header.Del("Authorization")
+			if !strings.EqualFold(req.URL.Scheme, "https") {
+				return errors.New("geo database download redirect requires HTTPS")
+			}
 			if len(via) >= 5 {
 				return errors.New("geo database download stopped after 5 redirects")
 			}

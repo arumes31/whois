@@ -18,6 +18,7 @@ import (
 func TestNewServer(t *testing.T) {
 	t.Setenv("SECRET_KEY", "test-secret")
 	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("AUTO_UPDATE_DATABASES", "false")
 
 	// Change to project root so templates can be found
 	t.Chdir("../..")

@@ -7,7 +7,60 @@ import (
 	"whois/internal/config"
 	"whois/internal/storage"
 	"whois/internal/utils"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 )
+
+func TestOriginRejectionDiagnostics(t *testing.T) {
+	previousLogger := utils.Log
+	t.Cleanup(func() { utils.Log = previousLogger })
+	for _, test := range []struct {
+		name     string
+		trusted  string
+		expected string
+		isProxy  bool
+	}{
+		{"untrusted proxy", "127.0.0.1/32", "http://internal:80", false},
+		{"trusted proxy", "192.168.96.1/32", "https://public.example:443", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			core, logs := observer.New(zap.WarnLevel)
+			utils.Log = zap.New(core)
+			req := httptest.NewRequest("GET", "http://internal/ws", nil)
+			req.RemoteAddr = "192.168.96.1:1234"
+			req.Header.Set("Origin", "https://other.example")
+			req.Header.Set("X-Forwarded-Proto", "https")
+			req.Header.Set("X-Forwarded-Host", "public.example")
+			req.Header.Set("Cookie", "session=do-not-log")
+			cfg := &config.Config{TrustProxy: true, TrustedProxies: test.trusted}
+			if websocketOriginAllowed(req, cfg) {
+				t.Fatal("mismatched origin was allowed")
+			}
+			entries := logs.FilterMessage("websocket origin rejected").All()
+			if len(entries) != 1 {
+				t.Fatalf("got %d rejection logs, want 1", len(entries))
+			}
+			fields := entries[0].ContextMap()
+			for key, want := range map[string]interface{}{
+				"expected_origin": test.expected,
+				"trusted_proxy":   test.isProxy,
+				"forwarded_proto": "https",
+				"forwarded_host":  "public.example",
+				"remote_addr":     req.RemoteAddr,
+			} {
+				if fields[key] != want {
+					t.Errorf("%s = %v, want %v", key, fields[key], want)
+				}
+			}
+			for _, value := range fields {
+				if value == "session=do-not-log" {
+					t.Fatal("cookie leaked into diagnostics")
+				}
+			}
+		})
+	}
+}
 
 func TestCheckOrigin(t *testing.T) {
 	utils.TestInitLogger()

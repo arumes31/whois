@@ -318,6 +318,7 @@ kbd {
 .telemetry__label { font-size: 9px; letter-spacing: 0.26em; color: var(--phos-50); }
 .telemetry__value { font-size: 15px; font-weight: 600; color: var(--phos); }
 .telemetry__value--hot { color: var(--phos-bright); text-shadow: var(--glow); }
+#connectionReadiness[data-state="connecting"], #connectionReadiness[data-state="offline"] { color: var(--amber); }
 
 /* form blocks */
 .step-label {
@@ -532,6 +533,8 @@ kbd {
   word-break: break-all;
 }
 .result-card__meta { margin-left: auto; display: flex; align-items: center; gap: 10px; flex: none; }
+.result-card__timing { color: var(--phos-70); font-size: 10px; margin-top: 5px; }
+.scan-queue-note { color: var(--amber); font-size: 11px; padding: 10px 0; }
 .badge {
   font-size: 9px;
   letter-spacing: 0.18em;
@@ -1058,6 +1061,8 @@ kbd {
   text-align: center;
 }
 .connection-banner a { color: var(--amber); text-decoration: underline; }
+.connection-banner { align-items: center; flex-wrap: wrap; }
+.connection-banner .btn { color: var(--amber); border-color: var(--amber); }
 .mobile-drawer, .bottom-nav, .mobile-scan-status { display: none; }
 
 .scan-lifecycle {
@@ -1186,6 +1191,7 @@ progress::-moz-progress-bar { background: var(--phos); box-shadow: var(--glow); 
   .results-head { align-items: flex-start; }
   .results-actions { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 5px; mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
   .results-actions .btn { flex: none; min-height: 42px; }
+  .results-actions .shortcut-hint { display: none; }
   .result-card__head { position: sticky; top: 55px; z-index: 5; background: rgba(3, 7, 3, .98); }
   .result-card__handle { display: none; }
   .result-card__target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 78vw; }
@@ -1238,6 +1244,7 @@ progress::-moz-progress-bar { background: var(--phos); box-shadow: var(--glow); 
 }
 
 @media print {
+  .result-card__body[hidden] { display: block !important; }
   :root { --bg: #fff; --panel: #fff; --phos: #111; --phos-bright: #000; --phos-70: #222; --phos-50: #444; --line: #bbb; --line-strong: #555; }
   body { background: #fff; color: #111; font-size: 10pt; }
   .app-header, .connection-banner, .bottom-nav, .mobile-scan-status, .side-rail, .command-deck, .results-head, .crt-scanlines, .crt-vignette, .result-card__meta, .result-card__handle, .copy-trigger { display: none !important; }

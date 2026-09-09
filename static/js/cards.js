@@ -23,6 +23,54 @@ function targetType(target) {
   return 'HOST';
 }
 
+export function scanDuration(scan, now = Date.now()) {
+  const start = Date.parse(scan?.startedAt);
+  const end = scan?.completedAt ? Date.parse(scan.completedAt) : now;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return '—';
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function updateCardTiming(card, scan) {
+  const start = card.querySelector('.scan-started');
+  const duration = card.querySelector('.scan-duration');
+  if (!start || !duration || !scan) return;
+  const date = new Date(scan.startedAt);
+  if (!Number.isNaN(date.getTime())) {
+    start.dateTime = scan.startedAt;
+    start.textContent = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    start.title = date.toLocaleString();
+  }
+  duration.textContent = `${scan.completedAt ? 'Duration' : 'Elapsed'} ${scanDuration(scan)}`;
+}
+
+export function refreshCardTimings() {
+  document.querySelectorAll('.result-card').forEach((card) => updateCardTiming(card, getScan(card.dataset.target)));
+}
+
+function setCardCollapsed(card, collapsed) {
+  const body = card.querySelector('.result-card__body');
+  const toggle = card.querySelector('[data-card-action="collapse"]');
+  if (collapsed && body.contains(document.activeElement)) toggle.focus();
+  body.hidden = collapsed;
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  toggle.textContent = collapsed ? '+' : '−';
+  toggle.title = collapsed ? 'Expand results' : 'Collapse results';
+  toggle.setAttribute('aria-label', `${collapsed ? 'Expand' : 'Collapse'} results for ${card.dataset.target}`);
+  if (!collapsed) window.dispatchEvent(new Event('resize'));
+}
+
+export function collapseCompletedCards() {
+  document.querySelectorAll('.result-card').forEach((card) => {
+    if (['completed', 'failed', 'interrupted'].includes(getScan(card.dataset.target)?.status)) {
+      setCardCollapsed(card, true);
+    }
+  });
+  announce('Finished results collapsed.');
+}
+
 /* ---------- workspace chrome ---------- */
 
 export function updateWorkspaceState() {
@@ -38,6 +86,9 @@ export function updateWorkspaceState() {
   document.querySelectorAll('[data-result-action]').forEach((button) => {
     button.disabled = !hasExportableResults();
   });
+  const collapse = document.getElementById('collapseCompletedBtn');
+  if (collapse) collapse.disabled = ![...document.querySelectorAll('.result-card')]
+    .some((card) => ['completed', 'failed', 'interrupted'].includes(getScan(card.dataset.target)?.status));
 }
 
 /* ---------- card construction ---------- */
@@ -63,8 +114,10 @@ export function createCard(target) {
         <span class="result-card__eyebrow">TARGET / LIVE ANALYSIS</span>
         <h3 class="result-card__target" id="${titleId}">${escapeHTML(target)}</h3>
         <span class="target-kind">${targetType(target)}</span>
+        <span class="result-card__timing">Started <time class="scan-started"></time> · <span class="scan-duration" title="Time since the scan was queued, including connection wait"></span></span>
       </div>
       <div class="result-card__meta">
+        <button type="button" class="icon-btn" data-card-action="collapse" title="Collapse results" aria-expanded="true" aria-controls="${titleId}-body" aria-label="Collapse results for ${escapeHTML(target)}">−</button>
         <span class="badge finding-count" hidden>0 findings</span>
         <span class="badge badge--run status-badge">QUEUED</span>
         <button type="button" class="icon-btn" data-card-action="history" title="View scan history" aria-label="View scan history">
@@ -82,12 +135,16 @@ export function createCard(target) {
       </div>
     </div>
     <div class="result-card__progress" role="progressbar" aria-label="Diagnostic progress for ${escapeHTML(target)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Starting diagnostics"><i></i></div>
-    <div class="result-card__body diagnostic-content">
+    <div class="result-card__body diagnostic-content" id="${titleId}-body">
+      <p class="scan-queue-note" hidden>Waiting for a connection. Diagnostics have not started; this scan will be sent automatically when connected.</p>
       ${SERVICE_ORDER.map((s) => `<div class="service-section" data-service="${s}"></div>`).join('')}
     </div>`;
 
   article.setAttribute('aria-labelledby', titleId);
   article.tabIndex = -1;
+  article.querySelector('[data-card-action="collapse"]').addEventListener('click', () => {
+    setCardCollapsed(article, !article.querySelector('.result-card__body').hidden);
+  });
 
   // seed skeletons for enabled modules
   const config = getScan(target)?.config || readModuleConfig();
@@ -172,7 +229,7 @@ export function createCard(target) {
     handle.focus();
   });
 
-  document.getElementById('resultsGrid').appendChild(article);
+  document.getElementById('resultsGrid').prepend(article);
   window.setTimeout(() => {
     const scan = getScan(target);
     if (!article.isConnected || !scan || !['queued', 'running'].includes(scan.status)) return;
@@ -237,6 +294,9 @@ function syncCardStatus(target) {
   const inFlight = scan.status === 'queued' || scan.status === 'running';
   const rescan = card.querySelector('[data-card-action="rescan"]');
   if (rescan) rescan.disabled = inFlight;
+  const queueNote = card.querySelector('.scan-queue-note');
+  if (queueNote) queueNote.hidden = scan.status !== 'queued';
+  updateCardTiming(card, scan);
 }
 
 function finishWithTransportFailure(scan, status, message, explicitOutcome = '') {
@@ -402,6 +462,9 @@ function handleAllDone(scan) {
   card.dataset.scanStatus = scan.status;
   const rescan = card.querySelector('[data-card-action="rescan"]');
   if (rescan) rescan.disabled = false;
+  const queueNote = card.querySelector('.scan-queue-note');
+  if (queueNote) queueNote.hidden = true;
+  updateCardTiming(card, scan);
   card.querySelectorAll('.service-section').forEach((section) => {
     if (section.querySelector('.skel, .slow-module')) {
       const reason = invalidTarget ? 'invalid-target' : (profileOnly ? 'profile-only' : '');
