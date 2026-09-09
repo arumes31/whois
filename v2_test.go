@@ -18,6 +18,45 @@ import (
 	"golang.org/x/mod/semver"
 )
 
+func workflowActionMajorPattern(action string) *regexp.Regexp {
+	return regexp.MustCompile(`(?m)^[ \t]*(?:-[ \t]+)?uses:[ \t]*` + regexp.QuoteMeta(action) +
+		`@(?:[a-fA-F0-9]{40}[ \t]+#[ \t]*)?v(\d+)(?:[.+-][0-9A-Za-z.+-]+)?(?:[ \t]+[^\r\n]*)?\r?$`)
+}
+
+func TestWorkflowActionMajorPattern(t *testing.T) {
+	const sha = "3d3c42e5aac5ba805825da76410c181273ba90b1"
+	for _, tt := range []struct {
+		name, workflow, want string
+	}{
+		{"major tag", "      - uses: actions/checkout@v7", "7"},
+		{"patch tag", "        uses: actions/checkout@v7.0.1 # checkout", "7"},
+		{"prerelease tag", "      - uses: actions/checkout@v7.0.1-rc.1", "7"},
+		{"SHA with major comment", "      - uses: actions/checkout@" + sha + " # v7", "7"},
+		{"SHA with patch comment", "        uses: actions/checkout@" + sha + " # v7.0.1\r\n", "7"},
+		{"current annotation", "        uses: actions/checkout@" + sha + " # v7 (actions/checkout@v7)", "7"},
+		{"older major", "      - uses: actions/checkout@v5 # actions/checkout@v7", "5"},
+		{"comment only", "# actions/checkout@v7", ""},
+		{"other action", "uses: other/action@v7 # actions/checkout@v7", ""},
+		{"short SHA", "uses: actions/checkout@3d3c42e # v7 (actions/checkout@v7)", ""},
+		{"long SHA", "uses: actions/checkout@" + sha + "a # v7 (actions/checkout@v7)", ""},
+		{"missing version comment", "uses: actions/checkout@" + sha, ""},
+		{"unrelated next-line comment", "uses: actions/checkout@" + sha + "\n# v7 (actions/checkout@v7)", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			match := workflowActionMajorPattern("actions/checkout").FindSubmatch([]byte(tt.workflow))
+			if tt.want == "" {
+				if match != nil {
+					t.Fatalf("unexpected action match: %q", match)
+				}
+				return
+			}
+			if len(match) != 2 || string(match[1]) != tt.want {
+				t.Fatalf("action match = %q, want major %s", match, tt.want)
+			}
+		})
+	}
+}
+
 func requireWorkflowActionMajorAtLeast(t *testing.T, workflow, action string, minimum int) {
 	t.Helper()
 
@@ -26,10 +65,10 @@ func requireWorkflowActionMajorAtLeast(t *testing.T, workflow, action string, mi
 		t.Fatalf("failed to read %s: %v", workflow, err)
 	}
 
-	pattern := regexp.MustCompile(regexp.QuoteMeta(action) + `@v(\d+)`)
+	pattern := workflowActionMajorPattern(action)
 	match := pattern.FindSubmatch(data)
 	if len(match) != 2 {
-		t.Fatalf("expected %s to use %s@v<major>", workflow, action)
+		t.Fatalf("expected %s to use %s@v<major> or %s@<40-character SHA> # v<major>", workflow, action, action)
 	}
 
 	major, err := strconv.Atoi(string(match[1]))
