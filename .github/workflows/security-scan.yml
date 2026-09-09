@@ -37,7 +37,7 @@ jobs:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           format: sarif
           output: trivy-results-${{ matrix.slug }}.sarif
-          severity: CRITICAL,HIGH
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           ignore-unfixed: true
           vuln-type: os,library
           exit-code: '1'
