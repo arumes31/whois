@@ -74,6 +74,36 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
+func TestAutoUpdateDatabasesDefaultAndOverride(t *testing.T) {
+	t.Setenv("SECRET_KEY", "test-secret")
+	t.Setenv("ENVIRONMENT", "development")
+	for _, test := range []struct {
+		name  string
+		value string
+		want  bool
+	}{
+		{"default enabled", "", true},
+		{"explicitly disabled", "false", false},
+		{"explicitly enabled", "true", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("AUTO_UPDATE_DATABASES", test.value)
+			if test.value == "" {
+				if err := os.Unsetenv("AUTO_UPDATE_DATABASES"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cfg, err := LoadConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.AutoUpdateDatabases != test.want {
+				t.Errorf("AutoUpdateDatabases = %v, want %v", cfg.AutoUpdateDatabases, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadConfigRejectsInvalidAndWeakProductionValues(t *testing.T) {
 	t.Setenv("SECRET_KEY", strings.Repeat("s", 32))
 	t.Setenv("ENVIRONMENT", "development")
