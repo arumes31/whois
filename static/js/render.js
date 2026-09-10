@@ -17,7 +17,8 @@ const SERVICE_LABELS = {
 };
 
 export function serviceLabel(service) {
-  return SERVICE_LABELS[service] || String(service).replace(/_/g, ' ').toUpperCase();
+  return Object.hasOwn(SERVICE_LABELS, service)
+    ? SERVICE_LABELS[service] : String(service).replace(/_/g, ' ').toUpperCase();
 }
 
 function statusDot(status) {
@@ -26,7 +27,7 @@ function statusDot(status) {
 
 function openDetails(service, status, body, { open = true } = {}) {
   const isOpen = open || status === 'error' || service === 'target';
-  return `<details${isOpen ? ' open' : ''}><summary>${statusDot(status)}${serviceLabel(service)}</summary><div class="service-section__body">${body}</div></details>`;
+  return `<details${isOpen ? ' open' : ''}><summary>${statusDot(status)}${escapeHTML(serviceLabel(service))}</summary><div class="service-section__body">${body}</div></details>`;
 }
 
 function errorDetails(service, message) {
@@ -314,27 +315,22 @@ function renderCt(data) {
   return openDetails('ct', 'success', `<div style="color:var(--phos-50)">No subdomains found in CT logs.</div>`);
 }
 
-const RENDERERS = {
-  target: renderTarget,
-  geo: renderGeo,
-  whois: renderWhois,
-  dns: renderDns,
-  subdomains: renderSubdomains,
-  portscan: renderPortscan,
-  ping: renderPing,
-  route: renderRoute,
-  trace: renderTrace,
-  ssl: renderSsl,
-  http: renderHttp,
-  ct: renderCt,
-};
-
 export function renderService(service, data, target, section) {
-  const renderer = RENDERERS[service];
-  if (!renderer) {
-    return openDetails(service, 'success', preLines([JSON.stringify(data, null, 2)]));
+  switch (service) {
+    case 'target': return renderTarget(data);
+    case 'geo': return renderGeo(data);
+    case 'whois': return renderWhois(data);
+    case 'dns': return renderDns(data);
+    case 'subdomains': return renderSubdomains(data);
+    case 'portscan': return renderPortscan(data);
+    case 'ping': return renderPing(data, target, section);
+    case 'route': return renderRoute(data);
+    case 'trace': return renderTrace(data);
+    case 'ssl': return renderSsl(data);
+    case 'http': return renderHttp(data);
+    case 'ct': return renderCt(data);
+    default: return openDetails(service, 'success', preLines([JSON.stringify(data, null, 2)]));
   }
-  return renderer(data, target, section);
 }
 
 export function skeletonHtml() {

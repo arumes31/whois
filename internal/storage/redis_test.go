@@ -21,6 +21,17 @@ func init() {
 	utils.TestInitLogger()
 }
 
+func TestSystemStatsPreserveLargeHistoryCount(t *testing.T) {
+	// Redis counts are 64-bit even when the application is built for 32-bit hosts.
+	var stats SystemStats
+	if err := json.Unmarshal([]byte(`{"history_count":2147483648}`), &stats); err != nil {
+		t.Fatal(err)
+	}
+	if int64(stats.HistoryCount) != int64(math.MaxInt32)+1 {
+		t.Fatalf("history count truncated: %d", stats.HistoryCount)
+	}
+}
+
 func setupMiniredis(t *testing.T) *Storage {
 	mr, err := miniredis.Run()
 	if err != nil {

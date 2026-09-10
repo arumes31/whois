@@ -118,6 +118,27 @@ func (c *failingSessionRedisClient) Del(ctx context.Context, keys ...string) *re
 	return cmd
 }
 
+func TestLoginRedirectIsFixed(t *testing.T) {
+	t.Setenv("CONFIG_USER", "admin")
+	t.Setenv("CONFIG_PASS", "correct horse battery staple")
+	t.Setenv("SECRET_KEY", "test-session-signing-key")
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{})
+	for _, next := range []string{"/config", "https://evil.example", "//evil.example", "/\\evil.example", "javascript:alert(1)"} {
+		t.Run(next, func(t *testing.T) {
+			form := url.Values{"username": {"admin"}, "password": {"correct horse battery staple"}, "next": {next}}
+			req := httptest.NewRequest(http.MethodPost, "/login?next="+url.QueryEscape(next), strings.NewReader(form.Encode()))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+			rec := httptest.NewRecorder()
+			if err := h.Login(echo.New().NewContext(req, rec)); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != http.StatusFound || rec.Header().Get(echo.HeaderLocation) != "/config" {
+				t.Fatalf("login redirected to %q with status %d", rec.Header().Get(echo.HeaderLocation), rec.Code)
+			}
+		})
+	}
+}
+
 func TestLogoutRevokesSession(t *testing.T) {
 	t.Setenv("CONFIG_USER", "admin")
 	t.Setenv("CONFIG_PASS", "correct horse battery staple")

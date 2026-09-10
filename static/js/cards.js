@@ -368,6 +368,8 @@ function currentScanForMessage(msg) {
 }
 
 export function routeMessage(msg) {
+  if (!isPlainObject(msg)) return false;
+  if ((msg.type === 'result' || msg.type === 'done') && !SERVICE_ORDER.includes(msg.service)) return false;
   if (msg.type === 'log') {
     const scan = currentScanForMessage(msg);
     if (!scan) return false;

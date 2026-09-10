@@ -201,7 +201,9 @@ GitHub Actions uses commit-SHA-pinned actions for linting, `go vet`, race-enable
 
 The manual **Delete Old Packages** workflow defaults to a dry run. When explicitly enabled, it prunes only untagged manifests older than 30 days and discovers all children referenced by retained multi-architecture tags before deletion; inspection failures stop deletion for that package.
 
-The Node runtime, container base images, QEMU helper image, Buildx binary, and BuildKit image are pinned exactly in release automation. Runtime `apk add` dependencies intentionally follow compatible patch revisions from the Alpine 3.24 repositories: exact APK pins are not retained indefinitely by Alpine mirrors and would make otherwise reproducible rebuilds fail. CI bypasses the cached runtime stage so those packages are refreshed for every registry-writing build. This limited patch drift is deliberate; every resulting immutable architecture digest is checksum-verified and blocked on the Critical/High vulnerability scan before it can receive a deployment tag.
+The Node runtime, container base images, QEMU helper image, Buildx binary, and BuildKit image are pinned exactly in release automation. Runtime `apk add` dependencies intentionally follow compatible patch revisions from the Alpine 3.24 repositories: exact APK pins are not retained indefinitely by Alpine mirrors and would make otherwise reproducible rebuilds fail. CI bypasses the cached runtime stage so those packages are refreshed for every build. Pull requests build and scan both AMD64 and ARM64 images on native runners and block on fixable vulnerabilities at every severity, including advisories without an assigned severity. Publication also scans every immutable architecture digest before it can receive a deployment tag.
+
+Go 1.27.1 is pinned consistently in `go.mod` and the Docker builder. CI uses Node 26.8.2; the asset container uses the latest available Node Alpine image, 26.8.1, because the 26.8.2 Alpine image is not yet published. The vendored Chart.js bundle is version 4.5.1 from the npm release (`dist/chart.umd.min.js`, MIT license).
 
 ```bash
 # Run the same core checks used by CI
@@ -212,7 +214,7 @@ npm ci --ignore-scripts
 npm test
 
 # Run linter
-go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4 run
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run
 
 # Validate and build the container
 docker compose config
