@@ -1,4 +1,4 @@
-FROM node:26.8.1-alpine3.24@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS assets
+FROM node:26.10.0-alpine3.24@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS assets
 WORKDIR /assets
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts --no-audit --no-fund
