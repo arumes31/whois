@@ -14,7 +14,7 @@ import (
 	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 type WSMessage struct {
@@ -84,7 +84,7 @@ func (w *wsWriter) write(messageType int, data []byte) error {
 	return w.conn.WriteMessage(messageType, data)
 }
 
-func (h *Handler) HandleWS(c echo.Context) error {
+func (h *Handler) HandleWS(c *echo.Context) error {
 	if !websocket.IsWebSocketUpgrade(c.Request()) {
 		return echo.NewHTTPError(http.StatusBadRequest, "websocket upgrade required")
 	}

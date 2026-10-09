@@ -31,7 +31,7 @@ import (
 	"whois/internal/utils"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/miekg/dns"
 	"github.com/redis/go-redis/v9"
 )
@@ -163,7 +163,7 @@ func TestLogoutRevokesSession(t *testing.T) {
 	}
 	sessionCookie := cookies[0]
 
-	protected := h.LoginRequired(func(c echo.Context) error {
+	protected := h.LoginRequired(func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
 	authenticatedRequest := httptest.NewRequest(http.MethodGet, "/config", nil)
@@ -210,7 +210,7 @@ func TestSignedButUnregisteredSessionIsRejected(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/config", nil)
 	request.AddCookie(&http.Cookie{Name: "session_id", Value: token})
 	response := httptest.NewRecorder()
-	protected := h.LoginRequired(func(c echo.Context) error {
+	protected := h.LoginRequired(func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
 	if err := protected(e.NewContext(request, response)); err != nil {
@@ -251,7 +251,7 @@ func TestSessionLifecycleFailsClosedWhenRedisIsUnavailable(t *testing.T) {
 		}
 		request := httptest.NewRequest(http.MethodGet, "/config", nil)
 		request.AddCookie(&http.Cookie{Name: "session_id", Value: token})
-		protected := h.LoginRequired(func(c echo.Context) error {
+		protected := h.LoginRequired(func(c *echo.Context) error {
 			return c.NoContent(http.StatusOK)
 		})
 		err = protected(echo.New().NewContext(request, httptest.NewRecorder()))
@@ -634,7 +634,7 @@ func TestConfigSurfacesStorageErrors(t *testing.T) {
 			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
 			err := h.Config(e.NewContext(req, httptest.NewRecorder()))
 			httpError, ok := err.(*echo.HTTPError)
-			if !ok || httpError.Code != http.StatusInternalServerError || !errors.Is(httpError.Internal, storageErr) {
+			if !ok || httpError.Code != http.StatusInternalServerError || !errors.Is(err, storageErr) {
 				t.Fatalf("Config POST error = %v, want HTTP 500 wrapping storage error", err)
 			}
 		})
@@ -646,7 +646,7 @@ func TestConfigSurfacesStorageErrors(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/config", nil)
 	err := h.Config(e.NewContext(req, httptest.NewRecorder()))
 	httpError, ok := err.(*echo.HTTPError)
-	if !ok || httpError.Code != http.StatusInternalServerError || !errors.Is(httpError.Internal, storageErr) {
+	if !ok || httpError.Code != http.StatusInternalServerError || !errors.Is(err, storageErr) {
 		t.Fatalf("Config GET error = %v, want HTTP 500 wrapping storage error", err)
 	}
 }
@@ -849,8 +849,7 @@ func TestHandlers(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/history/"+target, nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		c.SetParamNames("item")
-		c.SetParamValues(target)
+		c.SetPathValues(echo.PathValues{{Name: "item", Value: target}})
 
 		if err := h.GetHistory(c); err != nil {
 			t.Fatalf("GetHistory handler failed: %v", err)
@@ -903,8 +902,7 @@ func TestHandlers(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/history/test.com", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		c.SetParamNames("item")
-		c.SetParamValues("test.com")
+		c.SetPathValues(echo.PathValues{{Name: "item", Value: "test.com"}})
 		if err := badH.GetHistory(c); err != nil {
 			t.Fatal(err)
 		}
@@ -919,7 +917,7 @@ func TestHandlers(t *testing.T) {
 		req.RemoteAddr = "127.0.0.1:1234"
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		mw := h.Metrics(func(c echo.Context) error { return c.String(200, "ok") })
+		mw := h.Metrics(func(c *echo.Context) error { return c.String(200, "ok") })
 		_ = mw(c)
 	})
 
@@ -984,13 +982,13 @@ func TestHandlers(t *testing.T) {
 		req.RemoteAddr = "1.1.1.1:1234"
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		mw := h.Metrics(func(c echo.Context) error { return nil })
+		mw := h.Metrics(func(c *echo.Context) error { return nil })
 		_ = mw(c)
 	})
 
 	t.Run("Metrics Throttle", func(t *testing.T) {
 		h.AppConfig.TrustedIPs = "127.0.0.1"
-		mw := h.Metrics(func(c echo.Context) error { return c.String(200, "ok") })
+		mw := h.Metrics(func(c *echo.Context) error { return c.String(200, "ok") })
 
 		// Send 6 requests, the 6th should be delayed
 		for i := 1; i <= 6; i++ {
@@ -1032,8 +1030,7 @@ func TestHandlers(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/history/test.com", nil)
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
-		c.SetParamNames("item")
-		c.SetParamValues("test.com")
+		c.SetPathValues(echo.PathValues{{Name: "item", Value: "test.com"}})
 		if err := badH.GetHistory(c); err != nil {
 			t.Fatal(err)
 		}
@@ -1067,7 +1064,7 @@ func TestHandlers(t *testing.T) {
 	})
 
 	t.Run("LoginRequired Logic Exhaustive", func(t *testing.T) {
-		mw := h.LoginRequired(func(c echo.Context) error { return c.String(200, "ok") })
+		mw := h.LoginRequired(func(c *echo.Context) error { return c.String(200, "ok") })
 		_ = os.Setenv("SECRET_KEY", "test")
 
 		// Compute the expected HMAC-SHA256 session token

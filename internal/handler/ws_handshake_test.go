@@ -11,8 +11,8 @@ import (
 	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 )
 
 func TestWebSocketHandshake(t *testing.T) {

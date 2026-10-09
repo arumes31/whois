@@ -9,14 +9,14 @@ import (
 	"sync/atomic"
 	"whois/internal/model"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 type TemplateRegistry struct {
 	Templates *template.Template
 }
 
-func (t *TemplateRegistry) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
+func (t *TemplateRegistry) Render(c *echo.Context, w io.Writer, name string, data interface{}) error {
 	return t.Templates.ExecuteTemplate(w, name, data)
 }
 
@@ -141,7 +141,7 @@ type ProxyConfig struct {
 	UseCloudflare bool
 }
 
-func ExtractIP(c echo.Context, cfg ProxyConfig) string {
+func ExtractIP(c *echo.Context, cfg ProxyConfig) string {
 	if !cfg.TrustProxy && !cfg.UseCloudflare {
 		host, _, err := net.SplitHostPort(c.Request().RemoteAddr)
 		if err == nil {

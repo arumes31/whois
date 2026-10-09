@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -16,7 +17,7 @@ import (
 	"time"
 	"whois/internal/utils"
 
-	"github.com/oschwald/geoip2-golang"
+	"github.com/oschwald/geoip2-golang/v2"
 )
 
 var (
@@ -396,7 +397,7 @@ func GetGeoInfo(ctx context.Context, target string) (*GeoInfo, error) {
 }
 
 type geoResolverFunc func(context.Context, string) ([]net.IPAddr, error)
-type geoLookupFunc func(net.IP) (*geoip2.City, error)
+type geoLookupFunc func(netip.Addr) (*geoip2.City, error)
 
 func getGeoInfo(ctx context.Context, target string, resolve geoResolverFunc, lookup geoLookupFunc) (*GeoInfo, error) {
 	target = strings.TrimSpace(target)
@@ -407,30 +408,44 @@ func getGeoInfo(ctx context.Context, target string, resolve geoResolverFunc, loo
 
 	var lookupErr error
 	for _, address := range addresses {
-		record, err := lookup(address.IP)
+		ip, ok := netip.AddrFromSlice(address.IP)
+		if !ok {
+			lookupErr = errors.New("GeoIP resolver returned an invalid IP address")
+			continue
+		}
+		record, err := lookup(ip.Unmap())
 		if err != nil {
 			lookupErr = err
 			continue
 		}
-		if record == nil {
+		if record == nil || !record.HasData() {
 			lookupErr = errGeoRecordNotFound
 			continue
 		}
 
 		regionName := ""
 		if len(record.Subdivisions) > 0 {
-			regionName = record.Subdivisions[0].Names["en"]
+			regionName = record.Subdivisions[0].Names.English
+		}
+		// Preserve the existing numeric response when the database omits a
+		// coordinate; an explicitly stored zero is also a valid coordinate.
+		var latitude, longitude float64
+		if record.Location.Latitude != nil {
+			latitude = *record.Location.Latitude
+		}
+		if record.Location.Longitude != nil {
+			longitude = *record.Location.Longitude
 		}
 
 		return &GeoInfo{
-			Country:      record.Country.Names["en"],
-			CountryCode:  record.Country.IsoCode,
-			CountryEmoji: getFlagEmoji(record.Country.IsoCode),
+			Country:      record.Country.Names.English,
+			CountryCode:  record.Country.ISOCode,
+			CountryEmoji: getFlagEmoji(record.Country.ISOCode),
 			RegionName:   regionName,
-			City:         record.City.Names["en"],
+			City:         record.City.Names.English,
 			Zip:          record.Postal.Code,
-			Lat:          record.Location.Latitude,
-			Lon:          record.Location.Longitude,
+			Lat:          latitude,
+			Lon:          longitude,
 			Timezone:     record.Location.TimeZone,
 			Status:       "success",
 			Query:        target,
@@ -458,18 +473,11 @@ func resolveGeoAddresses(ctx context.Context, target string, resolve geoResolver
 	return addresses, nil
 }
 
-func lookupLocalGeo(ip net.IP) (*geoip2.City, error) {
+func lookupLocalGeo(ip netip.Addr) (*geoip2.City, error) {
 	geoMu.RLock()
 	defer geoMu.RUnlock()
 	if geoReader == nil {
 		return nil, errGeoDBUnavailable
 	}
-	record, err := geoReader.City(ip)
-	if err != nil {
-		return nil, err
-	}
-	if record.Country.IsoCode == "" && len(record.City.Names) == 0 && record.Location.TimeZone == "" {
-		return nil, errGeoRecordNotFound
-	}
-	return record, nil
+	return geoReader.City(ip)
 }

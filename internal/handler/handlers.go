@@ -29,8 +29,8 @@ import (
 	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 )
 
 const (
@@ -336,7 +336,7 @@ func (h *Handler) WaitForClose(ctx context.Context) error {
 
 // === Middleware ===
 func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		sess, _ := c.Cookie("session_id")
 		if sess == nil || sess.Value == "" || !validateSessionToken(sess.Value, os.Getenv("SECRET_KEY")) {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
@@ -344,7 +344,7 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 		active, err := h.Storage.ConfigSessionActive(c.Request().Context(), sess.Value)
 		if err != nil {
 			utils.Log.Error("failed to verify config session", utils.Field("error", err.Error()))
-			return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").SetInternal(err)
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").Wrap(err)
 		}
 		if !active {
 			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
@@ -353,7 +353,7 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func (h *Handler) secureCookie(c echo.Context) bool {
+func (h *Handler) secureCookie(c *echo.Context) bool {
 	if h.AppConfig.SessionCookieSecure || c.Request().TLS != nil {
 		return true
 	}
@@ -365,7 +365,7 @@ func (h *Handler) secureCookie(c echo.Context) bool {
 
 // === Routes ===
 
-func (h *Handler) Index(c echo.Context) error {
+func (h *Handler) Index(c *echo.Context) error {
 	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 	realIP := utils.ExtractIP(c, pCfg)
 	stats, _ := h.Storage.GetSystemStats(c.Request().Context())
@@ -487,7 +487,7 @@ func (h *Handler) recordDNSHistory(ctx context.Context, target string, result in
 	}
 }
 
-func (h *Handler) BulkUpload(c echo.Context) error {
+func (h *Handler) BulkUpload(c *echo.Context) error {
 	file, err := c.FormFile("file")
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "No file uploaded"})
@@ -564,12 +564,12 @@ func (h *Handler) BulkUpload(c echo.Context) error {
 	})
 }
 
-func (h *Handler) exportCSV(c echo.Context, results map[string]model.QueryResult) error {
+func (h *Handler) exportCSV(c *echo.Context, results map[string]model.QueryResult) error {
 	c.Response().Header().Set(echo.HeaderContentType, "text/csv")
 	c.Response().Header().Set(echo.HeaderContentDisposition, "attachment;filename=results.csv")
 	c.Response().WriteHeader(http.StatusOK)
 
-	writer := csv.NewWriter(c.Response().Writer)
+	writer := csv.NewWriter(c.Response())
 	if err := writer.Write([]string{"Item", "Type", "Data"}); err != nil {
 		return err
 	}
@@ -725,7 +725,7 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	return res
 }
 
-func (h *Handler) Scanner(c echo.Context) error {
+func (h *Handler) Scanner(c *echo.Context) error {
 	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 	realIP := utils.ExtractIP(c, pCfg)
 	return c.Render(http.StatusOK, "scanner.html", map[string]interface{}{
@@ -737,7 +737,7 @@ func (h *Handler) Scanner(c echo.Context) error {
 	})
 }
 
-func (h *Handler) Scan(c echo.Context) error {
+func (h *Handler) Scan(c *echo.Context) error {
 	target := c.FormValue("target")
 	if target == "" {
 		target = c.RealIP()
@@ -766,7 +766,7 @@ func (h *Handler) Scan(c echo.Context) error {
 	})
 }
 
-func (h *Handler) DNSLookup(c echo.Context) error {
+func (h *Handler) DNSLookup(c *echo.Context) error {
 	domain := strings.TrimSpace(c.FormValue("domain"))
 	rtype := strings.ToUpper(c.FormValue("type"))
 	if rtype == "" {
@@ -796,7 +796,7 @@ func (h *Handler) DNSLookup(c echo.Context) error {
 	return c.HTML(http.StatusOK, htmlRes)
 }
 
-func (h *Handler) MacLookup(c echo.Context) error {
+func (h *Handler) MacLookup(c *echo.Context) error {
 	mac := c.FormValue("mac")
 	ctx := c.Request().Context()
 	cacheKey := "mac:" + mac
@@ -817,7 +817,7 @@ func (h *Handler) MacLookup(c echo.Context) error {
 	return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert-ok'>MAC vendor for %s ▸ %s</div>", html.EscapeString(mac), html.EscapeString(vendor)))
 }
 
-func (h *Handler) Login(c echo.Context) error {
+func (h *Handler) Login(c *echo.Context) error {
 	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 	realIP := utils.ExtractIP(c, pCfg)
 	next := c.QueryParam("next")
@@ -853,7 +853,7 @@ func (h *Handler) Login(c echo.Context) error {
 			}
 			if err := h.Storage.StoreConfigSession(c.Request().Context(), token, sessionTTL); err != nil {
 				utils.Log.Error("failed to register config session", utils.Field("error", err.Error()))
-				return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").SetInternal(err)
+				return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").Wrap(err)
 			}
 			// #nosec G124 -- secureCookie enforces Secure in production and for HTTPS requests.
 			c.SetCookie(&http.Cookie{
@@ -874,7 +874,7 @@ func (h *Handler) Login(c echo.Context) error {
 	return c.Render(http.StatusOK, "login.html", pageData)
 }
 
-func (h *Handler) Config(c echo.Context) error {
+func (h *Handler) Config(c *echo.Context) error {
 	pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 	realIP := utils.ExtractIP(c, pCfg)
 
@@ -900,14 +900,14 @@ func (h *Handler) Config(c echo.Context) error {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid monitoring action")
 		}
 		if err != nil {
-			return echo.NewHTTPError(http.StatusInternalServerError, "unable to update monitored targets").SetInternal(err)
+			return echo.NewHTTPError(http.StatusInternalServerError, "unable to update monitored targets").Wrap(err)
 		}
 		return c.Redirect(http.StatusFound, "/config")
 	}
 
 	items, err := h.Storage.GetMonitoredItems(ctx)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, "unable to load monitored targets").SetInternal(err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "unable to load monitored targets").Wrap(err)
 	}
 	viewConfig := h.templateConfig()
 	return c.Render(http.StatusOK, "config.html", map[string]interface{}{
@@ -921,12 +921,12 @@ func (h *Handler) Config(c echo.Context) error {
 	})
 }
 
-func (h *Handler) Logout(c echo.Context) error {
+func (h *Handler) Logout(c *echo.Context) error {
 	sess, _ := c.Cookie("session_id")
 	if sess != nil && sess.Value != "" {
 		if err := h.Storage.DeleteConfigSession(c.Request().Context(), sess.Value); err != nil {
 			utils.Log.Error("failed to revoke config session", utils.Field("error", err.Error()))
-			return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").SetInternal(err)
+			return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").Wrap(err)
 		}
 	}
 	// #nosec G124 -- secureCookie enforces Secure in production and for HTTPS requests.
@@ -941,7 +941,7 @@ func (h *Handler) Logout(c echo.Context) error {
 	return c.Redirect(http.StatusFound, "/")
 }
 
-func (h *Handler) GetHistory(c echo.Context) error {
+func (h *Handler) GetHistory(c *echo.Context) error {
 	// DNS answers are public data and the dashboard consumes this endpoint
 	// without a configuration session. Keep it public, but only accept one
 	// normalized DNS target and apply route-specific rate limiting in NewServer.
@@ -970,7 +970,7 @@ func (h *Handler) GetHistory(c echo.Context) error {
 	})
 }
 
-func (h *Handler) SystemStats(c echo.Context) error {
+func (h *Handler) SystemStats(c *echo.Context) error {
 	c.Response().Header().Set(echo.HeaderCacheControl, "no-store")
 	stats, err := h.Storage.GetSystemStats(c.Request().Context())
 	if err != nil {
@@ -987,7 +987,7 @@ func (h *Handler) SystemStats(c echo.Context) error {
 }
 
 func (h *Handler) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(c echo.Context) error {
+	return func(c *echo.Context) error {
 		pCfg := utils.ProxyConfig{TrustProxy: h.AppConfig.TrustProxy, UseCloudflare: h.AppConfig.UseCloudflare}
 		clientIP := utils.ExtractIP(c, pCfg)
 
@@ -1026,7 +1026,7 @@ func (h *Handler) Metrics(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-func (h *Handler) Health(c echo.Context) error {
+func (h *Handler) Health(c *echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 2*time.Second)
 	defer cancel()
 
@@ -1043,18 +1043,18 @@ func (h *Handler) Health(c echo.Context) error {
 	})
 }
 
-func (h *Handler) Liveness(c echo.Context) error {
+func (h *Handler) Liveness(c *echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *Handler) UpdateGeoDB(c echo.Context) error {
+func (h *Handler) UpdateGeoDB(c *echo.Context) error {
 	if err := service.ManualUpdateGeoDB(); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "GeoIP database updated successfully"})
 }
 
-func (h *Handler) Robots(c echo.Context) error {
+func (h *Handler) Robots(c *echo.Context) error {
 	content := "User-agent: *\nDisallow: /"
 	if h.AppConfig.SEOEnabled {
 		content = "User-agent: *\nAllow: /\nDisallow: /config\nDisallow: /metrics\nDisallow: /login"

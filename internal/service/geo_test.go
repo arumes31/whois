@@ -10,12 +10,13 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"testing"
 	"time"
 	"whois/internal/utils"
 
-	"github.com/oschwald/geoip2-golang"
+	"github.com/oschwald/geoip2-golang/v2"
 )
 
 func init() {
@@ -25,12 +26,15 @@ func init() {
 
 func TestGetGeoInfo(t *testing.T) {
 	tests := []struct {
-		name       string
-		target     string
-		resolvedIP string
+		name              string
+		target            string
+		resolvedIP        string
+		wantResolverCalls int
 	}{
 		{name: "IP address bypasses resolver", target: "8.8.8.8", resolvedIP: "8.8.8.8"},
-		{name: "hostname resolves before lookup", target: "example.test", resolvedIP: "203.0.113.10"},
+		{name: "hostname resolves before lookup", target: "example.test", resolvedIP: "203.0.113.10", wantResolverCalls: 1},
+		{name: "mapped IPv4 is normalized", target: "::ffff:192.0.2.1", resolvedIP: "192.0.2.1"},
+		{name: "IPv6 address bypasses resolver", target: "2001:db8::1", resolvedIP: "2001:db8::1"},
 	}
 
 	for _, tt := range tests {
@@ -43,14 +47,15 @@ func TestGetGeoInfo(t *testing.T) {
 				}
 				return []net.IPAddr{{IP: net.ParseIP(tt.resolvedIP)}}, nil
 			}
-			lookup := func(ip net.IP) (*geoip2.City, error) {
+			lookup := func(ip netip.Addr) (*geoip2.City, error) {
 				if got := ip.String(); got != tt.resolvedIP {
 					t.Fatalf("GeoIP lookup address = %q, want %q", got, tt.resolvedIP)
 				}
 				record := &geoip2.City{}
-				record.Country.Names = map[string]string{"en": "Example Country"}
-				record.Country.IsoCode = "AT"
-				record.City.Names = map[string]string{"en": "Vienna"}
+				record.Country.Names.English = "Example Country"
+				record.Country.ISOCode = "AT"
+				record.City.Names.English = "Vienna"
+				record.Subdivisions = []geoip2.CitySubdivision{{Names: geoip2.Names{English: "Vienna region"}}}
 				record.Postal.Code = "1010"
 				record.Location.TimeZone = "Europe/Vienna"
 				return record, nil
@@ -60,14 +65,12 @@ func TestGetGeoInfo(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetGeoInfo failed: %v", err)
 			}
-			if res.Query != tt.target || res.CountryCode != "AT" || res.City != "Vienna" || res.Zip != "1010" {
+			if res.Query != tt.target || res.CountryCode != "AT" || res.Country != "Example Country" ||
+				res.City != "Vienna" || res.RegionName != "Vienna region" || res.Zip != "1010" {
 				t.Fatalf("unexpected GeoIP result: %+v", res)
 			}
-			if tt.target == tt.resolvedIP && resolverCalls != 0 {
-				t.Fatalf("literal IP unexpectedly used resolver %d times", resolverCalls)
-			}
-			if tt.target != tt.resolvedIP && resolverCalls != 1 {
-				t.Fatalf("hostname resolver calls = %d, want 1", resolverCalls)
+			if resolverCalls != tt.wantResolverCalls {
+				t.Fatalf("resolver calls = %d, want %d", resolverCalls, tt.wantResolverCalls)
 			}
 		})
 	}
@@ -75,6 +78,7 @@ func TestGetGeoInfo(t *testing.T) {
 
 func TestInitializeGeoDB(t *testing.T) {
 	StopGeoDBUpdater()
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
 	geoMu.Lock()
 	oldClient := GeoHTTPClient
 	oldTestMode := GeoTestMode
@@ -84,7 +88,7 @@ func TestInitializeGeoDB(t *testing.T) {
 		captured = req.Clone(req.Context())
 	}}}
 	GeoTestMode = true
-	geoPath = "test_init_geo.mmdb"
+	geoPath = path
 	geoMu.Unlock()
 	defer func() {
 		StopGeoDBUpdater()
@@ -93,7 +97,6 @@ func TestInitializeGeoDB(t *testing.T) {
 		GeoTestMode = oldTestMode
 		geoPath = oldPath
 		geoMu.Unlock()
-		_ = os.Remove("test_init_geo.mmdb")
 		ReloadGeoDB()
 	}()
 
@@ -206,12 +209,14 @@ func TestCloseGeoDB(t *testing.T) {
 
 func TestGetGeoInfo_ReaderError(t *testing.T) {
 	// Create a dummy reader that fails
-	_ = os.WriteFile("dummy.mmdb", []byte("invalid"), 0644)
-	defer func() { _ = os.Remove("dummy.mmdb") }()
+	path := t.TempDir() + "/invalid.mmdb"
+	if err := os.WriteFile(path, []byte("invalid"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	geoMu.Lock()
 	oldPath := geoPath
-	geoPath = "dummy.mmdb"
+	geoPath = path
 	geoMu.Unlock()
 	defer func() {
 		geoMu.Lock()
@@ -232,7 +237,7 @@ func TestGetGeoInfo_ErrorPaths(t *testing.T) {
 	resolverErr := errors.New("resolver failed")
 	_, err := getGeoInfo(context.Background(), "invalid host", func(context.Context, string) ([]net.IPAddr, error) {
 		return nil, resolverErr
-	}, func(net.IP) (*geoip2.City, error) {
+	}, func(netip.Addr) (*geoip2.City, error) {
 		t.Fatal("lookup called after resolver error")
 		return nil, nil
 	})
@@ -242,7 +247,7 @@ func TestGetGeoInfo_ErrorPaths(t *testing.T) {
 
 	_, err = getGeoInfo(context.Background(), "empty.test", func(context.Context, string) ([]net.IPAddr, error) {
 		return nil, nil
-	}, func(net.IP) (*geoip2.City, error) {
+	}, func(netip.Addr) (*geoip2.City, error) {
 		t.Fatal("lookup called without resolved addresses")
 		return nil, nil
 	})
@@ -250,11 +255,97 @@ func TestGetGeoInfo_ErrorPaths(t *testing.T) {
 		t.Fatal("expected error for hostname without addresses")
 	}
 
-	_, err = getGeoInfo(context.Background(), "192.0.2.1", nil, func(net.IP) (*geoip2.City, error) {
+	_, err = getGeoInfo(context.Background(), "192.0.2.1", nil, func(netip.Addr) (*geoip2.City, error) {
 		return nil, errGeoRecordNotFound
 	})
 	if !errors.Is(err, errGeoRecordNotFound) {
 		t.Fatalf("expected missing record error, got %v", err)
+	}
+
+	_, err = getGeoInfo(context.Background(), "invalid-address.test", func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: nil}}, nil
+	}, func(netip.Addr) (*geoip2.City, error) {
+		t.Fatal("lookup called with an invalid resolver address")
+		return nil, nil
+	})
+	if err == nil {
+		t.Fatal("expected error for an invalid resolver address")
+	}
+}
+
+func TestGetGeoInfo_MissingRecord(t *testing.T) {
+	metadataOnly := &geoip2.City{}
+	metadataOnly.Traits.IPAddress = netip.MustParseAddr("192.0.2.1")
+	metadataOnly.Traits.Network = netip.MustParsePrefix("192.0.2.0/24")
+	for _, tt := range []struct {
+		name   string
+		record *geoip2.City
+	}{
+		{name: "nil"},
+		{name: "empty", record: &geoip2.City{}},
+		{name: "lookup metadata only", record: metadataOnly},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := getGeoInfo(context.Background(), "192.0.2.1", nil, func(netip.Addr) (*geoip2.City, error) {
+				return tt.record, nil
+			})
+			if !errors.Is(err, errGeoRecordNotFound) || result != nil {
+				t.Fatalf("missing record returned result=%+v, error=%v; want no result and missing record", result, err)
+			}
+		})
+	}
+}
+
+func TestGetGeoInfo_Coordinates(t *testing.T) {
+	zero, latitude, longitude := 0.0, 48.2082, 16.3738
+	for _, tt := range []struct {
+		name        string
+		latitude    *float64
+		longitude   *float64
+		countryCode string
+		wantLat     float64
+		wantLon     float64
+	}{
+		{name: "missing", countryCode: "AT"},
+		{name: "latitude only", latitude: &latitude, countryCode: "AT", wantLat: latitude},
+		{name: "longitude only", longitude: &longitude, countryCode: "AT", wantLon: longitude},
+		{name: "zero coordinates are data", latitude: &zero, longitude: &zero},
+		{name: "nonzero coordinates are data", latitude: &latitude, longitude: &longitude, wantLat: latitude, wantLon: longitude},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			record := &geoip2.City{}
+			record.Country.ISOCode = tt.countryCode
+			record.Location.Latitude = tt.latitude
+			record.Location.Longitude = tt.longitude
+			result, err := getGeoInfo(context.Background(), "192.0.2.1", nil, func(netip.Addr) (*geoip2.City, error) {
+				return record, nil
+			})
+			if err != nil {
+				t.Fatalf("getGeoInfo failed: %v", err)
+			}
+			if result.Lat != tt.wantLat || result.Lon != tt.wantLon || result.Status != "success" {
+				t.Fatalf("GeoIP result = %+v, want coordinates (%v, %v) and success", result, tt.wantLat, tt.wantLon)
+			}
+		})
+	}
+}
+
+func TestGetGeoInfo_UsesNextAddressWhenRecordMissing(t *testing.T) {
+	resolve := func(context.Context, string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("192.0.2.1")}, {IP: net.ParseIP("192.0.2.2")}}, nil
+	}
+	lookup := func(ip netip.Addr) (*geoip2.City, error) {
+		record := &geoip2.City{}
+		record.Traits.IPAddress = ip
+		record.Traits.Network = netip.MustParsePrefix("192.0.2.0/24")
+		if ip == netip.MustParseAddr("192.0.2.2") {
+			record.Country.ISOCode = "AT"
+		}
+		return record, nil
+	}
+	result, err := getGeoInfo(context.Background(), "example.test", resolve, lookup)
+	if err != nil || result == nil || result.CountryCode != "AT" {
+		t.Fatalf("GeoIP fallback returned result=%+v, error=%v; want country AT", result, err)
 	}
 }
 
@@ -445,6 +536,7 @@ func TestDownloadGeoDB_MaxMindSuffixArchive(t *testing.T) {
 }
 
 func TestExtractTarGz_Success(t *testing.T) {
+	path := t.TempDir() + "/GeoLite2-City.mmdb"
 	var buf bytes.Buffer
 	gw := gzip.NewWriter(&buf)
 	tw := tar.NewWriter(gw)
@@ -461,13 +553,12 @@ func TestExtractTarGz_Success(t *testing.T) {
 
 	geoMu.Lock()
 	oldPath := geoPath
-	geoPath = "test_extract_success.mmdb"
+	geoPath = path
 	geoMu.Unlock()
 	defer func() {
 		geoMu.Lock()
 		geoPath = oldPath
 		geoMu.Unlock()
-		_ = os.Remove("test_extract_success.mmdb")
 		ReloadGeoDB()
 	}()
 

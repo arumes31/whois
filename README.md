@@ -49,7 +49,7 @@ graph TD
 
 | Layer | Technologies |
 |---|---|
-| **Backend** | Go 1.27.2+, Echo v4, Zap Logging |
+| **Backend** | Go 1.27.2+, Echo v5, Zap Logging |
 | **Frontend** | Vanilla ES modules, custom phosphor design system, Chart.js (vendored) |
 | **Storage** | Redis with bounded DNS history, dashboard counters, and revocable administrator sessions |
 | **Networking** | DoH (DNS-over-HTTPS), RDAP, ICMP, TCP |
@@ -203,7 +203,7 @@ The manual **Delete Old Packages** workflow defaults to a dry run. When explicit
 
 The Node runtime, container base images, QEMU helper image, Buildx binary, and BuildKit image are pinned exactly in release automation. Runtime `apk add` dependencies intentionally follow compatible patch revisions from the Alpine 3.24 repositories: exact APK pins are not retained indefinitely by Alpine mirrors and would make otherwise reproducible rebuilds fail. CI bypasses the cached runtime stage so those packages are refreshed for every build. Pull requests build and scan both AMD64 and ARM64 images on native runners and block on fixable vulnerabilities at every severity, including advisories without an assigned severity. Publication also scans every immutable architecture digest before it can receive a deployment tag.
 
-Go 1.27.2 is pinned consistently in `go.mod` and the Docker builder. CI and the asset container use Node 26.11.1. Runtime containers use Alpine 3.24.2 and Redis 8.10.2. The vendored Chart.js bundle is version 4.5.1 from the npm release (`dist/chart.umd.min.js`, MIT license). CodeQL action steps are updated together so their shared configuration stays compatible.
+Go 1.27.2 is pinned consistently in `go.mod` and the Docker builder. CI and the asset container use Node 26.11.1. Runtime containers use Alpine 3.24.2 and Redis 8.10.2. The backend uses Echo 5.4.0 and the GeoIP2 2.4.0 reader; existing HTTP, WebSocket, and GeoIP JSON contracts are preserved. The vendored Chart.js bundle is version 4.5.1 from the npm release (`dist/chart.umd.min.js`, MIT license). CodeQL action steps are updated together so their shared configuration stays compatible.
 
 ```bash
 # Run the same core checks used by CI

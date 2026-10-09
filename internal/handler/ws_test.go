@@ -16,7 +16,7 @@ import (
 	"whois/internal/utils"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func init() {
@@ -29,7 +29,7 @@ func dialHandlerWebSocket(t *testing.T, h *Handler) *websocket.Conn {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := e.NewContext(r, w)
 		if err := h.HandleWS(c); err != nil {
-			e.HTTPErrorHandler(err, c)
+			e.HTTPErrorHandler(c, err)
 		}
 	}))
 	t.Cleanup(srv.Close)
@@ -582,7 +582,7 @@ func TestHandleWSRejectsTooManyTargets(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := e.NewContext(r, w)
 		if err := h.HandleWS(c); err != nil {
-			e.HTTPErrorHandler(err, c)
+			e.HTTPErrorHandler(c, err)
 		}
 	}))
 	defer srv.Close()
@@ -645,7 +645,7 @@ func TestHandlerCloseWaitsForWebSocketsAndRejectsNewConnections(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := e.NewContext(r, w)
 		if err := h.HandleWS(c); err != nil {
-			e.HTTPErrorHandler(err, c)
+			e.HTTPErrorHandler(c, err)
 		}
 	}))
 	defer srv.Close()
@@ -699,7 +699,7 @@ func TestHandleWSRejectsHostileOriginAndReleasesReservation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := e.NewContext(r, w)
 		if err := h.HandleWS(c); err != nil {
-			e.HTTPErrorHandler(err, c)
+			e.HTTPErrorHandler(c, err)
 		}
 	}))
 	defer srv.Close()
@@ -751,7 +751,7 @@ func TestHandleWSEnforcesActiveConnectionLimits(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		c := e.NewContext(r, w)
 		if err := h.HandleWS(c); err != nil {
-			e.HTTPErrorHandler(err, c)
+			e.HTTPErrorHandler(c, err)
 		}
 	}))
 	defer srv.Close()

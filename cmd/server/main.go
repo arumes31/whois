@@ -20,8 +20,8 @@ import (
 	"whois/internal/utils"
 
 	"github.com/joho/godotenv"
-	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -45,12 +45,12 @@ func main() {
 	utils.SetAllowLoopbackIPs(cfg.AllowLoopbackIPs)
 	utils.SetAllowLinkLocalIPs(cfg.AllowLinkLocalIPs)
 
-	e, closeServer := NewServer(cfg)
+	server, closeServer := NewServer(cfg)
 
 	// Start server
 	go func() {
 		utils.Log.Info("starting server", utils.Field("port", cfg.Port))
-		if err := e.Start(":" + cfg.Port); err != nil && err != http.ErrServerClosed {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			utils.Log.Fatal("shutting down the server")
 		}
 	}()
@@ -61,7 +61,7 @@ func main() {
 	<-quit
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := e.Shutdown(ctx); err != nil {
+	if err := server.Shutdown(ctx); err != nil {
 		utils.Log.Error("HTTP shutdown did not complete cleanly", utils.Field("error", err.Error()))
 	}
 	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -71,7 +71,7 @@ func main() {
 	}
 }
 
-func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
+func NewServer(cfg *config.Config) (*http.Server, func(context.Context) error) {
 	// Dependencies
 	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
 	store.ConfigureDNSHistory(
@@ -106,7 +106,6 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 
 	// Web Server
 	e := echo.New()
-	e.HideBanner = true
 	e.IPExtractor = echo.ExtractIPDirect()
 	e.SchemeExtractor = echo.ExtractSchemeDirect()
 	trustedNetworks := parseTrustedNetworks(cfg.TrustedProxies)
@@ -136,11 +135,15 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 			return baseExtractor(request)
 		}
 	}
-	e.Server.ReadHeaderTimeout = 5 * time.Second
-	e.Server.ReadTimeout = 15 * time.Second
-	e.Server.IdleTimeout = 60 * time.Second
-	e.Server.MaxHeaderBytes = 64 << 10
-	e.Server.RegisterOnShutdown(func() {
+	server := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           e,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    64 << 10,
+	}
+	server.RegisterOnShutdown(func() {
 		appCancel()
 		h.Close()
 	})
@@ -149,14 +152,14 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()), h.Metrics)
 
 	// Security Middlewares
-	wsSkipper := func(c echo.Context) bool {
+	wsSkipper := func(c *echo.Context) bool {
 		return c.Path() == "/ws"
 	}
 
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogStatus: true,
 		LogURI:    true,
-		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
 			utils.Log.Info("request",
 				utils.Field("uri", v.URI),
 				utils.Field("status", v.Status),
@@ -194,7 +197,7 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		Skipper: wsSkipper,
 		// Multipart boundaries and part headers sit outside the uploaded file.
 		// BulkUpload independently keeps the actual file at 2 MiB.
-		Limit: "3M",
+		LimitBytes: 3 << 20,
 	}))
 	e.Use(middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Store: middleware.NewRateLimiterMemoryStore(20),
@@ -210,7 +213,7 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		ContentSecurityPolicy: contentSecurityPolicyBase + ";",
 	}))
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			policy := contentSecurityPolicyBase
 			if source, ok := handler.WebSocketConnectSource(c.Request(), cfg); ok {
 				policy += " " + source
@@ -226,7 +229,7 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	})
 
 	// CSRF Protection
-	csrfSkipper := func(c echo.Context) bool {
+	csrfSkipper := func(c *echo.Context) bool {
 		if wsSkipper(c) || strings.HasPrefix(c.Request().URL.Path, "/static/") {
 			return true
 		}
@@ -260,13 +263,18 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	e.HEAD("/static/*", echo.WrapHandler(staticFiles))
 
 	// Custom HTTP Error Handler
-	e.HTTPErrorHandler = func(err error, c echo.Context) {
-		if c.Response().Committed {
+	e.HTTPErrorHandler = func(c *echo.Context, err error) {
+		response, unwrapErr := echo.UnwrapResponse(c.Response())
+		if unwrapErr != nil {
+			c.Logger().Error("unable to inspect error response", "error", unwrapErr)
 			return
 		}
-		code := http.StatusInternalServerError
-		if he, ok := err.(*echo.HTTPError); ok {
-			code = he.Code
+		if response.Committed {
+			return
+		}
+		code := echo.StatusCode(err)
+		if code == 0 {
+			code = http.StatusInternalServerError
 		}
 
 		errorData := map[string]interface{}{
@@ -279,7 +287,7 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		}
 
 		if renderErr := c.Render(code, "error.html", errorData); renderErr != nil {
-			c.Logger().Error(renderErr)
+			c.Logger().Error("render error page", "error", renderErr)
 		}
 	}
 
@@ -368,7 +376,7 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		}
 	}
 
-	return e, closeServer
+	return server, closeServer
 }
 
 func parseTrustedNetworks(entries string) []*net.IPNet {
