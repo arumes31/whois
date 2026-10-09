@@ -41,6 +41,8 @@ func TestNormalizeTarget(t *testing.T) {
 		{name: "ipv6", input: "2001:4860:4860::8888", kind: model.TargetKindIPv6, normalized: "2001:4860:4860::8888", valid: true},
 		{name: "cidr masks host bits", input: "192.0.2.25/24", kind: model.TargetKindCIDR, normalized: "192.0.2.0/24", valid: true},
 		{name: "asn", input: "as64512", kind: model.TargetKindASN, normalized: "AS64512", valid: true},
+		{name: "zero padded asn", input: "AS0000000000013335", kind: model.TargetKindASN, normalized: "AS13335", valid: true},
+		{name: "asn overflow", input: "AS4294967296", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject credentials", input: "https://user:pass@example.com", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject scheme", input: "ftp://example.com/file", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject leading hyphen", input: "-c 4 example.com", kind: model.TargetKindUnknown, valid: false},

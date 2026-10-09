@@ -36,13 +36,13 @@ type routingCacheEntry struct {
 	expires time.Time
 }
 
-// RoutingService uses only RIPEstat's network-info endpoint and never resolves
-// a user-supplied hostname or follows provider redirects.
+// RoutingService uses fixed RIPEstat endpoints and never resolves a
+// user-supplied hostname or follows provider redirects.
 type RoutingService struct {
 	client *http.Client
 	now    func() time.Time
 	mu     sync.Mutex
-	cache  map[netip.Addr]routingCacheEntry
+	cache  map[string]routingCacheEntry
 }
 
 func NewRoutingService() *RoutingService {
@@ -60,14 +60,20 @@ func NewRoutingService() *RoutingService {
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 		now:   time.Now,
-		cache: make(map[netip.Addr]routingCacheEntry),
+		cache: make(map[string]routingCacheEntry),
 	}
 }
 
 func (s *RoutingService) Lookup(ctx context.Context, target string) (result model.RoutingInfo) {
+	query := strings.TrimSpace(target)
+	if len(query) >= 2 && strings.EqualFold(query[:2], "AS") {
+		if _, err := parseASNNumber(query[2:]); err == nil {
+			return s.lookupASN(ctx, query)
+		}
+	}
 	result = model.RoutingInfo{
-		Query: strings.TrimSpace(target), Status: "skipped", Source: "RIPEstat / RIPE RIS", SnapshotCadenceHours: 8,
-		Reason: "Routing lookup requires a public literal IPv4 or IPv6 address; domains, ASNs and CIDRs are not queried.",
+		Query: query, Status: "skipped", Source: "RIPEstat / RIPE RIS", SnapshotCadenceHours: 8,
+		Reason: "Routing lookup requires a public literal IP address or AS<number>; domains and CIDRs are not queried.",
 	}
 	ip, err := netip.ParseAddr(result.Query)
 	if err != nil || ip.Zone() != "" {
@@ -88,7 +94,7 @@ func (s *RoutingService) Lookup(ctx context.Context, target string) (result mode
 		result.Error = err.Error()
 		return result
 	}
-	if cached, ok := s.cached(ip); ok {
+	if cached, ok := s.cached(ip.String()); ok {
 		cached.Query = result.Query
 		return cached
 	}
@@ -103,7 +109,7 @@ func (s *RoutingService) Lookup(ctx context.Context, target string) (result mode
 		result.Error = err.Error()
 		return result
 	}
-	if cached, ok := s.cached(ip); ok {
+	if cached, ok := s.cached(ip.String()); ok {
 		cached.Query = result.Query
 		return cached
 	}
@@ -118,54 +124,69 @@ func (s *RoutingService) Lookup(ctx context.Context, target string) (result mode
 	if prefix == "" {
 		result.Status = "no_announcement"
 	}
-	s.store(ip, result)
+	s.store(ip.String(), result)
 	return result
 }
 
-func (s *RoutingService) fetch(ctx context.Context, endpoint string, ip netip.Addr) (string, []uint32, error) {
+func (s *RoutingService) fetchRoutingData(ctx context.Context, endpoint string, limit int64) (json.RawMessage, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return "", nil, fmt.Errorf("prepare routing request: %w", err)
+		return nil, fmt.Errorf("prepare routing request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
 	response, err := s.client.Do(request)
 	if err != nil {
-		return "", nil, fmt.Errorf("RIPEstat routing lookup failed: %w", err)
+		return nil, fmt.Errorf("RIPEstat routing lookup failed: %w", err)
 	}
 	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("RIPEstat routing lookup returned HTTP %d", response.StatusCode)
+		return nil, fmt.Errorf("RIPEstat routing lookup returned HTTP %d", response.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, routingBodyLimit+1))
+	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
-		return "", nil, fmt.Errorf("read RIPEstat routing response: %w", err)
+		return nil, fmt.Errorf("read RIPEstat routing response: %w", err)
 	}
-	if len(body) > routingBodyLimit {
-		return "", nil, fmt.Errorf("RIPEstat routing response exceeds %d bytes", routingBodyLimit)
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("RIPEstat routing response exceeds %d bytes", limit)
 	}
 	var envelope struct {
-		Status     string `json:"status"`
-		StatusCode int    `json:"status_code"`
-		Data       struct {
-			Prefix json.RawMessage `json:"prefix"`
-			ASNs   json.RawMessage `json:"asns"`
-		} `json:"data"`
+		Status     string          `json:"status"`
+		StatusCode int             `json:"status_code"`
+		Data       json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
-		return "", nil, fmt.Errorf("invalid RIPEstat routing response: %w", err)
+		return nil, fmt.Errorf("invalid RIPEstat routing response: %w", err)
 	}
 	if envelope.Status != "ok" || envelope.StatusCode != http.StatusOK {
-		return "", nil, fmt.Errorf("RIPEstat did not return a successful routing response")
+		return nil, fmt.Errorf("RIPEstat did not return a successful routing response")
 	}
-	if len(envelope.Data.Prefix) == 0 || len(envelope.Data.ASNs) == 0 || bytes.Equal(envelope.Data.ASNs, []byte("null")) {
+	if len(envelope.Data) == 0 || bytes.Equal(envelope.Data, []byte("null")) {
+		return nil, fmt.Errorf("RIPEstat routing response is missing data")
+	}
+	return envelope.Data, nil
+}
+
+func (s *RoutingService) fetch(ctx context.Context, endpoint string, ip netip.Addr) (string, []uint32, error) {
+	body, err := s.fetchRoutingData(ctx, endpoint, routingBodyLimit)
+	if err != nil {
+		return "", nil, err
+	}
+	var data struct {
+		Prefix json.RawMessage `json:"prefix"`
+		ASNs   json.RawMessage `json:"asns"`
+	}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", nil, fmt.Errorf("invalid RIPEstat network data: %w", err)
+	}
+	if len(data.Prefix) == 0 || len(data.ASNs) == 0 || bytes.Equal(data.ASNs, []byte("null")) {
 		return "", nil, fmt.Errorf("RIPEstat routing response is missing prefix or origin data")
 	}
 	var prefix string
 	var rawASNs []json.RawMessage
-	if err := json.Unmarshal(envelope.Data.Prefix, &prefix); err != nil {
+	if err := json.Unmarshal(data.Prefix, &prefix); err != nil {
 		return "", nil, fmt.Errorf("invalid RIPEstat routing prefix: %w", err)
 	}
-	if err := json.Unmarshal(envelope.Data.ASNs, &rawASNs); err != nil {
+	if err := json.Unmarshal(data.ASNs, &rawASNs); err != nil {
 		return "", nil, fmt.Errorf("invalid RIPEstat routing origins: %w", err)
 	}
 	if prefix == "" && len(rawASNs) == 0 {
@@ -193,40 +214,53 @@ func (s *RoutingService) fetch(ctx context.Context, endpoint string, ip netip.Ad
 	return network.Masked().String(), slices.Compact(asns), nil
 }
 
-func (s *RoutingService) cached(ip netip.Addr) (model.RoutingInfo, bool) {
+func (s *RoutingService) cached(key string) (model.RoutingInfo, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entry, ok := s.cache[ip]
+	entry, ok := s.cache[key]
 	if !ok || !s.now().Before(entry.expires) {
-		delete(s.cache, ip)
+		delete(s.cache, key)
 		return model.RoutingInfo{}, false
 	}
 	return cloneRoutingInfo(entry.result), true
 }
 
-func (s *RoutingService) store(ip netip.Addr, result model.RoutingInfo) {
+func (s *RoutingService) store(key string, result model.RoutingInfo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	var oldest netip.Addr
+	var oldest string
 	var earliest time.Time
+	var oldestASN string
+	var earliestASN time.Time
+	asnEntries := 0
 	for key, entry := range s.cache {
 		if !now.Before(entry.expires) {
 			delete(s.cache, key)
 			continue
 		}
-		if !oldest.IsValid() || entry.expires.Before(earliest) {
+		if oldest == "" || entry.expires.Before(earliest) {
 			oldest, earliest = key, entry.expires
 		}
+		if entry.result.ASN != nil {
+			asnEntries++
+			if oldestASN == "" || entry.expires.Before(earliestASN) {
+				oldestASN, earliestASN = key, entry.expires
+			}
+		}
 	}
-	if len(s.cache) >= routingCacheLimit {
+	if _, exists := s.cache[key]; !exists && result.ASN != nil && asnEntries >= asnCacheLimit {
+		delete(s.cache, oldestASN)
+	}
+	if _, exists := s.cache[key]; !exists && len(s.cache) >= routingCacheLimit {
 		delete(s.cache, oldest)
 	}
-	s.cache[ip] = routingCacheEntry{result: cloneRoutingInfo(result), expires: result.FetchedAt.Add(routingCacheTTL)}
+	s.cache[key] = routingCacheEntry{result: cloneRoutingInfo(result), expires: result.FetchedAt.Add(routingCacheTTL)}
 }
 
 func cloneRoutingInfo(result model.RoutingInfo) model.RoutingInfo {
 	result.OriginASNs = slices.Clone(result.OriginASNs)
+	result.ASN = cloneASNInfo(result.ASN)
 	if result.FetchedAt != nil {
 		fetched := *result.FetchedAt
 		result.FetchedAt = &fetched
@@ -242,6 +276,9 @@ func RoutingCacheTTL(result *model.RoutingInfo, now time.Time, maximum time.Dura
 	}
 	if result.Status == "skipped" {
 		return maximum
+	}
+	if result.ASN != nil && (result.ASN.Prefixes == nil || result.ASN.Prefixes.Status != "answer") {
+		return 0
 	}
 	if (result.Status != "answer" && result.Status != "no_announcement") || result.FetchedAt == nil || result.FetchedAt.After(now) {
 		return 0

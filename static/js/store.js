@@ -1,5 +1,5 @@
 // Console state: cards, scan progress, collected results, live log.
-import { timeStamp, targetColor, resetColors } from './util.js';
+import { timeStamp, targetColor, resetColors, canonicalTargetIdentity } from './util.js';
 
 const activeScans = new Map();       // target -> current scan generation (terminal generations retained for export)
 const requestTargets = new Map();    // request id -> target for current generations
@@ -93,7 +93,7 @@ export function getCurrentScans() {
 
 // Shared terminal-state wording for the workspace summary and notifications.
 export function summarizeScanCompletion(scans) {
-  const counts = { blocked: 0, profile: 0, failed: 0, interrupted: 0, review: 0, skipped: 0, clean: 0 };
+  const counts = { blocked: 0, profile: 0, calculated: 0, failed: 0, interrupted: 0, review: 0, skipped: 0, clean: 0 };
   let moduleFailures = 0;
   let findings = 0;
   let reviewWithSkips = 0;
@@ -101,6 +101,7 @@ export function summarizeScanCompletion(scans) {
     if (!TERMINAL_SCAN_STATES.has(scan.status)) continue;
     if (scan.outcome === 'policy_blocked') counts.blocked += 1;
     else if (scan.outcome === 'profile_only') counts.profile += 1;
+    else if (scan.outcome === 'local_calculation') counts.calculated += 1;
     else if (scan.status === 'failed') counts.failed += 1;
     else if (scan.status === 'interrupted') counts.interrupted += 1;
     else {
@@ -122,6 +123,7 @@ export function summarizeScanCompletion(scans) {
   const parts = [];
   if (counts.blocked) parts.push(`${targets(counts.blocked)} blocked by server policy`);
   if (counts.profile) parts.push(`${counts.profile} profile-only target${counts.profile === 1 ? '' : 's'} (active diagnostics skipped)`);
+  if (counts.calculated) parts.push(`${counts.calculated} subnet calculation${counts.calculated === 1 ? '' : 's'} completed locally`);
   if (counts.failed) parts.push(`${targets(counts.failed)} failed`);
   if (counts.interrupted) parts.push(`${targets(counts.interrupted)} interrupted`);
   if (counts.review) {
@@ -135,6 +137,7 @@ export function summarizeScanCompletion(scans) {
   if (reviewWithSkips) parts.push(`${targets(reviewWithSkips)} requiring review also skipped modules`);
   let phase = 'COMPLETE';
   if (counts.blocked === total) phase = 'BLOCKED BY POLICY';
+  else if (counts.calculated === total) phase = 'CALCULATED';
   else if (counts.profile === total) phase = 'PROFILE ONLY';
   else if (counts.blocked || counts.failed || counts.interrupted || counts.review) phase = 'COMPLETE · REVIEW';
   else if (counts.profile || counts.skipped) phase = 'COMPLETE · SKIPPED';
@@ -372,6 +375,13 @@ export function readModuleConfig() {
 
 export function enabledServiceCount(config) {
   return Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
+}
+
+export function planTargetScan(target, selected) {
+  const identity = canonicalTargetIdentity(target);
+  if (identity.startsWith('prefix|')) return { config: {}, total: 1 };
+  if (identity.startsWith('asn|') && selected.routing) return { config: { routing: true }, total: 1 };
+  return { config: { ...selected }, total: enabledServiceCount(selected) };
 }
 
 export function applyPreset(name) {

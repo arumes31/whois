@@ -49,6 +49,7 @@ type TargetInfo struct {
 	Scheme       string       `json:"scheme,omitempty"`
 	Kind         TargetKind   `json:"kind"`
 	Prefix       string       `json:"prefix,omitempty"`
+	Subnet       *SubnetInfo  `json:"subnet,omitempty"`
 	ASN          uint32       `json:"asn,omitempty"`
 	Valid        bool         `json:"valid"`
 	Networkable  bool         `json:"networkable"`

@@ -7,7 +7,7 @@ import {
   getScan, getScanByRequestID, beginScan, setScanStatusByRequestID,
   identityIsInFlight, getResults, getAllResultsData, getCard,
   registerChart, destroyCharts, destroySectionChart, removeCard, clearWorkspace, cardCount,
-  appendLog, readModuleConfig, enabledServiceCount, hasExportableResults,
+  appendLog, readModuleConfig, planTargetScan, hasExportableResults,
   notifyScanState,
 } from './store.js';
 import { renderService, skeletonHtml, skippedDetails, serviceLabel } from './render.js';
@@ -170,8 +170,7 @@ export function createCard(target) {
     focusTarget?.focus();
   });
   article.querySelector('[data-card-action="rescan"]').addEventListener('click', () => {
-    const runConfig = readModuleConfig();
-    const total = enabledServiceCount(runConfig);
+    const { config: runConfig, total } = planTargetScan(target, readModuleConfig());
     if (total === 0) {
       announce('Select at least one diagnostic module before rescanning.');
       document.querySelector('.module-toggle input:not(:disabled)')?.focus();
@@ -444,7 +443,9 @@ function handleAllDone(scan) {
   progress.setAttribute('aria-valuenow', '100');
   const badge = card.querySelector('.status-badge');
   const invalidTarget = scan.targetProfile && !scan.targetProfile.valid;
-  const profileOnly = scan.targetProfile?.valid && !scan.targetProfile.networkable;
+  const localCalculation = scan.targetProfile?.valid && scan.targetProfile.kind === 'cidr' && scan.targetProfile.hasSubnet;
+  const asnLookup = scan.targetProfile?.kind === 'asn' && scan.targetProfile.routingAllowed === true && scan.config.routing === true;
+  const profileOnly = scan.targetProfile?.valid && !scan.targetProfile.networkable && !localCalculation && !asnLookup;
   const policyBlocked = scan.targetProfile?.queryAllowed === false && scan.targetProfile.queryRestriction;
   const skipped = Object.values(getResults(target)).filter((result) => result?.status === 'skipped').length;
   const problems = scan.failures.size + scan.findings.size;
@@ -454,6 +455,11 @@ function handleAllDone(scan) {
     badge.textContent = 'INVALID TARGET';
     badge.className = 'badge badge--err status-badge';
     progress.setAttribute('aria-valuetext', 'Target invalid; diagnostics were not run');
+  } else if (localCalculation) {
+    setScanStatusByRequestID(scan.requestID, 'completed', 'local_calculation');
+    badge.textContent = 'CALCULATED';
+    badge.className = 'badge badge--ok status-badge';
+    progress.setAttribute('aria-valuetext', 'Subnet calculation completed locally');
   } else if (profileOnly) {
     setScanStatusByRequestID(scan.requestID, 'completed', 'profile_only');
     badge.textContent = 'PROFILE ONLY';
@@ -467,7 +473,7 @@ function handleAllDone(scan) {
   } else {
     const outcome = problems > 0 ? 'findings' : (skipped > 0 ? 'completed_with_skips' : 'clean');
     setScanStatusByRequestID(scan.requestID, 'completed', outcome);
-    badge.textContent = problems > 0 ? 'COMPLETE · FINDINGS' : (skipped > 0 ? 'COMPLETE · SKIPPED' : 'COMPLETE');
+    badge.textContent = problems > 0 ? 'COMPLETE · FINDINGS' : (skipped > 0 ? 'COMPLETE · SKIPPED' : (asnLookup ? 'ASN LOOKUP COMPLETE' : 'COMPLETE'));
     badge.className = `badge status-badge ${problems > 0 ? 'badge--warn' : (skipped > 0 ? 'badge--skip' : 'badge--ok')}`;
     progress.setAttribute('aria-valuetext', 'Diagnostics complete');
   }
@@ -480,13 +486,16 @@ function handleAllDone(scan) {
   updateCardTiming(card, scan);
   card.querySelectorAll('.service-section').forEach((section) => {
     if (section.querySelector('.skel, .slow-module')) {
-      const reason = invalidTarget ? 'invalid-target' : (profileOnly ? 'profile-only' : (policyBlocked ? 'policy-blocked' : ''));
+      const reason = invalidTarget ? 'invalid-target' : (localCalculation ? 'local-calculation' : (profileOnly ? 'profile-only' : (policyBlocked ? 'policy-blocked' : '')));
       section.innerHTML = skippedDetails(section.dataset.service, reason);
     }
   });
   if (invalidTarget) {
     appendLog(target, 'The target is invalid; active diagnostics were not run.');
     announce(`Diagnostics failed for ${target}: invalid target.`);
+  } else if (localCalculation) {
+    appendLog(target, 'Subnet calculation completed locally. Network diagnostics did not run.');
+    announce(`Subnet calculation completed for ${target}.`);
   } else if (profileOnly) {
     appendLog(target, 'Target profile complete; active diagnostics were skipped.');
     announce(`Target profile completed for ${target}; active diagnostics were skipped.`);
@@ -517,6 +526,9 @@ function handleResult(msg, scan) {
     scan.targetProfile = {
       valid: msg.data.valid === true,
       networkable: msg.data.networkable === true,
+      kind: msg.data.kind,
+      hasSubnet: isPlainObject(msg.data.subnet),
+      routingAllowed: msg.data.routing_allowed === true,
       queryAllowed: msg.data.query_allowed,
       queryRestriction: typeof msg.data.query_restriction === 'string' ? msg.data.query_restriction.trim() : '',
     };
@@ -524,6 +536,7 @@ function handleResult(msg, scan) {
   const skippedResult = isPlainObject(msg.data) && msg.data.status === 'skipped';
   const dnsDetails = msg.service === 'dns' && isPlainObject(msg.dns_details) ? msg.dns_details : undefined;
   const hardFailure = !skippedResult && (resultHasError(msg.data)
+    || (msg.service === 'routing' && msg.data?.asn?.prefixes?.status === 'error')
     || (dnsDetails && Object.values(dnsDetails).some(detail => detail?.status === 'error'))
     || (msg.service === 'whois' && typeof msg.data === 'string' && /^(?:whois\s+)?error:/i.test(msg.data.trim())));
   scan.skippedServices ??= new Set();

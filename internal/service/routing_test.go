@@ -87,7 +87,7 @@ func TestRoutingLookupSkipsNonPublicAndNonLiteralTargets(t *testing.T) {
 		t.Fatal("ineligible target reached the provider")
 		return nil, nil
 	})
-	for _, target := range []string{"example.com", "AS13335", "1.1.1.0/24", "127.0.0.1", "::1", "10.0.0.1", "100.64.0.1", "192.0.2.1", "2001:db8::1", "ff02::1", "fe80::1%eth0", "http://1.1.1.1", "1.1.1.1:443"} {
+	for _, target := range []string{"example.com", "1.1.1.0/24", "127.0.0.1", "::1", "10.0.0.1", "100.64.0.1", "192.0.2.1", "2001:db8::1", "ff02::1", "fe80::1%eth0", "http://1.1.1.1", "1.1.1.1:443"} {
 		t.Run(target, func(t *testing.T) {
 			result := s.Lookup(context.Background(), target)
 			if result.Status != "skipped" || result.Reason == "" || result.FetchedAt != nil || result.SourceURL != "" {

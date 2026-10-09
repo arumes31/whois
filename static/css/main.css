@@ -356,6 +356,8 @@ kbd {
 .target-input[aria-invalid='true'] { border-color: var(--red); border-left-color: var(--red); }
 
 .field-help { font-size: 11px; color: var(--phos-30); margin-top: 6px; letter-spacing: 0.02em; }
+.tool-consent { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 12px; line-height: 1.6; color: var(--phos-70); cursor: pointer; }
+.tool-consent input { flex: 0 0 auto; width: 18px; height: 18px; accent-color: var(--phos); }
 .field-error { font-size: 11px; color: var(--red); margin-top: 6px; min-height: 1em; }
 
 .command-form {

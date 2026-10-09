@@ -1,7 +1,8 @@
 // Scan history viewer + quick tools, rendered into the shared modal.
 import {
-  closeDialog, escapeHTML, fetchWithCSRF, openDialog, readResponse, announce, wireCopyable,
+  closeDialog, escapeHTML, fetchWithCSRF, openDialog, readResponse, announce, wireCopyable, canonicalTargetIdentity,
 } from './util.js';
+import { saveSettings, updateModuleCount } from './store.js';
 
 let backdrop;
 let titleEl;
@@ -118,8 +119,67 @@ async function fetchHistory(target) {
 
 /* ---------- quick tools ---------- */
 
+export function prepareLookupToolRequest(name, value, { routingEnabled = false, routingConsent = false } = {}) {
+  const raw = String(value || '').trim();
+  if (name === 'subnet') {
+    return canonicalTargetIdentity(raw).startsWith('prefix|')
+      ? { target: raw } : { error: 'Enter an IPv4 or IPv6 address with a prefix length, such as 192.168.1.129/24 or 2001:db8::1/64.' };
+  }
+  if (name === 'asn') {
+    if (!routingEnabled) return { error: 'ASN lookup is disabled by the server. Enable BGP ROUTING to use this provider lookup.' };
+    if (!routingConsent) return { error: 'Select the RIPEstat checkbox to allow this external lookup.' };
+    const identity = canonicalTargetIdentity(/^\d+$/.test(raw) ? `AS${raw}` : raw);
+    return identity.startsWith('asn|') ? { target: identity.slice(4) } : { error: 'Enter an ASN from 1 to 4294967295, such as AS13335 or 13335.' };
+  }
+  return { error: 'Unknown lookup tool.' };
+}
+
+function openLookupTool(name) {
+  beginModalContent();
+  const isASN = name === 'asn';
+  const routingBox = document.getElementById('cfg-routing');
+  const routingEnabled = Boolean(routingBox && !routingBox.disabled);
+  setBody(`
+    <form id="toolLookupForm">
+      <div class="form-field">
+        <label for="toolLookupTarget">${isASN ? 'AUTONOMOUS SYSTEM NUMBER' : 'IP ADDRESS / PREFIX LENGTH'}</label>
+        <input id="toolLookupTarget" class="text-input" placeholder="${isASN ? 'AS13335 or 13335' : '192.168.1.129/24 or 2001:db8::1/64'}" aria-describedby="toolLookupHelp toolLookupError" autocomplete="off" autocapitalize="none" spellcheck="false" required>
+        <p id="toolLookupHelp" class="field-help">${isASN
+          ? (routingEnabled ? 'Look up holder, origin visibility and prefixes observed during the requested period. Results appear in the workspace.' : 'BGP routing is disabled by the server. Ask the operator to enable it before using this external lookup.')
+          : 'Calculate the network, address range and exact counts locally. No diagnostic module or external provider is needed. Results appear in the workspace.'}</p>
+      </div>
+      ${isASN ? `<label class="tool-consent" for="toolRoutingConsent"><input type="checkbox" id="toolRoutingConsent" aria-describedby="toolLookupHelp"${routingEnabled && routingBox.checked ? ' checked' : ''}${routingEnabled ? '' : ' disabled'}> Send this ASN to RIPEstat and enable BGP ROUTING for this browser.</label>` : ''}
+      <p id="toolLookupError" class="field-error" role="alert"></p>
+      <button type="submit" class="btn btn--solid"${isASN && !routingEnabled ? ' disabled' : ''}>${isASN ? 'LOOK UP ASN' : 'CALCULATE SUBNET'}</button>
+    </form>`);
+  openModal(isASN ? 'ASN LOOKUP' : 'SUBNET CALCULATOR', '#toolLookupTarget');
+  document.getElementById('toolLookupForm').addEventListener('submit', event => {
+    event.preventDefault();
+    const input = document.getElementById('toolLookupTarget');
+    const request = prepareLookupToolRequest(name, input.value, {
+      routingEnabled: Boolean(routingBox && !routingBox.disabled),
+      routingConsent: document.getElementById('toolRoutingConsent')?.checked === true,
+    });
+    if (request.error) {
+      document.getElementById('toolLookupError').textContent = request.error;
+      input.focus();
+      return;
+    }
+    if (isASN) {
+      routingBox.checked = true;
+      saveSettings();
+      updateModuleCount();
+      document.dispatchEvent(new CustomEvent('console:modules-changed'));
+    }
+    closeModal();
+    window.dispatchEvent(new CustomEvent('console:query-target', { detail: { target: request.target } }));
+  });
+}
+
 export function openTool(name) {
-  if (name === 'dns') {
+  if (name === 'subnet' || name === 'asn') {
+    openLookupTool(name);
+  } else if (name === 'dns') {
     const generation = beginModalContent();
     setBody(`
       <form id="toolDnsForm">

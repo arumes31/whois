@@ -286,6 +286,9 @@ export function canonicalTargetIdentity(value) {
 
   const prefix = canonicalIPPrefix(raw);
   if (prefix) return `prefix|${prefix}`;
+  const slash = raw.indexOf('/');
+  if (slash > 0 && !raw.includes('://')
+    && canonicalIPAddress(raw.slice(0, slash), { allowTrailingRoot: false })) return `invalid|${raw}`;
   const address = canonicalIPAddress(raw);
   if (address) return `|${address.value}`;
 

@@ -6,7 +6,7 @@ import {
 import {
   appendLog, beginScan, getCurrentScans, identityIsInFlight,
   summarizeScanCompletion,
-  readModuleConfig, enabledServiceCount, restoreActivity,
+  readModuleConfig, planTargetScan, restoreActivity,
   applyPreset, saveSettings, loadSettings, updateModuleCount, moduleIds,
 } from './store.js';
 import {
@@ -112,9 +112,8 @@ function startQuery() {
     return;
   }
   const config = readModuleConfig();
-  const total = enabledServiceCount(config);
-  if (total === 0) {
-    error.textContent = 'Select at least one diagnostic module.';
+  if (targets.some(target => planTargetScan(target, config).total === 0)) {
+    error.textContent = 'Select a diagnostic module for non-CIDR targets. CIDRs can be calculated without a module; ASN lookups use BGP ROUTING.';
     announce(error.textContent);
     return;
   }
@@ -134,17 +133,18 @@ function startQuery() {
     ? `${duplicateCount} target${duplicateCount === 1 ? ' was' : 's were'} skipped because a run is already in progress.`
     : '';
   input.removeAttribute('aria-invalid');
-  announce(`Starting diagnostics for ${runnable.length} ${runnable.length === 1 ? 'target' : 'targets'}.`);
+  announce(`Starting ${runnable.length} ${runnable.length === 1 ? 'target' : 'targets'}.`);
 
   runnable.forEach(({ target, identity }) => {
     const requestID = createRequestID();
+    const plan = planTargetScan(target, config);
     beginScan(target, {
-      requestID, identity, config, total,
+      requestID, identity, ...plan,
     });
     createCard(target);
     updateProgressBar(target);
-    appendLog(target, 'Initializing diagnostic vectors...');
-    ws.send({ request_id: requestID, targets: [target], config });
+    appendLog(target, identity.startsWith('prefix|') ? 'Calculating subnet locally...' : 'Initializing diagnostics...');
+    ws.send({ request_id: requestID, targets: [target], config: plan.config });
   });
   persistInput(input.value);
   syncScanLifecycle();

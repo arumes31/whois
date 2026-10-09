@@ -476,6 +476,7 @@ func TestQueryItemDoesNotCacheCanceledResult(t *testing.T) {
 }
 
 func TestQueryItemPreservesDNSError(t *testing.T) {
+	useLocalTargetEnrichment(t)
 	oldLookup := service.DNSLookupFunc
 	service.DNSLookupFunc = func(context.Context, string, bool) (map[string]interface{}, error) {
 		return nil, errors.New("resolver unavailable")
@@ -484,12 +485,12 @@ func TestQueryItemPreservesDNSError(t *testing.T) {
 
 	store := setupMiniredisStorage(t)
 	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
-	result := h.queryItem(context.Background(), "127.0.0.1", true, false, false, false, false, false, false)
+	result := h.queryItem(context.Background(), "1.1.1.1", true, false, false, false, false, false, false)
 
 	if got := result.DNS["error"]; got != "resolver unavailable" {
 		t.Fatalf("DNS error = %v, want resolver unavailable", got)
 	}
-	history, err := store.GetDNSHistory(context.Background(), "127.0.0.1")
+	history, err := store.GetDNSHistory(context.Background(), "1.1.1.1")
 	if err != nil {
 		t.Fatal(err)
 	}
