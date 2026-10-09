@@ -49,7 +49,7 @@ graph TD
 
 | Layer | Technologies |
 |---|---|
-| **Backend** | Go 1.26.4+, Echo v4, Zap Logging |
+| **Backend** | Go 1.27.2+, Echo v4, Zap Logging |
 | **Frontend** | Vanilla ES modules, custom phosphor design system, Chart.js (vendored) |
 | **Storage** | Redis with bounded DNS history, dashboard counters, and revocable administrator sessions |
 | **Networking** | DoH (DNS-over-HTTPS), RDAP, ICMP, TCP |
@@ -203,7 +203,7 @@ The manual **Delete Old Packages** workflow defaults to a dry run. When explicit
 
 The Node runtime, container base images, QEMU helper image, Buildx binary, and BuildKit image are pinned exactly in release automation. Runtime `apk add` dependencies intentionally follow compatible patch revisions from the Alpine 3.24 repositories: exact APK pins are not retained indefinitely by Alpine mirrors and would make otherwise reproducible rebuilds fail. CI bypasses the cached runtime stage so those packages are refreshed for every build. Pull requests build and scan both AMD64 and ARM64 images on native runners and block on fixable vulnerabilities at every severity, including advisories without an assigned severity. Publication also scans every immutable architecture digest before it can receive a deployment tag.
 
-Go 1.27.1 is pinned consistently in `go.mod` and the Docker builder. CI uses Node 26.8.2; the asset container uses the latest available Node Alpine image, 26.8.1, because the 26.8.2 Alpine image is not yet published. The vendored Chart.js bundle is version 4.5.1 from the npm release (`dist/chart.umd.min.js`, MIT license).
+Go 1.27.2 is pinned consistently in `go.mod` and the Docker builder. CI and the asset container use Node 26.11.1. Runtime containers use Alpine 3.24.2 and Redis 8.10.2. The vendored Chart.js bundle is version 4.5.1 from the npm release (`dist/chart.umd.min.js`, MIT license). CodeQL action steps are updated together so their shared configuration stays compatible.
 
 ```bash
 # Run the same core checks used by CI
@@ -214,7 +214,7 @@ npm ci --ignore-scripts
 npm test
 
 # Run linter
-go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2 run
+go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0 run
 
 # Validate and build the container
 docker compose config
@@ -222,6 +222,20 @@ docker build --check .
 docker build -t whois:local .
 docker run --rm --entrypoint /bin/sh whois:local -c 'cd /app && sha256sum -c assets.sha256'
 ```
+
+### DNS load validation
+
+The stress suite includes 10,000 normalized IP/domain lookups against local UDP, TCP, and DoH fixtures with 32 workers. It verifies answer types, IPv4/IPv6 PTR, CNAME chains, NXDOMAIN, resolver failover, and truncated UDP replies retried over TCP. This workload is deterministic and runs in CI without public DNS traffic.
+
+```bash
+go test -race -tags=stress -count=1 -run '^TestStressDNS' -v ./internal/service
+
+# Optional public-resolver validation: a fixed corpus repeated 10,000 times,
+# four workers, at most 40 logical queries/second, with latency/error reporting.
+WHOIS_LIVE_DNS_QUERIES=10000 go test -tags=integration -count=1 -timeout=16m -run '^TestLiveDNSQueries$' -v ./internal/service
+```
+
+The public test sends A, AAAA, MX, TXT, and IPv4/IPv6 PTR queries through the application's resolver failover to Cloudflare, Google, and Quad9. It is opt-in because results depend on network access and external DNS availability. It reports public-query failures separately from the deterministic stress suite; 10,000 repeated queries are not 10,000 distinct hosts.
 
 ## ⚖️ Compliance & Security
 This tool is intended for authorized network diagnostics and research. Users are responsible for complying with local regulations. The platform includes a mandatory **Security & Legal Disclosure** system to ensure users acknowledge terms of use before proceeding.
