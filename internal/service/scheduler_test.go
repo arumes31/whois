@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"whois/internal/model"
 	"whois/internal/storage"
 	"whois/internal/utils"
 
@@ -83,14 +84,14 @@ type monitorDNSStub struct {
 	calls  int
 }
 
-func (s *monitorDNSStub) Lookup(context.Context, string, bool) (map[string]interface{}, error) {
+func (s *monitorDNSStub) LookupDetailed(_ context.Context, _ string, isIP bool) (map[string]interface{}, model.DNSDetails, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
 	if s.err != nil {
-		return nil, s.err
+		return nil, nil, s.err
 	}
-	return s.result, nil
+	return s.result, completeDNSDetails(isIP), nil
 }
 
 func (s *monitorDNSStub) Calls() int {

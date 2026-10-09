@@ -468,7 +468,7 @@ func TestQueryItemDoesNotCacheCanceledResult(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	h.queryItem(ctx, "192.0.2.1", false, false, false, false, false, false)
+	h.queryItem(ctx, "192.0.2.1", false, false, false, false, false, false, false)
 
 	if client.setCalls != 0 {
 		t.Fatalf("cache Set calls = %d, want 0 for canceled query", client.setCalls)
@@ -484,7 +484,7 @@ func TestQueryItemPreservesDNSError(t *testing.T) {
 
 	store := setupMiniredisStorage(t)
 	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
-	result := h.queryItem(context.Background(), "127.0.0.1", true, false, false, false, false, false)
+	result := h.queryItem(context.Background(), "127.0.0.1", true, false, false, false, false, false, false)
 
 	if got := result.DNS["error"]; got != "resolver unavailable" {
 		t.Fatalf("DNS error = %v, want resolver unavailable", got)
@@ -547,11 +547,11 @@ func TestQueryItemRetriesDNSAfterTransientFailure(t *testing.T) {
 
 	store := setupMiniredisStorage(t)
 	h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
-	first := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false)
+	first := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false, false)
 	if first.DNS["error"] == nil {
 		t.Fatalf("first DNS result = %#v, want transient error", first.DNS)
 	}
-	second := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false)
+	second := h.queryItem(context.Background(), "example.com", true, false, false, false, false, false, false)
 	if calls != 2 {
 		t.Fatalf("DNS lookup calls = %d, want 2 after transient failure", calls)
 	}
@@ -1047,7 +1047,7 @@ func TestHandlers(t *testing.T) {
 		res := model.QueryResult{Whois: "cached"}
 		cacheKey := "query:cache.com:false:true:false:false:false:false"
 		_ = store.SetCache(ctx, cacheKey, res, time.Hour)
-		h.queryItem(ctx, "cache.com", false, true, false, false, false, false)
+		h.queryItem(ctx, "cache.com", false, true, false, false, false, false, false)
 	})
 
 	t.Run("Index POST Full Features", func(t *testing.T) {
@@ -1119,7 +1119,7 @@ func TestHandlers(t *testing.T) {
 		oldURL := service.CRTURL
 		service.CRTURL = "http://invalid-url"
 		defer func() { service.CRTURL = oldURL }()
-		h.queryItem(context.Background(), "fail-ct.com", false, false, true, false, false, false)
+		h.queryItem(context.Background(), "fail-ct.com", false, false, true, false, false, false, false)
 	})
 
 	t.Run("Scan Empty Target", func(t *testing.T) {
@@ -1282,7 +1282,7 @@ func TestHandlers(t *testing.T) {
 		ctx := context.Background()
 		ctData := map[string]interface{}{"sub.test.com": map[string]interface{}{}}
 		_ = store.SetCache(ctx, "ct:test.com", ctData, time.Hour)
-		res := h.queryItem(ctx, "test.com", false, false, true, false, false, false)
+		res := h.queryItem(ctx, "test.com", false, false, true, false, false, false, false)
 		if res.CT == nil {
 			t.Error("Expected CT results from cache")
 		}
@@ -1313,8 +1313,8 @@ func TestHandlers(t *testing.T) {
 
 	t.Run("queryItem All Enabled", func(t *testing.T) {
 		ctx := context.Background()
-		h.queryItem(ctx, "google.com", true, true, true, true, true, true)
-		h.queryItem(ctx, "8.8.8.8", true, true, true, true, true, true)
+		h.queryItem(ctx, "google.com", true, true, true, true, true, true, false)
+		h.queryItem(ctx, "8.8.8.8", true, true, true, true, true, true, false)
 	})
 
 	t.Run("BulkUpload Empty/Invalid", func(t *testing.T) {

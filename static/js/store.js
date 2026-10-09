@@ -350,7 +350,7 @@ export function appendLog(target, message) {
 /* ---------- module settings (persisted on device) ---------- */
 
 const SETTINGS_KEY = 'whois_console_modules';
-const MODULE_IDS = ['whois', 'dns', 'subdomains', 'ssl', 'http', 'geo', 'ct', 'ping', 'trace', 'route', 'portscan'];
+const MODULE_IDS = ['whois', 'dns', 'subdomains', 'ssl', 'http', 'geo', 'ct', 'ping', 'trace', 'route', 'routing', 'portscan'];
 
 const PRESETS = {
   standard: ['whois', 'dns', 'ssl', 'http', 'geo'],

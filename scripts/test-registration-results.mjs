@@ -74,6 +74,18 @@ const dnsEvidence = {
 const detailedDns = renderService('dns', {A: ['1.1.1.1']}, 'example.com', {}, dnsEvidence);
 for (const text of ['TTL 0 s', 'NODATA', 'NXDOMAIN', 'resolver timed out', '1.1.1.1:53', '_dmarc.example.com.']) assert.ok(detailedDns.includes(text), text);
 assert.match(detailedDns, /data-status="error"/);
+for (const [name, detail, missingAlias] of [
+  ['alias target absent', {query_type: 'A', aliases: [{name: 'alias.example.com.', value: 'missing.example.com.', ttl: 15}]}, true],
+  ['original name absent', {query_type: 'A'}, false],
+  ['CNAME answer with absent target', {query_type: 'CNAME', records: [{name: 'alias.example.com.', value: 'missing.example.com.', ttl: 15}]}, true],
+  ['CNAME name itself absent', {query_type: 'CNAME', records: []}, false],
+  ['other records are not alias evidence', {query_type: 'A', records: [{name: 'example.com.', value: '1.1.1.1', ttl: 15}]}, false],
+]) {
+  const html = renderService('dns', {}, '', {}, {A: {status: 'nxdomain', query_name: 'example.com.', rcode: 'NXDOMAIN', ...detail}});
+  assert.match(html, missingAlias ? /NXDOMAIN — alias target does not exist/ : /NXDOMAIN — queried name does not exist/, name);
+  assert.doesNotMatch(html, missingAlias ? /NXDOMAIN — (?:queried )?name does not exist/ : /NXDOMAIN — alias target does not exist/, name);
+  assert.match(html, /data-status="success"/, 'a negative DNS answer is not an upstream failure');
+}
 assert.match(renderService('dns', {A: ['1.1.1.1'], error: 'context deadline exceeded'}, '', {}, {A: dnsEvidence.A}), /context deadline exceeded/);
 assert.match(render({kind: 'domain', dnssec: {zone_signed: true}}), /ZONE SIGNED/);
 assert.match(renderService('http', {score: 100, security: {'X-Frame-Options': 'Not required (CSP frame-ancestors)'}, security_checks: [{name: 'X-Frame-Options', status: 'not-applicable'}]}), />N\/A</);

@@ -12,7 +12,7 @@ import {
 } from './store.js';
 import { renderService, skeletonHtml, skippedDetails, serviceLabel } from './render.js';
 
-const SERVICE_ORDER = ['target', 'geo', 'whois', 'dns', 'subdomains', 'portscan', 'ping', 'route', 'trace', 'ssl', 'http', 'ct'];
+const SERVICE_ORDER = ['target', 'geo', 'whois', 'routing', 'dns', 'subdomains', 'portscan', 'ping', 'route', 'trace', 'ssl', 'http', 'ct'];
 
 function targetType(target) {
   const value = String(target).trim();

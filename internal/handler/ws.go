@@ -36,6 +36,7 @@ type wsQueryConfig struct {
 	Ping       bool   `json:"ping"`
 	Trace      bool   `json:"trace"`
 	Route      bool   `json:"route"`
+	Routing    bool   `json:"routing"`
 	Subdomains bool   `json:"subdomains"`
 	Ports      string `json:"ports"`
 }
@@ -359,6 +360,12 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 		if reason == "" {
 			reason = "this target type is profile-only in provider-free mode"
 		}
+		if cfg.Routing && h.AppConfig.EnableRouting {
+			send("routing", h.Routing.Lookup(ctx, cardTarget))
+			done := WSMessage{Type: "done", RequestID: requestID, Target: cardTarget, Service: "routing"}
+			payload, _ := json.Marshal(done)
+			_ = writer.write(websocket.TextMessage, payload)
+		}
 		sendLog("Target cannot be queried: " + reason)
 		msg := WSMessage{Type: "all_done", RequestID: requestID, Target: cardTarget}
 		b, _ := json.Marshal(msg)
@@ -617,7 +624,11 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 				}
 				dmu.Unlock()
 				send("dns", historyData, dnsDetails)
-				h.recordDNSHistory(ctx, target, historyData, sendLog)
+				if service.DNSProfileComplete(dnsDetails, isIP) {
+					h.recordDNSHistory(ctx, target, historyData, sendLog)
+				} else {
+					sendLog("DNS history was not saved because some queries failed")
+				}
 			}
 			sendLog("DNS resolution finished for " + target)
 			sendDone("dns")
@@ -712,6 +723,17 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			}
 			sendDone("geo")
 		}()
+	}
+
+	if cfg.Routing && h.AppConfig.EnableRouting {
+		wg.Go(func() {
+			defer sendDone("routing")
+			if !acquireService() {
+				return
+			}
+			defer releaseService()
+			send("routing", h.Routing.Lookup(ctx, cardTarget))
+		})
 	}
 
 	if cfg.Ports != "" {

@@ -3,14 +3,15 @@ package model
 type DNSResult map[string]interface{}
 
 type QueryResult struct {
-	Target     interface{} `json:"target,omitempty"`
-	Whois      interface{} `json:"whois"`
-	DNS        DNSResult   `json:"dns"`
-	DNSDetails DNSDetails  `json:"dns_details,omitempty"`
-	CT         interface{} `json:"ct"`
-	SSL        interface{} `json:"ssl,omitempty"`
-	HTTP       interface{} `json:"http,omitempty"`
-	Geo        interface{} `json:"geo,omitempty"`
+	Target     interface{}  `json:"target,omitempty"`
+	Whois      interface{}  `json:"whois"`
+	DNS        DNSResult    `json:"dns"`
+	DNSDetails DNSDetails   `json:"dns_details,omitempty"`
+	CT         interface{}  `json:"ct"`
+	SSL        interface{}  `json:"ssl,omitempty"`
+	HTTP       interface{}  `json:"http,omitempty"`
+	Geo        interface{}  `json:"geo,omitempty"`
+	Routing    *RoutingInfo `json:"routing,omitempty"`
 }
 
 type TargetKind string
