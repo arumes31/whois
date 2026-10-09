@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func TestTemplateRegistry_Render(t *testing.T) {
@@ -17,7 +17,7 @@ func TestTemplateRegistry_Render(t *testing.T) {
 	reg := &TemplateRegistry{Templates: tmpl}
 
 	buf := new(bytes.Buffer)
-	err := reg.Render(buf, "test", "hello", nil)
+	err := reg.Render(nil, buf, "test", "hello")
 	if err != nil {
 		t.Fatalf("Render failed: %v", err)
 	}

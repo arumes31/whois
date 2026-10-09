@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +15,8 @@ import (
 	"whois/internal/config"
 	"whois/internal/utils"
 
-	"github.com/labstack/echo/v4"
+	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v5"
 )
 
 func TestNewServer(t *testing.T) {
@@ -33,7 +37,8 @@ func TestNewServer(t *testing.T) {
 	cfg.TrustedIPs = "127.0.0.1"
 	cfg.TrustProxy = false
 
-	e, closeServer := NewServer(cfg)
+	server, closeServer := NewServer(cfg)
+	e := server.Handler.(*echo.Echo)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -44,11 +49,20 @@ func TestNewServer(t *testing.T) {
 	if e == nil {
 		t.Fatal("NewServer returned nil")
 	}
-	if e.Server.ReadTimeout != 15*time.Second {
-		t.Fatalf("ReadTimeout = %s, want 15s", e.Server.ReadTimeout)
+	if server.ReadTimeout != 15*time.Second {
+		t.Fatalf("ReadTimeout = %s, want 15s", server.ReadTimeout)
 	}
-	if e.Server.MaxHeaderBytes != 64<<10 {
-		t.Fatalf("MaxHeaderBytes = %d, want %d", e.Server.MaxHeaderBytes, 64<<10)
+	if server.ReadHeaderTimeout != 5*time.Second {
+		t.Fatalf("ReadHeaderTimeout = %s, want 5s", server.ReadHeaderTimeout)
+	}
+	if server.IdleTimeout != 60*time.Second {
+		t.Fatalf("IdleTimeout = %s, want 60s", server.IdleTimeout)
+	}
+	if server.MaxHeaderBytes != 64<<10 {
+		t.Fatalf("MaxHeaderBytes = %d, want %d", server.MaxHeaderBytes, 64<<10)
+	}
+	if server.Addr != ":"+cfg.Port {
+		t.Fatalf("Addr = %q, want configured port %q", server.Addr, cfg.Port)
 	}
 
 	// Exercise the routed middleware without turning a unit test into a real
@@ -116,6 +130,56 @@ func TestNewServer(t *testing.T) {
 					t.Fatalf("GET %s rendered with missing shared template data", tt.path)
 				}
 			})
+		}
+	})
+
+	t.Run("HTTPErrorHandlerPreservesWrappedStatuses", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			err  error
+			code int
+		}{
+			{name: "wrapped not found", err: echo.ErrNotFound, code: http.StatusNotFound},
+			{name: "wrapped method not allowed", err: echo.ErrMethodNotAllowed, code: http.StatusMethodNotAllowed},
+			{name: "wrapped service failure", err: echo.NewHTTPError(http.StatusServiceUnavailable, "internal detail").Wrap(errors.New("private storage error")), code: http.StatusServiceUnavailable},
+			{name: "untyped failure", err: errors.New("internal detail"), code: http.StatusInternalServerError},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				req := httptest.NewRequest(http.MethodGet, "/failed-request", nil)
+				rec := httptest.NewRecorder()
+				e.HTTPErrorHandler(e.NewContext(req, rec), fmt.Errorf("internal detail: %w", tc.err))
+				if rec.Code != tc.code {
+					t.Fatalf("status = %d, want %d", rec.Code, tc.code)
+				}
+				if !strings.Contains(rec.Body.String(), http.StatusText(tc.code)) {
+					t.Fatalf("error page missing public status %q", http.StatusText(tc.code))
+				}
+				if strings.Contains(rec.Body.String(), "internal detail") || strings.Contains(rec.Body.String(), "private storage error") {
+					t.Fatal("error page exposed private error details")
+				}
+			})
+		}
+	})
+
+	t.Run("HTTPErrorHandlerPreservesCommittedResponse", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/completed-request", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		if err := c.String(http.StatusAccepted, "accepted"); err != nil {
+			t.Fatal(err)
+		}
+		e.HTTPErrorHandler(c, echo.ErrServiceUnavailable)
+		if rec.Code != http.StatusAccepted || rec.Body.String() != "accepted" {
+			t.Fatalf("committed response changed: status=%d body=%q", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("BodyLimitRejectsRequestOverThreeMiB", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/bulk-upload", strings.NewReader(strings.Repeat("x", 3<<20+1)))
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		if rec.Code != http.StatusRequestEntityTooLarge {
+			t.Fatalf("oversized request = %d, want 413", rec.Code)
 		}
 	})
 
@@ -278,7 +342,8 @@ func TestNewServerSchemeHonorsConfiguredProxyTrust(t *testing.T) {
 			cfg.TrustProxy = mode.trustProxy
 			cfg.UseCloudflare = mode.useCloudflare
 			cfg.TrustedProxies = "203.0.113.0/24"
-			e, closeServer := NewServer(cfg)
+			server, closeServer := NewServer(cfg)
+			e := server.Handler.(*echo.Echo)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
@@ -337,5 +402,60 @@ func TestTrustedProxyNetworksNormalizeBareAddresses(t *testing.T) {
 	}
 	if ipInNetworks("198.51.100.10", networks) {
 		t.Error("unexpected match for an untrusted address")
+	}
+}
+
+func TestNewServerShutdownClosesWebSockets(t *testing.T) {
+	t.Setenv("SECRET_KEY", "test-secret")
+	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("AUTO_UPDATE_DATABASES", "false")
+	t.Chdir("../..")
+	utils.InitLogger()
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RedisPort = "1"
+	server, closeServer := NewServer(cfg)
+	t.Cleanup(func() {
+		_ = server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := closeServer(ctx); err != nil {
+			t.Errorf("close server: %v", err)
+		}
+	})
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	conn, response, err := websocket.DefaultDialer.Dial("ws://"+listener.Addr().String()+"/ws", nil)
+	if response != nil {
+		defer func() { _ = response.Body.Close() }()
+	}
+	if err != nil {
+		t.Fatalf("websocket handshake: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		t.Fatalf("HTTP shutdown: %v", err)
+	}
+	if err := <-serveDone; !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("HTTP serve returned %v, want ErrServerClosed", err)
+	}
+	if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := conn.ReadMessage(); err == nil {
+		t.Fatal("websocket remained open after HTTP shutdown")
+	} else if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		t.Fatal("HTTP shutdown did not close the websocket before the read deadline")
+	}
+	if err := closeServer(ctx); err != nil {
+		t.Fatalf("application cleanup: %v", err)
 	}
 }
