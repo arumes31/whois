@@ -75,19 +75,23 @@ func NewDNSService(resolvers string, bootstrap string) *DNSService {
 
 				var resolvedIP string
 				for _, b := range bootList {
-					srv := b
-					if !strings.Contains(srv, ":") && !strings.HasPrefix(srv, "https://") {
-						srv += ":53"
-					}
 					// Only use standard DNS bootstrap servers for resolving DoH hostnames
-					if !strings.HasPrefix(srv, "https://") {
-						in, _, err := c.Exchange(m, srv)
-						if err == nil && len(in.Answer) > 0 {
-							if a, ok := in.Answer[0].(*dns.A); ok {
-								resolvedIP = a.A.String()
-								break
+					if !strings.HasPrefix(b, "http://") && !strings.HasPrefix(b, "https://") {
+						in, err := exchangeDNSContext(ctx, c, m, dnsResolverAddress(b))
+						if err == nil && in != nil && in.Rcode == dns.RcodeSuccess {
+							for _, answer := range in.Answer {
+								if a, ok := answer.(*dns.A); ok {
+									resolvedIP = a.A.String()
+									break
+								}
 							}
 						}
+					}
+					if err := ctx.Err(); err != nil {
+						return nil, err
+					}
+					if resolvedIP != "" {
+						break
 					}
 				}
 				if resolvedIP != "" {
@@ -403,11 +407,9 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 		c := new(dns.Client)
 		c.Timeout = 2 * time.Second
 
-		// dns.Client.Exchange doesn't take context directly, but we can use ExchangeContext if available
-		// or just wrap it. miekg/dns supports ExchangeContext.
-		in, _, err := c.ExchangeContext(ctx, m, nextServer)
+		in, err := exchangeDNSContext(ctx, c, m, nextServer)
 		if err != nil {
-			return results, fmt.Errorf("exchange error at %s: %v", nextServer, err)
+			return results, fmt.Errorf("exchange error at %s: %w", nextServer, err)
 		}
 
 		if len(in.Answer) > 0 {
@@ -468,13 +470,28 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 }
 
 func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isReverse bool) ([]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	queryName := dns.Fqdn(target)
+	if isReverse && !strings.HasSuffix(target, ".arpa.") {
+		var err error
+		queryName, err = dns.ReverseAddr(target)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if _, valid := dns.IsDomainName(queryName); !valid {
+		return nil, fmt.Errorf("invalid DNS name %q", target)
+	}
+	// Reject invalid caller input before recording any resolver health results.
 	candidates := s.resolverCandidates()
 	if len(candidates) == 0 {
 		return nil, fmt.Errorf("no dns resolvers configured")
 	}
 	var resolverErrors []string
 	for _, resolver := range candidates {
-		result, err := s.queryResolver(ctx, resolver, target, qtype, isReverse)
+		result, err := s.queryResolver(ctx, resolver, queryName, qtype)
 		if err == nil {
 			s.recordResolverResult(resolver, nil)
 			return result, nil
@@ -488,20 +505,8 @@ func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isR
 	return nil, fmt.Errorf("all resolvers failed: %s", strings.Join(resolverErrors, "; "))
 }
 
-func (s *DNSService) queryResolver(ctx context.Context, resolver, target string, qtype uint16, isReverse bool) ([]string, error) {
-
+func (s *DNSService) queryResolver(ctx context.Context, resolver, queryName string, qtype uint16) ([]string, error) {
 	m := new(dns.Msg)
-	queryName := target
-	if isReverse && !strings.HasSuffix(target, ".arpa.") {
-		var err error
-		queryName, err = dns.ReverseAddr(target)
-		if err != nil {
-			return nil, err
-		}
-	} else if !isReverse {
-		queryName = dns.Fqdn(target)
-	}
-
 	m.SetQuestion(queryName, qtype)
 	m.SetEdns0(4096, false)
 
@@ -513,16 +518,13 @@ func (s *DNSService) queryResolver(ctx context.Context, resolver, target string,
 		in, err = s.dohQuery(ctx, resolver, m)
 	} else {
 		// Standard DNS
-		srv := resolver
-		if !strings.Contains(srv, ":") {
-			srv += ":53"
-		}
+		srv := dnsResolverAddress(resolver)
 		c := new(dns.Client)
 		c.Timeout = 5 * time.Second
-		in, _, err = c.ExchangeContext(ctx, m, srv)
+		in, err = exchangeDNSContext(ctx, c, m, srv)
 		if err == nil && in != nil && in.Truncated {
 			c.Net = "tcp"
-			in, _, err = c.ExchangeContext(ctx, m, srv)
+			in, err = exchangeDNSContext(ctx, c, m, srv)
 		}
 	}
 
@@ -538,6 +540,11 @@ func (s *DNSService) queryResolver(ctx context.Context, resolver, target string,
 
 	var results []string
 	for _, ans := range in.Answer {
+		// Recursive answers may include a CNAME chain before the requested RR.
+		// Keep each result under its actual type (especially A and AAAA).
+		if ans.Header().Rrtype != qtype {
+			continue
+		}
 		switch t := ans.(type) {
 		case *dns.A:
 			results = append(results, t.A.String())
@@ -573,6 +580,34 @@ func (s *DNSService) queryResolver(ctx context.Context, resolver, target string,
 	return results, nil
 }
 
+func dnsResolverAddress(resolver string) string {
+	if _, _, err := net.SplitHostPort(resolver); err == nil {
+		return resolver
+	}
+	host := strings.Trim(resolver, "[]")
+	if net.ParseIP(host) != nil || !strings.Contains(host, ":") {
+		return net.JoinHostPort(host, "53")
+	}
+	return resolver
+}
+
+// ExchangeContext in miekg/dns applies deadlines, but does not interrupt an
+// active socket read when a context without a deadline is canceled.
+func exchangeDNSContext(ctx context.Context, client *dns.Client, message *dns.Msg, resolver string) (*dns.Msg, error) {
+	conn, err := client.DialContext(ctx, resolver)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = conn.Close() }()
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	reply, _, err := client.ExchangeWithConnContext(ctx, message, conn)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return reply, err
+}
+
 func (s *DNSService) dohQuery(ctx context.Context, url string, m *dns.Msg) (*dns.Msg, error) {
 	data, err := m.Pack()
 	if err != nil {
@@ -597,9 +632,13 @@ func (s *DNSService) dohQuery(ctx context.Context, url string, m *dns.Msg) (*dns
 		return nil, fmt.Errorf("doh status error: %s", resp.Status)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// RFC 8484 limits application/dns-message payloads to 65,535 bytes.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(dns.MaxMsgSize)+1))
 	if err != nil {
 		return nil, err
+	}
+	if len(body) > dns.MaxMsgSize {
+		return nil, fmt.Errorf("doh response too large (maximum %d bytes)", dns.MaxMsgSize)
 	}
 
 	reply := new(dns.Msg)

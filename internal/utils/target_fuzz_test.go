@@ -11,6 +11,7 @@ func FuzzNormalizeTarget(f *testing.F) {
 		"example.com", "HTTPS://Example.COM:8443/path?q=1", "192.0.2.1", "[2001:db8::1]:443",
 		"192.0.2.7/24", "AS64512", "", "https://user:pass@example.com", "invalid!target",
 		"0.", "0.0.0.0.",
+		"https://example.com:65536/", "https://example.com:0/", "example.com:000",
 	} {
 		f.Add(seed)
 	}
@@ -28,11 +29,7 @@ func FuzzNormalizeTarget(f *testing.F) {
 		}
 
 		again := NormalizeTarget(info.Normalized)
-		// Some accepted DNS spellings normalize to a single-label host (for
-		// example, "0." becomes "0") that the parser currently rejects on
-		// a second pass. For representations accepted on both passes, require
-		// strict idempotence.
-		if again.Valid && (again.Normalized != info.Normalized || again.Kind != info.Kind) {
+		if !again.Valid || again.Normalized != info.Normalized || again.Kind != info.Kind {
 			t.Fatalf("normalization is not idempotent: first=%#v second=%#v", info, again)
 		}
 	})
