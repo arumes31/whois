@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 	"whois/internal/utils"
@@ -18,14 +22,51 @@ import (
 	whoisparser "github.com/likexian/whois-parser"
 	"github.com/openrdap/rdap"
 	"github.com/openrdap/rdap/bootstrap"
+	"golang.org/x/net/idna"
 )
 
 type WhoisInfo struct {
-	Raw       string `json:"raw"`
-	Registrar string `json:"registrar,omitempty"`
-	Expiry    string `json:"expiry,omitempty"`
-	Created   string `json:"created,omitempty"`
+	Raw           string                `json:"raw"`
+	Registrar     string                `json:"registrar,omitempty"`
+	Expiry        string                `json:"expiry,omitempty"`
+	Created       string                `json:"created,omitempty"`
+	Kind          string                `json:"kind,omitempty"`
+	Source        string                `json:"source,omitempty"`
+	SourceURL     string                `json:"source_url,omitempty"`
+	QueriedAt     string                `json:"queried_at,omitempty"`
+	Domain        string                `json:"domain,omitempty"`
+	Handle        string                `json:"handle,omitempty"`
+	Statuses      []string              `json:"statuses,omitempty"`
+	Nameservers   []string              `json:"nameservers,omitempty"`
+	DNSSEC        *RegistrationDNSSEC   `json:"dnssec,omitempty"`
+	Network       *RegistrationNetwork  `json:"network,omitempty"`
+	Organization  string                `json:"organization,omitempty"`
+	AbuseContacts []RegistrationContact `json:"abuse_contacts,omitempty"`
 }
+
+// RegistrationDNSSEC contains registry declarations, not DNSSEC validation results.
+type RegistrationDNSSEC struct {
+	DelegationSigned *bool `json:"delegation_signed,omitempty"`
+	ZoneSigned       *bool `json:"zone_signed,omitempty"`
+}
+
+type RegistrationNetwork struct {
+	Handle       string `json:"handle,omitempty"`
+	Name         string `json:"name,omitempty"`
+	StartAddress string `json:"start_address"`
+	EndAddress   string `json:"end_address"`
+	IPVersion    string `json:"ip_version,omitempty"`
+	Country      string `json:"country,omitempty"`
+	Type         string `json:"type,omitempty"`
+}
+
+type RegistrationContact struct {
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
+	Phone string `json:"phone,omitempty"`
+}
+
+var errRegistrationNotFound = errors.New("registration record not found")
 
 // WhoisFunc performs WHOIS lookups. The context-aware signature ensures that
 // connection setup uses the same caller cancellation and address policy as the
@@ -69,6 +110,9 @@ func callWithContext(ctx context.Context, lookup func() (string, error)) (string
 }
 
 func callWhois(ctx context.Context, target string, servers ...string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	for _, server := range servers {
 		if err := WhoisServerValidator(ctx, server); err != nil {
 			return "", err
@@ -154,6 +198,19 @@ func (d *whoisPinnedDialer) Dial(network, address string) (net.Conn, error) {
 func Whois(ctx context.Context, target string) interface{} {
 	if !utils.IsValidTarget(target) {
 		return "Error: invalid target for WHOIS"
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Sprintf("WHOIS error: %v", err)
+	}
+	info, rdapErr := RdapLookupFunc(ctx, target)
+	if err := ctx.Err(); err != nil {
+		return fmt.Sprintf("WHOIS error: %v", err)
+	}
+	if rdapErr == nil && strings.TrimSpace(info.Raw) != "" {
+		return info
+	}
+	if errors.Is(rdapErr, errRegistrationNotFound) {
+		return "WHOIS error: registration record not found in the authoritative RDAP service"
 	}
 
 	raw, err := callWhois(ctx, target)
@@ -248,18 +305,16 @@ func Whois(ctx context.Context, target string) interface{} {
 			}
 		}
 
-		// FINAL FALLBACK: RDAP (Modern replacement for WHOIS)
-		if err != nil || isErrorResponse(raw) {
-			rdapRaw, rdapErr := RdapLookupFunc(ctx, target)
-			if rdapErr == nil && rdapRaw != "" {
-				raw = rdapRaw
-				err = nil
-			}
-		}
 	}
 
+	if ctx.Err() != nil {
+		return fmt.Sprintf("WHOIS error: %v", ctx.Err())
+	}
 	if err != nil {
 		return fmt.Sprintf("WHOIS error: %v", err)
+	}
+	if isErrorResponse(raw) {
+		return "WHOIS error: no usable registration data returned by RDAP or WHOIS"
 	}
 
 	// Follow registrar referral if present in registry output
@@ -282,6 +337,9 @@ func Whois(ctx context.Context, target string) interface{} {
 		}
 	}
 
+	if ctx.Err() != nil {
+		return fmt.Sprintf("WHOIS error: %v", ctx.Err())
+	}
 	// Filter raw lines - only skip if the line STARTS with % or # (comments)
 	lines := strings.Split(raw, "\n")
 	var filtered []string
@@ -296,38 +354,232 @@ func Whois(ctx context.Context, target string) interface{} {
 		filtered = append(filtered, line)
 	}
 	raw = strings.Join(filtered, "\n")
+	if strings.TrimSpace(raw) == "" {
+		return "WHOIS error: no usable registration data returned by WHOIS"
+	}
+	info = WhoisInfo{Raw: raw, Source: "whois", QueriedAt: time.Now().UTC().Format(time.RFC3339), Kind: "domain"}
+	if net.ParseIP(target) != nil {
+		info.Kind = "ip"
+		return info
+	}
 
 	result, err := whoisparser.Parse(raw)
 	if err != nil {
-		return WhoisInfo{Raw: raw}
+		if errors.Is(err, whoisparser.ErrNotFoundDomain) || errors.Is(err, whoisparser.ErrDomainLimitExceed) {
+			return fmt.Sprintf("WHOIS error: %v", err)
+		}
+		return info
 	}
 
-	info := WhoisInfo{Raw: raw}
 	if result.Registrar != nil {
 		info.Registrar = result.Registrar.Name
 	}
 	if result.Domain != nil {
 		info.Expiry = result.Domain.ExpirationDate
 		info.Created = result.Domain.CreatedDate
+		info.Domain = result.Domain.Domain
+		info.Handle = result.Domain.ID
+		info.Statuses = result.Domain.Status
+		info.Nameservers = result.Domain.NameServers
+	}
+	if result.Registrant != nil {
+		info.Organization = result.Registrant.Organization
 	}
 
 	return info
 }
 
-func rdapLookup(ctx context.Context, target string) (string, error) {
+func rdapLookup(ctx context.Context, target string) (WhoisInfo, error) {
 	request, err := rdapRequestForTarget(ctx, target)
 	if err != nil {
-		return "", err
+		return WhoisInfo{}, err
 	}
 	httpClient := safeRDAPHTTPClient()
+	defer httpClient.CloseIdleConnections()
 	client := &rdap.Client{HTTP: httpClient, Bootstrap: &bootstrap.Client{HTTP: httpClient}}
 	response, err := client.Do(request)
 	if err != nil {
-		return "", err
+		var clientErr *rdap.ClientError
+		if errors.As(err, &clientErr) && clientErr.Type == rdap.ObjectDoesNotExist {
+			return WhoisInfo{}, errRegistrationNotFound
+		}
+		return WhoisInfo{}, err
 	}
+	return registrationFromRDAP(response, request.Query)
+}
 
-	whoisStyle := response.ToWhoisStyleResponse()
-	return renderRDAPWhoisStyle(whoisStyle), nil
+func registrationFromRDAP(response *rdap.Response, target string) (WhoisInfo, error) {
+	if response == nil {
+		return WhoisInfo{}, errors.New("empty RDAP response")
+	}
+	info := WhoisInfo{Source: "rdap", QueriedAt: time.Now().UTC().Format(time.RFC3339)}
+	var entities []rdap.Entity
+	var events []rdap.Event
+	switch object := response.Object.(type) {
+	case *rdap.Domain:
+		if object == nil || (object.LDHName == "" && object.UnicodeName == "" && object.Handle == "") {
+			return WhoisInfo{}, errors.New("RDAP response contains no domain registration data")
+		}
+		if net.ParseIP(target) != nil {
+			return WhoisInfo{}, errors.New("RDAP returned a domain for an IP lookup")
+		}
+		info.Kind, info.Domain, info.Handle = "domain", object.LDHName, object.Handle
+		if info.Domain == "" {
+			info.Domain = object.UnicodeName
+		}
+		requestedName, requestedErr := idna.Lookup.ToASCII(strings.TrimSuffix(target, "."))
+		returnedName, returnedErr := idna.Lookup.ToASCII(strings.TrimSuffix(info.Domain, "."))
+		if requestedErr != nil || returnedErr != nil || returnedName == "" || !strings.EqualFold(requestedName, returnedName) {
+			return WhoisInfo{}, errors.New("RDAP response does not match the requested domain")
+		}
+		info.Statuses = slices.Clone(object.Status)
+		for _, ns := range object.Nameservers {
+			name := ns.LDHName
+			if name == "" {
+				name = ns.UnicodeName
+			}
+			if name != "" {
+				info.Nameservers = append(info.Nameservers, name)
+			}
+		}
+		if secure := object.SecureDNS; secure != nil && (secure.DelegationSigned != nil || secure.ZoneSigned != nil) {
+			info.DNSSEC = &RegistrationDNSSEC{DelegationSigned: secure.DelegationSigned, ZoneSigned: secure.ZoneSigned}
+		}
+		entities, events = object.Entities, object.Events
+	case *rdap.IPNetwork:
+		if object == nil {
+			return WhoisInfo{}, errors.New("empty RDAP IP network")
+		}
+		start, startErr := netip.ParseAddr(object.StartAddress)
+		end, endErr := netip.ParseAddr(object.EndAddress)
+		ip, ipErr := netip.ParseAddr(target)
+		start, end, ip = start.Unmap(), end.Unmap(), ip.Unmap()
+		if startErr != nil || endErr != nil || ipErr != nil || start.BitLen() != end.BitLen() ||
+			start.Compare(end) > 0 || ip.BitLen() != start.BitLen() || ip.Compare(start) < 0 || ip.Compare(end) > 0 {
+			return WhoisInfo{}, errors.New("RDAP response contains no matching IP network range")
+		}
+		info.Kind, info.Handle = "ip", object.Handle
+		info.Statuses = slices.Clone(object.Status)
+		info.Network = &RegistrationNetwork{
+			Handle: object.Handle, Name: object.Name, StartAddress: start.String(), EndAddress: end.String(),
+			IPVersion: object.IPVersion, Country: object.Country, Type: object.Type,
+		}
+		entities, events = object.Entities, object.Events
+	case *rdap.Error:
+		if object != nil && object.ErrorCode != nil && *object.ErrorCode == http.StatusNotFound {
+			return WhoisInfo{}, errRegistrationNotFound
+		}
+		return WhoisInfo{}, errors.New("RDAP server returned an error response")
+	default:
+		return WhoisInfo{}, errors.New("RDAP response contains no supported registration object")
+	}
+	for _, event := range events {
+		switch event.Action {
+		case "registration":
+			info.Created = event.Date
+		case "expiration":
+			info.Expiry = event.Date
+		}
+	}
+	collectRegistrationEntities(&info, entities)
+	// Preserve the original JSON, including notices and redaction metadata, rather
+	// than flattening IP responses through the library's domain-only converter.
+	for i := len(response.HTTP) - 1; i >= 0; i-- {
+		h := response.HTTP[i]
+		if h == nil || h.Error != nil || !json.Valid(h.Body) {
+			continue
+		}
+		info.Raw = string(h.Body)
+		sourceURL := h.URL
+		if h.Response != nil && h.Response.Request != nil && h.Response.Request.URL != nil {
+			sourceURL = h.Response.Request.URL.String()
+		}
+		info.SourceURL = registrationSourceURL(sourceURL)
+		break
+	}
+	if info.Raw == "" {
+		data, err := json.MarshalIndent(response.Object, "", "  ")
+		if err != nil {
+			return WhoisInfo{}, fmt.Errorf("render RDAP evidence: %w", err)
+		}
+		info.Raw = string(data)
+	}
+	return info, nil
+}
+
+func registrationSourceURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil {
+		return ""
+	}
+	return u.String()
+}
+
+func collectRegistrationEntities(info *WhoisInfo, entities []rdap.Entity) {
+	// Roles apply to the containing object. Nested registrants belong to their
+	// parent entity, not to the domain/network whose ownership we are displaying.
+	for _, entity := range entities {
+		name, organization := registrationEntityNames(entity)
+		if slices.Contains(entity.Roles, "registrar") && info.Registrar == "" {
+			info.Registrar = name
+		}
+		if slices.Contains(entity.Roles, "registrant") && info.Organization == "" {
+			info.Organization = organization
+			if info.Organization == "" {
+				info.Organization = name
+			}
+		}
+	}
+	pending := slices.Clone(entities)
+	for len(pending) > 0 {
+		entity := pending[len(pending)-1]
+		pending = append(pending[:len(pending)-1], entity.Entities...)
+		if entity.VCard == nil || !slices.Contains(entity.Roles, "abuse") {
+			continue
+		}
+		name, _ := registrationEntityNames(entity)
+		emails := registrationVCardValues(entity.VCard, "email")
+		phones := registrationVCardValues(entity.VCard, "tel")
+		for i := range max(1, len(emails), len(phones)) {
+			contact := RegistrationContact{Name: name}
+			if i < len(emails) {
+				contact.Email = emails[i]
+			}
+			if i < len(phones) {
+				contact.Phone = phones[i]
+			}
+			if contact != (RegistrationContact{}) && !slices.Contains(info.AbuseContacts, contact) {
+				info.AbuseContacts = append(info.AbuseContacts, contact)
+			}
+		}
+	}
+}
+
+func registrationEntityNames(entity rdap.Entity) (string, string) {
+	if entity.VCard == nil {
+		return "", ""
+	}
+	name := strings.Join(registrationVCardValues(entity.VCard, "fn"), "; ")
+	organization := strings.Join(registrationVCardValues(entity.VCard, "org"), "; ")
+	if name == "" {
+		name = organization
+	}
+	return name, organization
+}
+
+func registrationVCardValues(card *rdap.VCard, field string) []string {
+	var values []string
+	for _, property := range card.Properties {
+		if property == nil || property.Name != field {
+			continue
+		}
+		for _, value := range property.Values() {
+			if value = strings.TrimSpace(value); value != "" {
+				values = append(values, value)
+			}
+		}
+	}
+	return values
 }
 
 func rdapRequestForTarget(ctx context.Context, target string) (*rdap.Request, error) {
@@ -402,6 +654,12 @@ type boundedRoundTripper struct {
 	maxBytes int64
 }
 
+func (t boundedRoundTripper) CloseIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
+}
+
 func (t boundedRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	response, err := t.base.RoundTrip(request)
 	if err != nil {
@@ -414,17 +672,4 @@ func (t boundedRoundTripper) RoundTrip(request *http.Request) (*http.Response, e
 type boundedReadCloser struct {
 	io.Reader
 	io.Closer
-}
-
-func renderRDAPWhoisStyle(whoisStyle *rdap.WhoisStyleResponse) string {
-	var sb strings.Builder
-	sb.WriteString("RDAP SOURCE DATA (Converted to WHOIS Style)\n")
-	sb.WriteString(strings.Repeat("-", 40) + "\n")
-	for _, key := range whoisStyle.KeyDisplayOrder {
-		values := whoisStyle.Data[key]
-		for _, value := range values {
-			fmt.Fprintf(&sb, "%s: %s\n", key, value)
-		}
-	}
-	return sb.String()
 }

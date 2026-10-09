@@ -8,6 +8,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -22,14 +24,255 @@ func init() {
 	utils.TestInitLogger()
 }
 
+func TestWhoisPrefersRDAP(t *testing.T) {
+	oldWhois, oldRDAP := WhoisFunc, RdapLookupFunc
+	t.Cleanup(func() { WhoisFunc, RdapLookupFunc = oldWhois, oldRDAP })
+	whoisCalls := 0
+	WhoisFunc = func(context.Context, string, ...string) (string, error) {
+		whoisCalls++
+		return strings.Repeat("Legacy response ", 10) + "\nDomain Name: EXAMPLE.COM", nil
+	}
+	RdapLookupFunc = func(context.Context, string) (WhoisInfo, error) {
+		return WhoisInfo{Raw: "Domain Name: EXAMPLE.COM\nRegistrar: RDAP Registrar", Source: "rdap"}, nil
+	}
+	result := Whois(context.Background(), "example.com")
+	info, ok := result.(WhoisInfo)
+	if !ok || !strings.Contains(info.Raw, "RDAP Registrar") || whoisCalls != 0 {
+		t.Fatalf("RDAP-first lookup = %#v; WHOIS calls = %d", result, whoisCalls)
+	}
+}
+
+func TestRDAPIPNetworkRetainsRawEvidence(t *testing.T) {
+	response := &rdap.Response{Object: &rdap.IPNetwork{
+		Handle: "NET-1-1-1-0-1", Name: "CLOUDFLARENET",
+		StartAddress: "1.1.1.0", EndAddress: "1.1.1.255", IPVersion: "v4",
+	}}
+	info, err := registrationFromRDAP(response, "::ffff:1.1.1.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := info.Raw
+	for _, want := range []string{"NET-1-1-1-0-1", "CLOUDFLARENET", "1.1.1.0", "1.1.1.255"} {
+		if !strings.Contains(raw, want) {
+			t.Errorf("IP registration evidence missing %q: %q", want, raw)
+		}
+	}
+}
+
+func TestRDAPRegistrationDomainFields(t *testing.T) {
+	raw := `{"objectClassName":"domain","ldhName":"EXAMPLE.COM","handle":"DOMAIN-1","status":["client transfer prohibited"],"nameservers":[{"ldhName":"NS1.EXAMPLE.COM"}],"secureDNS":{"delegationSigned":false},"events":[{"eventAction":"registration","eventDate":"1995-08-14T04:00:00Z"},{"eventAction":"expiration","eventDate":"2027-08-13T04:00:00Z"}],"entities":[{"roles":["registrar"],"vcardArray":["vcard",[["fn",{},"text","Example Registrar"]]]},{"roles":["registrant"],"vcardArray":["vcard",[["fn",{},"text","Holder Name"],["org",{},"text","Example Holder"]]],"entities":[{"roles":["abuse"],"vcardArray":["vcard",[["fn",{},"text","Abuse Desk"],["email",{},"text","abuse@example.com"],["email",{},"text","security@example.com"],["tel",{},"uri","tel:+1-555-0100"]]]}]}],"notices":[{"title":"Privacy","description":["Some contact data is redacted"]}]}`
+	object, err := rdap.NewDecoder([]byte(raw)).Decode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	finalURL, err := url.Parse("https://registry.example/rdap/domain/example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := registrationFromRDAP(&rdap.Response{Object: object, HTTP: []*rdap.HTTPResponse{{
+		URL: "https://bootstrap.example/domain/example.com", Body: []byte(raw),
+		Response: &http.Response{Request: &http.Request{URL: finalURL}},
+	}}}, "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Kind != "domain" || info.Domain != "EXAMPLE.COM" || info.Handle != "DOMAIN-1" || info.Source != "rdap" ||
+		info.SourceURL != finalURL.String() || info.Raw != raw || info.Registrar != "Example Registrar" || info.Organization != "Example Holder" {
+		t.Fatalf("domain registration fields lost: %#v", info)
+	}
+	if info.Created != "1995-08-14T04:00:00Z" || info.Expiry != "2027-08-13T04:00:00Z" ||
+		!slices.Equal(info.Statuses, []string{"client transfer prohibited"}) || !slices.Equal(info.Nameservers, []string{"NS1.EXAMPLE.COM"}) {
+		t.Fatalf("domain dates/status/nameservers lost: %#v", info)
+	}
+	if info.DNSSEC == nil || info.DNSSEC.DelegationSigned == nil || *info.DNSSEC.DelegationSigned || info.DNSSEC.ZoneSigned != nil {
+		t.Fatalf("DNSSEC false and unknown must remain distinct: %#v", info.DNSSEC)
+	}
+	if len(info.AbuseContacts) != 2 || info.AbuseContacts[0].Email != "abuse@example.com" ||
+		info.AbuseContacts[0].Phone != "tel:+1-555-0100" || info.AbuseContacts[1].Email != "security@example.com" {
+		t.Fatalf("nested abuse contacts lost: %#v", info.AbuseContacts)
+	}
+	if _, err := time.Parse(time.RFC3339, info.QueriedAt); err != nil {
+		t.Fatalf("lookup timestamp: %v", err)
+	}
+}
+
+func TestRDAPRegistrationIPFields(t *testing.T) {
+	raw := `{"objectClassName":"ip network","handle":"NET6-GOOGLE","name":"GOOGLE-IPV6","startAddress":"2001:4860::","endAddress":"2001:4860:ffff:ffff:ffff:ffff:ffff:ffff","ipVersion":"v6","country":"US","type":"DIRECT ALLOCATION","status":["active"],"entities":[{"roles":["registrant"],"vcardArray":["vcard",[["fn",{},"text","Google LLC"]]]}]}`
+	object, err := rdap.NewDecoder([]byte(raw)).Decode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := registrationFromRDAP(&rdap.Response{Object: object, HTTP: []*rdap.HTTPResponse{{
+		URL: "https://rdap.arin.net/registry/ip/2001:4860:4860::8888", Body: []byte(raw),
+	}}}, "2001:4860:4860::8888")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Kind != "ip" || info.Network == nil || info.Network.Handle != "NET6-GOOGLE" ||
+		info.Network.Name != "GOOGLE-IPV6" || info.Network.Country != "US" || info.Network.IPVersion != "v6" ||
+		info.Network.Type != "DIRECT ALLOCATION" || info.Organization != "Google LLC" || info.Registrar != "" || info.Raw != raw {
+		t.Fatalf("IP registration fields lost: %#v", info)
+	}
+}
+
+func TestRDAPHolderUsesRootEntityRoles(t *testing.T) {
+	card := func(name string) *rdap.VCard {
+		return &rdap.VCard{Properties: []*rdap.VCardProperty{{Name: "fn", Value: name}}}
+	}
+	info, err := registrationFromRDAP(&rdap.Response{Object: &rdap.Domain{
+		LDHName: "example.com", Entities: []rdap.Entity{
+			{Roles: []string{"registrant"}, VCard: card("Domain Holder")},
+			{Roles: []string{"registrar"}, VCard: card("Domain Registrar"), Entities: []rdap.Entity{
+				{Roles: []string{"registrant"}, VCard: card("Registrar Holder")},
+				{Roles: []string{"registrar"}, VCard: card("Unrelated Registrar")},
+			}},
+		},
+	}}, "example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Organization != "Domain Holder" || info.Registrar != "Domain Registrar" {
+		t.Fatalf("nested entity roles replaced domain ownership: %#v", info)
+	}
+}
+
+func TestRDAPDomainIdentityAcceptsCaseTrailingDotAndIDN(t *testing.T) {
+	for _, tc := range []struct{ name, target string }{
+		{"EXAMPLE.COM", "example.com."},
+		{"xn--bcher-kva.example", "bücher.example"},
+	} {
+		_, err := registrationFromRDAP(&rdap.Response{Object: &rdap.Domain{LDHName: tc.name}}, tc.target)
+		if err != nil {
+			t.Errorf("matching domain %q / %q rejected: %v", tc.name, tc.target, err)
+		}
+	}
+}
+
+func TestRDAPRejectsEmptyErrorAndMismatchedObjects(t *testing.T) {
+	notFound := uint16(404)
+	for _, tc := range []struct {
+		name   string
+		object rdap.RDAPObject
+		target string
+	}{
+		{"nil object", nil, "example.com"},
+		{"nil domain", (*rdap.Domain)(nil), "example.com"},
+		{"empty domain", &rdap.Domain{}, "example.com"},
+		{"unrelated domain", &rdap.Domain{LDHName: "different.com"}, "example.com"},
+		{"handle without matching domain", &rdap.Domain{Handle: "DOMAIN-1"}, "example.com"},
+		{"empty network", &rdap.IPNetwork{}, "1.1.1.1"},
+		{"wrong object", &rdap.Domain{LDHName: "example.com"}, "1.1.1.1"},
+		{"unrelated range", &rdap.IPNetwork{StartAddress: "8.8.8.0", EndAddress: "8.8.8.255"}, "1.1.1.1"},
+		{"reversed range", &rdap.IPNetwork{StartAddress: "1.1.1.255", EndAddress: "1.1.1.0"}, "1.1.1.1"},
+		{"not found", &rdap.Error{ErrorCode: &notFound}, "example.com"},
+		{"error object", &rdap.Error{Title: "Server failure"}, "example.com"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info, err := registrationFromRDAP(&rdap.Response{Object: tc.object}, tc.target)
+			if err == nil || info.Raw != "" {
+				t.Fatalf("invalid response became a successful result: %#v, %v", info, err)
+			}
+			if tc.name == "not found" && !errors.Is(err, errRegistrationNotFound) {
+				t.Fatalf("authoritative not found lost: %v", err)
+			}
+		})
+	}
+}
+
+func TestRegistrationSourceURLRejectsUnsafeSchemes(t *testing.T) {
+	for _, raw := range []string{"javascript:alert(1)", "data:text/html,evil", "//registry.example/path", "https://user:secret@registry.example/", "https:///missing-host", "https://registry.example/\n"} {
+		if got := registrationSourceURL(raw); got != "" {
+			t.Errorf("unsafe source URL retained: %q", got)
+		}
+	}
+	const safe = "https://registry.example/domain/example.com"
+	if got := registrationSourceURL(safe); got != safe {
+		t.Errorf("source URL = %q, want %q", got, safe)
+	}
+}
+
+func TestWhoisRDAPFallbackAndCancellation(t *testing.T) {
+	oldWhois, oldRDAP, oldValidator := WhoisFunc, RdapLookupFunc, WhoisServerValidator
+	t.Cleanup(func() { WhoisFunc, RdapLookupFunc, WhoisServerValidator = oldWhois, oldRDAP, oldValidator })
+	WhoisServerValidator = func(context.Context, string) error { return nil }
+	for _, tc := range []struct {
+		name         string
+		rdapErr      error
+		cancelBefore bool
+		cancelDuring bool
+		wantWhois    bool
+	}{
+		{name: "unsupported falls back", rdapErr: &rdap.ClientError{Type: rdap.BootstrapNotSupported}, wantWhois: true},
+		{name: "empty response falls back", wantWhois: true},
+		{name: "authoritative not found", rdapErr: errRegistrationNotFound},
+		{name: "already canceled", cancelBefore: true},
+		{name: "canceled during RDAP", cancelDuring: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var calls []string
+			if tc.cancelBefore {
+				cancel()
+			}
+			RdapLookupFunc = func(context.Context, string) (WhoisInfo, error) {
+				calls = append(calls, "rdap")
+				if tc.cancelDuring {
+					cancel()
+				}
+				return WhoisInfo{}, tc.rdapErr
+			}
+			WhoisFunc = func(context.Context, string, ...string) (string, error) {
+				calls = append(calls, "whois")
+				return "Domain Name: EXAMPLE.COM\nRegistrar: Legacy Registrar\nCreation Date: 1995-08-14T04:00:00Z\nRegistry Expiry Date: 2027-08-13T04:00:00Z", nil
+			}
+			result := Whois(ctx, "example.com")
+			if tc.wantWhois {
+				info, ok := result.(WhoisInfo)
+				if !ok || info.Source != "whois" || info.Registrar != "Legacy Registrar" || !slices.Equal(calls, []string{"rdap", "whois"}) {
+					t.Fatalf("WHOIS fallback = %#v, calls %v", result, calls)
+				}
+			} else {
+				message, ok := result.(string)
+				if !ok || !strings.HasPrefix(message, "WHOIS error:") || slices.Contains(calls, "whois") || (tc.cancelBefore && len(calls) != 0) {
+					t.Fatalf("lookup should stop, got %#v, calls %v", result, calls)
+				}
+			}
+		})
+	}
+}
+
+func TestWhoisDoesNotReportEmptyOrMissingRegistrationAsSuccess(t *testing.T) {
+	oldWhois, oldRDAP, oldValidator := WhoisFunc, RdapLookupFunc, WhoisServerValidator
+	t.Cleanup(func() { WhoisFunc, RdapLookupFunc, WhoisServerValidator = oldWhois, oldRDAP, oldValidator })
+	WhoisServerValidator = func(context.Context, string) error { return nil }
+	RdapLookupFunc = func(context.Context, string) (WhoisInfo, error) {
+		return WhoisInfo{}, errors.New("RDAP unavailable")
+	}
+	for _, raw := range []string{"", "No whois server found", strings.Repeat("% Registry disclaimer\n", 8),
+		"No match for EXAMPLE.COM\n" + strings.Repeat("Registry disclaimer. ", 8)} {
+		WhoisFunc = func(context.Context, string, ...string) (string, error) { return raw, nil }
+		result := Whois(context.Background(), "example.com")
+		message, ok := result.(string)
+		if !ok || !strings.HasPrefix(message, "WHOIS error:") {
+			t.Errorf("empty/not-found response became success: %#v", result)
+		}
+	}
+}
+
 func TestWhois(t *testing.T) {
 	oldWhois := WhoisFunc
+	oldRDAP := RdapLookupFunc
 	oldValidator := WhoisServerValidator
 	defer func() {
 		WhoisFunc = oldWhois
+		RdapLookupFunc = oldRDAP
 		WhoisServerValidator = oldValidator
 	}()
 	WhoisServerValidator = func(context.Context, string) error { return nil }
+	RdapLookupFunc = func(context.Context, string) (WhoisInfo, error) {
+		return WhoisInfo{}, errors.New("RDAP unsupported")
+	}
 
 	WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 		if target == "" {
@@ -83,23 +326,6 @@ func TestWhois(t *testing.T) {
 	}
 }
 
-func TestRDAPLookup(t *testing.T) {
-	oldRdap := RdapLookupFunc
-	defer func() { RdapLookupFunc = oldRdap }()
-
-	RdapLookupFunc = func(context.Context, string) (string, error) {
-		return "Mock RDAP Data", nil
-	}
-
-	res, err := RdapLookupFunc(context.Background(), "google.com")
-	if err != nil {
-		t.Fatalf("RDAP lookup failed: %v", err)
-	}
-	if res == "" {
-		t.Error("Expected non-empty RDAP result")
-	}
-}
-
 func TestWhois_Mocked(t *testing.T) {
 	oldWhois := WhoisFunc
 	oldRdap := RdapLookupFunc
@@ -110,6 +336,9 @@ func TestWhois_Mocked(t *testing.T) {
 		WhoisServerValidator = oldValidator
 	}()
 	WhoisServerValidator = func(context.Context, string) error { return nil }
+	RdapLookupFunc = func(context.Context, string) (WhoisInfo, error) {
+		return WhoisInfo{}, errors.New("RDAP unsupported")
+	}
 
 	t.Run("Error Response Fallback", func(t *testing.T) {
 		WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
@@ -176,7 +405,7 @@ func TestWhois_Mocked(t *testing.T) {
 		}
 	})
 
-	t.Run("IANA Lookup Failure Fallback to RDAP", func(t *testing.T) {
+	t.Run("RDAP success avoids unavailable IANA", func(t *testing.T) {
 		oldRdap := RdapLookupFunc
 		defer func() { RdapLookupFunc = oldRdap }()
 
@@ -189,8 +418,8 @@ func TestWhois_Mocked(t *testing.T) {
 			}
 			return "error", nil
 		}
-		RdapLookupFunc = func(context.Context, string) (string, error) {
-			return "Mock RDAP Data for IANA Failure", nil
+		RdapLookupFunc = func(context.Context, string) (WhoisInfo, error) {
+			return WhoisInfo{Raw: "Mock RDAP Data for IANA Failure"}, nil
 		}
 
 		res := Whois(context.Background(), "test.com")
@@ -200,7 +429,7 @@ func TestWhois_Mocked(t *testing.T) {
 		}
 	})
 
-	t.Run("IANA Referred Server Failure Fallback to RDAP", func(t *testing.T) {
+	t.Run("RDAP success avoids unavailable referral", func(t *testing.T) {
 		oldRdap := RdapLookupFunc
 		defer func() { RdapLookupFunc = oldRdap }()
 
@@ -216,8 +445,8 @@ func TestWhois_Mocked(t *testing.T) {
 			}
 			return "error", nil
 		}
-		RdapLookupFunc = func(context.Context, string) (string, error) {
-			return "Mock RDAP Data for Referral Failure", nil
+		RdapLookupFunc = func(context.Context, string) (WhoisInfo, error) {
+			return WhoisInfo{Raw: "Mock RDAP Data for Referral Failure"}, nil
 		}
 
 		res := Whois(context.Background(), "test.com")
@@ -349,6 +578,25 @@ func TestResolveRDAPServerRejectsPrivateAddress(t *testing.T) {
 }
 
 type whoisRoundTripFunc func(*http.Request) (*http.Response, error)
+
+type idleClosingWhoisTransport struct {
+	closed bool
+}
+
+func (t *idleClosingWhoisTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("unused test transport")
+}
+
+func (t *idleClosingWhoisTransport) CloseIdleConnections() { t.closed = true }
+
+func TestRDAPClientClosesUnderlyingIdleConnections(t *testing.T) {
+	base := &idleClosingWhoisTransport{}
+	client := &http.Client{Transport: boundedRoundTripper{base: base, maxBytes: 8}}
+	client.CloseIdleConnections()
+	if !base.closed {
+		t.Fatal("closing the RDAP client left its underlying connections open")
+	}
+}
 
 func (fn whoisRoundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return fn(request)
