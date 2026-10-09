@@ -44,6 +44,7 @@ type wsQueryConfig struct {
 type wsTargetProfile struct {
 	model.TargetInfo
 	QueryAllowed     bool   `json:"query_allowed"`
+	RoutingAllowed   bool   `json:"routing_allowed"`
 	QueryRestriction string `json:"query_restriction,omitempty"`
 }
 
@@ -343,6 +344,8 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 	profile := wsTargetProfile{
 		TargetInfo:   targetInfo,
 		QueryAllowed: targetInfo.Valid && targetInfo.Networkable && utils.IsValidTarget(target),
+		RoutingAllowed: targetInfo.Valid && targetInfo.Kind == model.TargetKindASN &&
+			cfg.Routing && h.AppConfig.EnableRouting,
 	}
 	if targetInfo.Valid && targetInfo.Networkable && !profile.QueryAllowed {
 		profile.QueryRestriction = "Network queries are disabled by server policy for this target."
@@ -366,7 +369,16 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			payload, _ := json.Marshal(done)
 			_ = writer.write(websocket.TextMessage, payload)
 		}
-		sendLog("Target cannot be queried: " + reason)
+		switch {
+		case targetInfo.Valid && targetInfo.Kind == model.TargetKindCIDR:
+			sendLog("Subnet calculation complete. Single-host diagnostics do not apply to CIDR ranges.")
+		case profile.RoutingAllowed:
+			sendLog("ASN lookup complete. Single-host diagnostics do not apply to autonomous systems.")
+		case targetInfo.Valid && targetInfo.Kind == model.TargetKindASN:
+			sendLog("ASN profile complete. Enable BGP / ASN on the server and select it to retrieve provider data.")
+		default:
+			sendLog("Target cannot be queried: " + reason)
+		}
 		msg := WSMessage{Type: "all_done", RequestID: requestID, Target: cardTarget}
 		b, _ := json.Marshal(msg)
 		_ = writer.write(websocket.TextMessage, b)

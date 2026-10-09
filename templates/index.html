@@ -46,7 +46,7 @@
                         placeholder="example.com, 1.1.1.1, https://example.org/path"
                         aria-describedby="targetHelp targetError" autocomplete="off"
                         autocapitalize="none" spellcheck="false"></textarea>
-                    <div id="targetHelp" class="field-help">Separate up to 25 targets with commas or new lines. URLs are normalized automatically.</div>
+                    <div id="targetHelp" class="field-help">Separate up to 25 targets with commas or new lines. CIDRs calculate locally without modules; ASN lookups (AS13335) use BGP ROUTING. URLs are normalized automatically.</div>
                     <div id="targetError" class="field-error" role="alert" tabindex="-1"></div>
                 </div>
                 <div>
@@ -90,7 +90,7 @@
                 {{ if not .geo_available }}
                 <div class="field-help" id="geoUnavailableHelp" style="margin-top:10px">Geo location is unavailable until a local GeoLite2 City database is installed.</div>
                 {{ end }}
-                <div class="field-help" id="routingHelp" style="margin-top:10px">{{ if .config.EnableRouting }}BGP routing is optional: public IP addresses are sent to RIPEstat for an 8-hour RIS snapshot lookup.{{ else }}BGP routing is disabled by the server. When enabled, this optional module queries RIPEstat for public IP addresses.{{ end }}</div>
+                <div class="field-help" id="routingHelp" style="margin-top:10px">{{ if .config.EnableRouting }}BGP routing is optional: public IP addresses or ASNs are sent to RIPEstat. Results include their source and observation period.{{ else }}BGP routing is disabled by the server. When enabled, this optional module queries RIPEstat for public IP addresses or ASNs.{{ end }}</div>
             </div>
         </section>
 
@@ -123,6 +123,8 @@
     <aside class="side-rail" aria-label="Operator utilities and activity">
         <div class="rail-panel">
             <h2>QUICK TOOLS</h2>
+            <button type="button" class="rail-link" data-tool="subnet">SUBNET CALCULATOR</button>
+            <button type="button" class="rail-link" data-tool="asn" aria-describedby="routingHelp">ASN LOOKUP</button>
             <button type="button" class="rail-link" data-tool="dns">SINGLE DNS LOOKUP</button>
             <button type="button" class="rail-link" data-tool="mac" {{ if not .mac_available }}disabled aria-describedby="macUnavailableHelp"{{ end }}>MAC VENDOR LOOKUP</button>
             {{ if not .mac_available }}<p id="macUnavailableHelp" class="rail-note">Install a local OUI database to enable MAC vendor lookup.</p>{{ end }}

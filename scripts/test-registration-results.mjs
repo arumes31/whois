@@ -99,3 +99,32 @@ assert.match(ssl, /stale/);
 assert.match(ssl, /reported/);
 assert.match(ssl, /data-status="error"/);
 console.log('DNS, location, registration target and certificate evidence rendering passed.');
+
+const subnet4 = { version: 4, cidr: '192.168.1.0/24', prefix_length: 24, input_address: '192.168.1.129',
+  network: '192.168.1.0', last_address: '192.168.1.255', address_count: '256', netmask: '255.255.255.0',
+  wildcard_mask: '0.0.0.255', broadcast: '192.168.1.255', first_usable: '192.168.1.1', last_usable: '192.168.1.254', usable_count: '254', notes: ['Usable host convention excludes network and broadcast.'] };
+const subnetHtml = renderService('target', { valid: true, kind: 'cidr', subnet: subnet4 });
+for (const text of ['Subnet calculation', '192.168.1.129', '255.255.255.0', '0.0.0.255', 'First usable', 'Last usable', '254', 'Usable host convention', 'Calculated locally']) assert.ok(subnetHtml.includes(text), text);
+const subnet6 = renderService('target', { valid: true, kind: 'cidr', subnet: { version: 6, cidr: '::/0', prefix_length: 0, input_address: '::', network: '::', last_address: 'ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff', address_count: '340282366920938463463374607431768211456', notes: ['IPv6 has no broadcast address.'] } });
+assert.match(subnet6, /340282366920938463463374607431768211456/);
+assert.doesNotMatch(subnet6, /<dt>Broadcast|<dt>Netmask|<dt>Usable/);
+inspect(parseFragment(renderService('target', { valid: true, subnet: { ...subnet4, notes: ['<script>bad()</script>'] } })));
+
+const asnInfo = { status: 'answer', source: 'RIPEstat / RIPE RIS', fetched_at: '2026-10-09T12:00:00Z',
+  asn: { number: 13335, holder: 'Example network', announced: false, min_peers_seeing: 10,
+    overview_start: '2026-10-09T08:00:00Z', overview_end: '2026-10-09T12:00:00Z',
+    prefixes: { status: 'answer', items: Array.from({length: 102}, (_, n) => `11.0.${n}.0/24`), period_start: '2026-10-08T12:00:00Z', period_end: '2026-10-09T12:00:00Z', fetched_at: '2026-10-09T12:00:01Z', source_url: 'https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335' } } };
+const asnHtml = renderService('routing', asnInfo);
+for (const text of ['AS13335', 'Example network', '10 RIS', 'does not establish inactivity', 'Observed prefixes', '102', 'Browse first 100', 'export', 'last 24 hours', '2026-10-08 12:00:00 UTC']) assert.ok(asnHtml.includes(text), text);
+assert.match(asnHtml, /<details><summary>Browse first 100 of 102 prefixes/);
+assert.match(asnHtml, /11\.0\.99\.0\/24/);
+assert.doesNotMatch(asnHtml, /11\.0\.100\.0\/24|8 hours|currently announced/);
+const prefixError = renderService('routing', { ...asnInfo, asn: { ...asnInfo.asn, prefixes: { status: 'error', error: 'Prefix request failed' } } });
+assert.match(prefixError, /Example network/);
+assert.match(prefixError, /Prefix request failed/);
+assert.match(prefixError, /data-status="error"/);
+const emptyPrefixes = renderService('routing', { ...asnInfo, asn: { ...asnInfo.asn, prefixes: { ...asnInfo.asn.prefixes, items: [] } } });
+assert.match(emptyPrefixes, /No prefixes observed during this period/);
+assert.doesNotMatch(emptyPrefixes, /MODULE FAULT/);
+inspect(parseFragment(renderService('routing', { ...asnInfo, asn: { ...asnInfo.asn, holder: '<img src=x>', prefixes: { ...asnInfo.asn.prefixes, items: ['<script>bad()</script>'] } } })));
+console.log('Subnet and ASN evidence rendering passed.');

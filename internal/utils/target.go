@@ -16,7 +16,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-var asnPattern = regexp.MustCompile(`(?i)^AS([0-9]{1,10})$`)
+var asnPattern = regexp.MustCompile(`(?i)^AS([0-9]+)$`)
 
 const (
 	maxReverseDNSLookups   = 8
@@ -92,19 +92,31 @@ func NormalizeTarget(input string) model.TargetInfo {
 		info.ASN = uint32(asn)
 		info.Normalized = fmt.Sprintf("AS%d", asn)
 		info.Valid = true
-		info.Warnings = []string{"ASN intelligence requires a routing data source and is not queried in provider-free mode"}
+		info.Warnings = []string{"ASN provider data is optional; single-host diagnostics do not apply to autonomous systems."}
 		return info
 	}
 
 	if prefix, err := netip.ParsePrefix(raw); err == nil {
+		info.Subnet = calculateSubnet(prefix)
 		prefix = prefix.Masked()
 		info.Kind = model.TargetKindCIDR
 		info.Prefix = prefix.String()
 		info.Normalized = prefix.String()
 		info.Valid = true
 		info.IPs = []model.IPMetadata{classifyIP(prefix.Addr())}
-		info.Warnings = []string{"CIDR ranges are classified locally but are not sent to single-host network services"}
+		info.Warnings = []string{"Subnet bounds and counts are calculated locally; CIDR ranges are not sent to single-host network services."}
 		return info
+	}
+	if address, _, hasSlash := strings.Cut(raw, "/"); hasSlash {
+		if strings.HasPrefix(address, "[") && strings.HasSuffix(address, "]") {
+			address = address[1 : len(address)-1]
+		}
+		if _, err := netip.ParseAddr(address); err == nil {
+			// A malformed CIDR must not become a host lookup. IP URL paths
+			// remain available when the input includes an explicit scheme.
+			info.Error = "invalid CIDR prefix"
+			return info
+		}
 	}
 
 	host, port, scheme, err := splitTarget(raw)

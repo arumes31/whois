@@ -399,7 +399,7 @@ func (h *Handler) Index(c *echo.Context) error {
 		for _, item := range items {
 			trimmed := strings.TrimSpace(item)
 			info := utils.NormalizeTarget(trimmed)
-			if info.Valid && ((info.Networkable && utils.IsValidTarget(info.Normalized)) || routingEnabled) {
+			if info.Valid && (!info.Networkable || utils.IsValidTarget(info.Normalized) || routingEnabled) {
 				identity := info.Scheme + "|" + info.Normalized
 				if _, exists := seenItems[identity]; !exists {
 					if len(cleanedItems) >= maxQueryTargets {
@@ -650,10 +650,12 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	}
 
 	targetInfo := utils.NormalizeTarget(item)
-	if routingEnabled && (!targetInfo.Networkable || !utils.IsValidTarget(targetInfo.Normalized)) {
+	if !targetInfo.Networkable || !utils.IsValidTarget(targetInfo.Normalized) {
 		res := model.QueryResult{Target: targetInfo}
-		routing := h.Routing.Lookup(ctx, item)
-		res.Routing = &routing
+		if routingEnabled {
+			routing := h.Routing.Lookup(ctx, item)
+			res.Routing = &routing
+		}
 		return res
 	}
 	targetInfo = utils.EnrichTarget(ctx, item)

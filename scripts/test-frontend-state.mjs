@@ -7,6 +7,7 @@ import {
 import { renderService, skippedDetails } from '../static/js/render.js';
 import * as store from '../static/js/store.js';
 import * as cards from '../static/js/cards.js';
+import { prepareLookupToolRequest, initModal, openTool, closeModal } from '../static/js/history.js';
 
 function testCanonicalTargets() {
   const cases = [
@@ -25,9 +26,15 @@ function testCanonicalTargets() {
     ['::ffff:192.0.2.129/120', 'prefix|::ffff:192.0.2.0/120'],
     ['[192.0.2.1]', '|192.0.2.1'],
     ['https://[2001:0db8::1]:8443/path', 'https|[2001:db8::1]:8443'],
-    ['192.0.2.1/032', 'http|192.0.2.1'],
+    ['192.0.2.1/032', 'invalid|192.0.2.1/032'],
+    ['8.8.8.8/33', 'invalid|8.8.8.8/33'],
+    ['8.8.8.8/-1', 'invalid|8.8.8.8/-1'],
+    ['8.8.8.8/abc', 'invalid|8.8.8.8/abc'],
+    ['2001:db8::1/129', 'invalid|2001:db8::1/129'],
+    ['https://8.8.8.8/33', 'https|8.8.8.8'],
+    ['example.com/path', 'http|example.com'],
     ['2001:db8::1/064', 'invalid|2001:db8::1/064'],
-    ['[2001:db8::1]/64', 'http|2001:db8::1'],
+    ['[2001:db8::1]/64', 'invalid|[2001:db8::1]/64'],
     ['fe80:0:0:0:0:0:0:1%eth0', '|fe80::1%eth0'],
     ['fe80::1%ETH0', '|fe80::1%ETH0'],
     ['[192.0.2.1].', 'invalid|[192.0.2.1].'],
@@ -50,7 +57,7 @@ function testCanonicalTargets() {
   assert.equal(splitTargets('192.0.2.1::, c000:201::').length, 2, 'invalid IPv4-before-:: must not collide');
   assert.equal(splitTargets('192.0.2.1/032, 192.0.2.1/32').length, 2, 'leading-zero prefix must not collide');
   assert.equal(splitTargets('2001:db8::1/064, 2001:db8::1/64').length, 2, 'invalid IPv6 prefix must not collide');
-  assert.equal(splitTargets('[2001:db8::1]/64, 2001:db8::/64').length, 2, 'bracketed URL path must not collide with a prefix');
+  assert.equal(splitTargets('[2001:db8::1]/64, 2001:db8::/64').length, 2, 'invalid bracketed prefix must not collide with a valid prefix');
   assert.equal(splitTargets('fe80:0:0:0:0:0:0:1%eth0, fe80::1%eth0').length, 1);
   assert.equal(splitTargets('fe80::1%eth0, fe80::1%ETH0').length, 2, 'zone identity is case-sensitive');
   assert.equal(splitTargets('[192.0.2.1]., 192.0.2.1').length, 2, 'invalid bracket-dot form must not collide');
@@ -103,6 +110,7 @@ function testCompletionSummary() {
   const clean = scan('clean');
   const blocked = scan('policy_blocked', { status: 'failed', findings: new Set(['target']) });
   const profile = scan('profile_only');
+  const calculated = scan('local_calculation');
   const skipped = scan('completed_with_skips', { skippedServices: new Set(['trace', 'ct']) });
   const reviewed = scan('findings', {
     failures: new Set(['ping']), findings: new Set(['dns']), skippedServices: new Set(['trace']),
@@ -111,6 +119,8 @@ function testCompletionSummary() {
     { scans: [clean], phase: 'COMPLETE', text: [/1 target completed without findings/], absent: /skipped|blocked|review/i },
     { scans: [blocked], phase: 'BLOCKED BY POLICY', text: [/blocked by server policy/, /Active diagnostics did not run/], absent: /finding|completed/i },
     { scans: [profile], phase: 'PROFILE ONLY', text: [/profile-only target/, /Active diagnostics did not run/], absent: /completed|finding/i },
+    { scans: [calculated], phase: 'CALCULATED', text: [/1 subnet calculation completed locally/], absent: /skipped|profile-only|without findings/i },
+    { scans: [calculated, clean], phase: 'COMPLETE', text: [/1 subnet calculation completed locally/, /1 target completed without findings/], absent: /profile-only/i },
     { scans: [skipped], phase: 'COMPLETE · SKIPPED', text: [/completed with skipped modules/], absent: /without findings|All diagnostics/i },
     { scans: [reviewed], phase: 'COMPLETE · REVIEW', text: [/requiring review/, /1 module failure/, /1 finding/, /also skipped modules/], absent: /without findings|All diagnostics/i },
     { scans: [scan('request_error', { status: 'failed' }), scan('interrupted', { status: 'interrupted' })],
@@ -460,6 +470,105 @@ function testOptionalRoutingSelection() {
   }
 }
 
+function testTargetScanPlan() {
+  const selected = { dns: true, whois: true, routing: true, ports: '' };
+  assert.deepEqual(store.planTargetScan('192.168.1.129/24', selected), { config: {}, total: 1 }, 'CIDR calculates locally regardless of selected modules');
+  assert.deepEqual(store.planTargetScan('2001:db8::1234/64', {}), { config: {}, total: 1 }, 'IPv6 calculation needs no selected module');
+  assert.deepEqual(store.planTargetScan('AS13335', selected), { config: { routing: true }, total: 1 }, 'ASN only sends the explicitly selected routing request');
+  assert.equal(store.planTargetScan('AS13335', {}).total, 0, 'ASN cannot silently opt into an external lookup');
+  assert.equal(store.planTargetScan('example.com', {}).total, 0);
+  assert.equal(store.planTargetScan('192.168.1.1/033', {}).total, 0, 'invalid prefixes do not bypass module requirements');
+  assert.deepEqual(store.planTargetScan('example.com', selected), { config: selected, total: 3 });
+}
+
+function testLookupToolValidation() {
+  assert.deepEqual(prepareLookupToolRequest('subnet', ' 192.168.1.129/24 '), { target: '192.168.1.129/24' }, 'preserve input host bits for calculation');
+  assert.deepEqual(prepareLookupToolRequest('subnet', '2001:db8::1/64'), { target: '2001:db8::1/64' });
+  for (const input of ['example.com', '192.168.1.1', '192.168.1.1/33', '2001:db8::1/129']) assert.ok(prepareLookupToolRequest('subnet', input).error, input);
+  assert.ok(prepareLookupToolRequest('asn', '13335', { routingConsent: true }).error, 'server opt-in required');
+  assert.ok(prepareLookupToolRequest('asn', '13335', { routingEnabled: true }).error, 'explicit browser consent required');
+  for (const input of ['13335', 'AS13335', 'as0013335']) assert.deepEqual(prepareLookupToolRequest('asn', input, { routingEnabled: true, routingConsent: true }), { target: 'AS13335' });
+  for (const input of ['0', '4294967296', 'example.com', '<img src=x>']) assert.ok(prepareLookupToolRequest('asn', input, { routingEnabled: true, routingConsent: true }).error, input);
+}
+
+function testLookupToolDialogOptIn() {
+  const previousDocument = globalThis.document;
+  const previousHTMLElement = globalThis.HTMLElement;
+  const previousFrame = window.requestAnimationFrame;
+  const previousDispatch = window.dispatchEvent;
+  globalThis.HTMLElement = class {};
+  window.requestAnimationFrame = () => {};
+  const classes = () => ({ add() {}, remove() {}, contains() { return true; } });
+  try {
+    for (const [checked, disabled] of [[false, false], [true, false], [true, true]]) {
+      const sent = [];
+      let submit;
+      const body = { innerHTML: '' };
+      const input = { value: '13335', focus() {} };
+      const consent = { checked: checked && !disabled };
+      const elements = {
+        cfgRouting: { checked, disabled },
+        modalBody: body, modalTitle: {}, modalClose: { addEventListener() {} },
+        modalBackdrop: { classList: classes(), addEventListener() {}, removeAttribute() {}, setAttribute() {} },
+        toolLookupForm: { addEventListener(_type, callback) { submit = callback; } },
+        toolLookupTarget: input, toolRoutingConsent: consent, toolLookupError: {},
+      };
+      globalThis.document = {
+        getElementById(id) { return id === 'cfg-routing' ? elements.cfgRouting : elements[id] || null; },
+        activeElement: null, body: { children: [], classList: classes() },
+        addEventListener() {}, removeEventListener() {}, dispatchEvent() {},
+      };
+      window.dispatchEvent = event => sent.push(event);
+      initModal();
+      openTool('asn');
+      function find(node, id) {
+        if (node.attrs?.some(attr => attr.name === 'id' && attr.value === id)) return node;
+        return (node.childNodes || []).map(child => find(child, id)).find(Boolean);
+      }
+      const checkbox = find(parseFragment(body.innerHTML), 'toolRoutingConsent');
+      assert.equal(checkbox.attrs.some(attr => attr.name === 'checked'), checked && !disabled, 'dialog reuses browser opt-in only when server allows routing');
+      assert.equal(checkbox.attrs.some(attr => attr.name === 'disabled'), disabled);
+      submit({ preventDefault() {} });
+      assert.equal(sent.some(event => event.type === 'console:query-target'), checked && !disabled, 'unselected or disabled routing cannot start a provider lookup');
+      if (checked && !disabled) assert.equal(sent.at(-1).detail.target, 'AS13335');
+      else assert.ok(elements.toolLookupError.textContent);
+      closeModal();
+    }
+  } finally {
+    globalThis.document = previousDocument;
+    globalThis.HTMLElement = previousHTMLElement;
+    window.requestAnimationFrame = previousFrame;
+    window.dispatchEvent = previousDispatch;
+  }
+}
+
+function testSubnetAndASNCompletion() {
+  for (const testCase of [
+    { name: 'subnet', kind: 'cidr', subnet: { cidr: '192.168.1.0/24' }, outcome: 'local_calculation', badge: 'CALCULATED' },
+    { name: 'ASN answer', kind: 'asn', routing_allowed: true, routing: { status: 'answer', asn: { number: 13335, announced: true } }, outcome: 'clean', badge: 'ASN LOOKUP COMPLETE' },
+    { name: 'ASN outage', kind: 'asn', routing_allowed: true, routing: { status: 'error', error: 'Provider unavailable' }, outcome: 'findings', badge: 'COMPLETE · FINDINGS' },
+    { name: 'ASN prefix failure', kind: 'asn', routing_allowed: true, routing: { status: 'answer', asn: { number: 13335, prefixes: { status: 'error', error: 'Prefix request timed out' } } }, outcome: 'findings', badge: 'COMPLETE · FINDINGS' },
+    { name: 'ASN not selected', kind: 'asn', routing_allowed: false, outcome: 'profile_only', badge: 'PROFILE ONLY' },
+  ]) {
+    const target = `${testCase.name}.lifecycle.test`;
+    const profile = resultSection('target');
+    const routing = resultSection('routing');
+    const card = terminalCard(target, [profile, routing]);
+    globalThis.document = { getElementById() { return null; }, querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; } };
+    store.beginScan(target, { requestID: target, identity: target, config: testCase.routing ? { routing: true } : {}, total: 1 });
+    const data = { valid: true, networkable: false, query_allowed: false, kind: testCase.kind, subnet: testCase.subnet, routing_allowed: testCase.routing_allowed };
+    cards.routeMessage({ type: 'result', target, request_id: target, service: 'target', data });
+    if (testCase.routing) cards.routeMessage({ type: 'result', target, request_id: target, service: 'routing', data: testCase.routing });
+    cards.routeMessage({ type: 'all_done', target, request_id: target });
+    const scan = store.getScan(target);
+    assert.equal(scan.outcome, testCase.outcome, testCase.name);
+    assert.equal(card.querySelector('.status-badge').textContent, testCase.badge, testCase.name);
+    assert.equal(scan.completed, 1);
+    assert.deepEqual(store.getResults(target).target, data, 'subnet calculation is retained in exports');
+    if (testCase.name === 'ASN prefix failure') assert.equal(scan.failures.has('routing'), true);
+  }
+}
+
 function testRoutingResults() {
   const evidence = {
     query: '1.1.1.1', ip: '1.1.1.1', status: 'answer', prefix: '1.1.1.0/24',
@@ -711,6 +820,10 @@ testGenerationState();
 testCompletionSummary();
 testErrorRendering();
 testOptionalRoutingSelection();
+testTargetScanPlan();
+testLookupToolValidation();
+testLookupToolDialogOptIn();
+testSubnetAndASNCompletion();
 testRoutingResults();
 testTargetQueryPolicy();
 testSkippedModuleOutcome();

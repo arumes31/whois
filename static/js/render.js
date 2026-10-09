@@ -49,7 +49,8 @@ function preLines(lines, extraClass = '') {
 }
 
 function queryButton(target, label = 'QUERY') {
-  return `<button type="button" class="inline-action" data-query-target="${escapeHTML(target)}" aria-label="Run diagnostics for ${escapeHTML(target)}">${label}</button>`;
+  const action = label === 'CALCULATE' ? 'Calculate subnet' : (label === 'LOOK UP ASN' ? 'Look up' : 'Run diagnostics for');
+  return `<button type="button" class="inline-action" data-query-target="${escapeHTML(target)}" aria-label="${action} ${escapeHTML(target)}">${label}</button>`;
 }
 
 function spfRecord(record) {
@@ -99,10 +100,27 @@ function renderTarget(data) {
     ${data.resolution_ms ? kvRow('SYSTEM DNS', `${data.resolution_ms} ms`) : ''}
     ${data.prefix ? kvRow('PREFIX', data.prefix) : ''}
     ${data.kind ? kvRow('KIND', data.kind) : ''}
+    ${data.subnet ? renderSubnet(data.subnet) : ''}
+    ${data.kind === 'asn' && data.routing_allowed !== true ? '<p class="result-note">For an ASN lookup, enable BGP ROUTING on the server and select it in the browser, or use the ASN lookup quick tool.</p>' : ''}
     ${ipBlocks}${warnings}
     ${restriction ? `<div class="findings findings--err"><strong>BLOCKED BY POLICY</strong>${escapeHTML(restriction)}</div>` : ''}
     ${data.error ? `<div class="findings findings--err">${escapeHTML(data.error)}</div>` : ''}`;
   return openDetails('target', data.valid && !restriction ? 'success' : 'error', body, { open: true });
+}
+
+function renderSubnet(data) {
+  let body = '<h3 class="registration-title">Subnet calculation</h3><p class="result-note">Calculated locally. No DNS or external provider request is needed.</p>';
+  for (const [label, value] of [
+    ['Address family', data.version === undefined ? undefined : `IPv${data.version}`],
+    ['Input address', data.input_address], ['CIDR', data.cidr], ['Prefix length', data.prefix_length],
+    ['Network', data.network], ['Last address', data.last_address], ['Address count', data.address_count],
+    ['Netmask', data.netmask], ['Wildcard mask', data.wildcard_mask], ['Broadcast', data.broadcast],
+    ['First usable', data.first_usable], ['Last usable', data.last_usable], ['Usable count', data.usable_count],
+  ]) {
+    if (value !== undefined && value !== '') body += kvRow(label, value);
+  }
+  for (const note of Array.isArray(data.notes) ? data.notes : []) body += `<p class="result-note">${escapeHTML(note)}</p>`;
+  return body;
 }
 
 function renderGeo(data) {
@@ -195,13 +213,14 @@ function renderRouting(data) {
   if (!data || !['answer', 'no_announcement'].includes(data.status) || data.error) {
     return errorDetails('routing', `Routing lookup unavailable. ${data?.error || 'No usable provider response was returned.'}`);
   }
+  if (data.asn && typeof data.asn === 'object') return renderASN(data);
   let body = `<h3 class="registration-title">${data.status === 'answer' ? 'Routing announcement' : 'No announcement observed'}</h3>`;
   body += kvRow('IP address', data.ip || data.query);
   if (data.status === 'answer') {
     const asns = Array.isArray(data.origin_asns)
       ? data.origin_asns.filter(asn => Number.isInteger(asn) && asn > 0 && asn <= 4294967295) : [];
     body += kvRow('Announced prefix', data.prefix || 'Not provided');
-    body += kvRow('Origin ASNs', asns.length ? asns.map(asn => `AS${asn}`).join(', ') : 'Not provided');
+    body += `<dl class="kv"><dt>Origin ASNs</dt><dd>${asns.length ? asns.map(asn => `<span class="clickable-record">AS${asn}</span> ${queryButton(`AS${asn}`, 'LOOK UP ASN')}`).join('<br>') : 'Not provided'}</dd></dl>`;
   } else {
     body += '<p class="result-note">No announcement was found in this snapshot. This does not establish that the IP is unreachable.</p>';
   }
@@ -219,6 +238,61 @@ function renderRouting(data) {
   body += '<p class="result-note">RIPE RIS snapshots update every 8 hours; this is not a live routing check. Retrieved time records when this app fetched the response, not when BGP changed.</p>';
   body += '<p class="result-note">Routing announcements do not establish allocation ownership or physical location. See registration and Geo location separately.</p>';
   return openDetails('routing', 'success', body);
+}
+
+function routingTimeRow(label, value) {
+  if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) return '';
+  const text = new Date(value).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+  return `<dl class="kv"><dt>${escapeHTML(label)}</dt><dd><time datetime="${escapeHTML(value)}">${escapeHTML(text)}</time></dd></dl>`;
+}
+
+function routingSourceLink(value, label) {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && url.hostname === 'stat.ripe.net' && !url.username && !url.password) {
+      return `<p class="registration-provenance"><a href="${escapeHTML(url.href)}" target="_blank" rel="noopener noreferrer" aria-label="${escapeHTML(label)} (opens in a new tab)">${escapeHTML(label)}</a></p>`;
+    }
+  } catch { /* Missing or invalid provider URLs have no link. */ }
+  return '';
+}
+
+function renderASN(data) {
+  const asn = data.asn;
+  const prefixes = asn.prefixes;
+  const items = Array.isArray(prefixes?.items) ? prefixes.items : [];
+  const limit = 100;
+  const failed = prefixes?.status === 'error';
+  let body = '<h3 class="registration-title">Autonomous system overview</h3>';
+  body += kvRow('ASN', `AS${asn.number}`);
+  body += kvRow('Holder', asn.holder || 'Not provided');
+  const peerThreshold = Number.isInteger(asn.min_peers_seeing) ? `at least ${asn.min_peers_seeing} RIS full-feed peers` : 'the provider peer threshold';
+  body += kvRow('Origin visibility', typeof asn.announced === 'boolean'
+    ? `${asn.announced ? 'Observed' : 'Not observed'} by ${peerThreshold}` : 'Not provided', { copy: false });
+  body += '<p class="result-note">Origin visibility does not establish inactivity when absent: an ASN may carry transit traffic without originating a prefix.</p>';
+  body += routingTimeRow('Overview period start', asn.overview_start) + routingTimeRow('Overview period end', asn.overview_end);
+  body += kvRow('Provider', data.source || 'Not provided', { copy: false });
+  body += routingTimeRow('Overview retrieved', data.fetched_at) + routingSourceLink(data.source_url, 'Overview provider response');
+  body += '<h3 class="registration-title">Observed prefixes</h3>';
+  body += `<p class="result-note">Requested window: last 24 hours, seen by ${escapeHTML(peerThreshold)}. The returned observation period is shown below.</p>`;
+  if (failed) {
+    body += `<div class="findings findings--err"><strong>PREFIX LOOKUP FAILED</strong>${escapeHTML(prefixes.error || 'The prefix response was unavailable.')}</div>`;
+  } else if (prefixes?.status === 'answer') {
+    body += routingTimeRow('Prefix period start', prefixes.period_start) + routingTimeRow('Prefix period end', prefixes.period_end);
+    body += kvRow('Prefix count', String(items.length));
+    if (items.length) {
+      const list = `<ul class="dns-values">${items.slice(0, limit).map(prefix => `<li class="dns-record"><span class="clickable-record">${escapeHTML(prefix)}</span>${queryButton(prefix, 'CALCULATE')}</li>`).join('')}</ul>`;
+      body += items.length > 10
+        ? `<details><summary>Browse first ${Math.min(limit, items.length)} of ${items.length} prefixes</summary>${list}</details>` : list;
+    } else {
+      body += '<p class="result-note">No prefixes observed during this period at the provider peer threshold.</p>';
+    }
+    if (items.length > limit) body += `<p class="result-note">Display limited to ${limit} prefixes. JSON and CSV export retain the full prefix list.</p>`;
+  } else {
+    body += '<p class="result-note">Prefix observation data was not provided.</p>';
+  }
+  if (prefixes) body += routingTimeRow('Prefixes retrieved', prefixes.fetched_at) + routingSourceLink(prefixes.source_url, 'Prefix provider response');
+  body += '<p class="result-note">Prefixes were observed during the stated period; this is not a live routing check. Retrieval time records when this app fetched each response. Routing visibility is separate from allocation ownership and physical location.</p>';
+  return openDetails('routing', failed ? 'error' : 'success', body);
 }
 
 function dnsEvidenceNote(detail) {
@@ -481,6 +555,7 @@ export function skeletonHtml() {
 export function skippedDetails(service, reason = '', explanation = '') {
   const messages = {
     'profile-only': 'Skipped because this target is available for profile inspection only.',
+    'local-calculation': 'Subnet calculation completed locally; network diagnostics were not requested.',
     'invalid-target': 'Skipped because the target is invalid.',
     'policy-blocked': 'Skipped because network queries for this target are disabled by server policy.',
     failed: 'No result was returned before the diagnostic request failed.',
