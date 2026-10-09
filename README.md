@@ -1,12 +1,12 @@
 # WHOIS | Network Diagnostics & Discovery
 
-[![Go-CI](https://github.com/arumes31/whois/actions/workflows/go-ci.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/go-ci.yml)
-[![Build and Publish Docker Image](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml)
-[![Daily Security Scan](https://github.com/arumes31/whois/actions/workflows/security-scan.yml/badge.svg)](https://github.com/arumes31/whois/actions/workflows/security-scan.yml)
-[![Go Version](https://img.shields.io/github/go-mod/go-version/arumes31/whois/test)](https://golang.org)
+[![Go-CI](https://github.com/arumes31/whois/actions/workflows/go-ci.yml/badge.svg?branch=main)](https://github.com/arumes31/whois/actions/workflows/go-ci.yml?query=branch%3Amain)
+[![Build and Publish Docker Image](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml/badge.svg?branch=main)](https://github.com/arumes31/whois/actions/workflows/docker-publish.yml?query=branch%3Amain)
+[![Daily Security Scan](https://github.com/arumes31/whois/actions/workflows/security-scan.yml/badge.svg?branch=main)](https://github.com/arumes31/whois/actions/workflows/security-scan.yml?query=branch%3Amain)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/arumes31/whois/main?label=Go)](https://go.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Issues](https://img.shields.io/github/issues/arumes31/whois)](https://github.com/arumes31/whois/issues)
-[![Last Commit](https://img.shields.io/github/last-commit/arumes31/whois/test)](https://github.com/arumes31/whois/commits/test)
+[![Last Commit](https://img.shields.io/github/last-commit/arumes31/whois/main)](https://github.com/arumes31/whois/commits/main)
 
 A network diagnostic dashboard for WHOIS, DNS, HTTP/TLS inspection, GeoIP, port scanning, and monitored DNS history. It combines a Go service with a locally hosted web interface and Redis-backed state.
 
