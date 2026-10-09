@@ -204,9 +204,8 @@ func isValidHostname(host string) bool {
 	if len(host) == 0 || len(host) > 253 {
 		return false
 	}
-	host = strings.TrimSuffix(host, ".")
-	// A trailing root label must not be the only dot. Validate the canonical
-	// form so every accepted hostname remains valid after normalization.
+	// NormalizeTarget already removed the one permitted root label. Trimming
+	// again here would accept empty labels and make normalization non-idempotent.
 	if host == "" || !strings.Contains(host, ".") {
 		return false
 	}

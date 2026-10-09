@@ -112,9 +112,10 @@ func TestHandleWSDNSDetailsPreservesPartialRecordSnapshot(t *testing.T) {
 		reply := new(dns.Msg)
 		reply.SetReply(request)
 		question := request.Question[0]
-		if question.Qtype == dns.TypeA {
+		switch question.Qtype {
+		case dns.TypeA:
 			reply.Answer = []dns.RR{&dns.A{Hdr: dns.RR_Header{Name: question.Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60}, A: net.ParseIP("192.0.2.1")}}
-		} else if question.Qtype == dns.TypeAAAA {
+		case dns.TypeAAAA:
 			reply.Rcode = dns.RcodeServerFailure
 		}
 		_ = w.WriteMsg(reply)

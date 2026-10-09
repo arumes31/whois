@@ -10,7 +10,7 @@ func FuzzNormalizeTarget(f *testing.F) {
 	for _, seed := range []string{
 		"example.com", "HTTPS://Example.COM:8443/path?q=1", "192.0.2.1", "[2001:db8::1]:443",
 		"192.0.2.7/24", "AS64512", "", "https://user:pass@example.com", "invalid!target",
-		"0.", "0.0.0.0.",
+		"0.", "0.0.0.0.", "0.0..", "bücher.de。。", "１２７。０。０。１",
 		"https://example.com:65536/", "https://example.com:0/", "example.com:000",
 	} {
 		f.Add(seed)
