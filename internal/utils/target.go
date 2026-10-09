@@ -139,16 +139,24 @@ func splitTarget(raw string) (host, port, scheme string, err error) {
 		if scheme != "http" && scheme != "https" {
 			return "", "", "", fmt.Errorf("unsupported url scheme")
 		}
+		if strings.HasSuffix(u.Host, ":") || (port != "" && !validTargetPort(port)) {
+			return "", "", "", fmt.Errorf("invalid target port")
+		}
 		return host, port, scheme, nil
 	}
 
 	if parsedHost, parsedPort, splitErr := net.SplitHostPort(raw); splitErr == nil {
-		if _, portErr := strconv.ParseUint(parsedPort, 10, 16); portErr != nil || parsedPort == "0" {
+		if !validTargetPort(parsedPort) {
 			return "", "", "", fmt.Errorf("invalid target port")
 		}
 		return strings.Trim(parsedHost, "[]"), parsedPort, "", nil
 	}
 	return strings.Trim(raw, "[]"), "", "", nil
+}
+
+func validTargetPort(port string) bool {
+	value, err := strconv.ParseUint(port, 10, 16)
+	return err == nil && value > 0
 }
 
 func isValidHostname(host string) bool {

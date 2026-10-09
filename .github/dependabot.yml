@@ -4,6 +4,10 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "main"
+    groups:
+      codeql:
+        patterns:
+          - "github/codeql-action/*"
     schedule:
       interval: "weekly"
 

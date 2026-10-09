@@ -11,8 +11,8 @@ concurrency:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
-  BUILDX_VERSION: v0.37.0
-  BUILDKIT_IMAGE: moby/buildkit:buildx-stable-1@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+  BUILDX_VERSION: v0.38.0
+  BUILDKIT_IMAGE: moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
   QEMU_IMAGE: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
 jobs:
@@ -47,9 +47,9 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7 (actions/setup-node@v7)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7 (actions/setup-node@v7)
         with:
-          node-version: 26.8.2
+          node-version: 26.11.1
           cache: npm
 
       - name: Verify deterministic asset build
@@ -59,13 +59,13 @@ jobs:
           npm audit --audit-level=high
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4 (docker/setup-qemu-action@v4)
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4 (docker/setup-qemu-action@v4)
         with:
           image: ${{ env.QEMU_IMAGE }}
           platforms: arm64
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4 (docker/setup-buildx-action@v4)
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4 (docker/setup-buildx-action@v4)
         with:
           version: ${{ env.BUILDX_VERSION }}
           driver-opts: image=${{ env.BUILDKIT_IMAGE }}
@@ -86,7 +86,7 @@ jobs:
 
       - name: Push architecture image by digest
         id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7 (docker/build-push-action@v7)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7 (docker/build-push-action@v7)
         with:
           context: .
           file: ./Dockerfile
@@ -109,7 +109,7 @@ jobs:
       - name: Scan immutable architecture digest
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (aquasecurity/trivy-action@v0)
         with:
-          version: v0.74.0
+          version: v0.75.0
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
           format: sarif
           output: trivy-results-${{ matrix.slug }}.sarif
@@ -121,7 +121,7 @@ jobs:
           TRIVY_PLATFORM: ${{ matrix.platform }}
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4 (github/codeql-action@v4)
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4 (github/codeql-action@v4)
         if: ${{ always() && hashFiles(format('trivy-results-{0}.sarif', matrix.slug)) != '' }}
         with:
           sarif_file: trivy-results-${{ matrix.slug }}.sarif
@@ -136,7 +136,7 @@ jobs:
           touch "${RUNNER_TEMP}/digests/${PLATFORM_SLUG}-${DIGEST#sha256:}"
 
       - name: Upload run-unique digest artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7 (actions/upload-artifact@v7)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7 (actions/upload-artifact@v7)
         with:
           name: test-digests-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.slug }}
           path: ${{ runner.temp }}/digests/*
@@ -159,7 +159,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4 (docker/setup-buildx-action@v4)
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4 (docker/setup-buildx-action@v4)
         with:
           version: ${{ env.BUILDX_VERSION }}
           driver-opts: image=${{ env.BUILDKIT_IMAGE }}
@@ -172,7 +172,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download this run's scanned digests
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8 (actions/download-artifact@v8)
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8 (actions/download-artifact@v8)
         with:
           pattern: test-digests-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: ${{ runner.temp }}/digests

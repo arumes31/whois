@@ -27,6 +27,9 @@ server.log
 server.err
 whois-app
 whois.exe
+/server
+/server.exe
+/whois-test-bin
 data/oui.txt
 data/GeoLite2-City.mmdb
 data/*.tar.gz

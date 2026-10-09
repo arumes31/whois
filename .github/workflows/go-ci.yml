@@ -31,7 +31,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9 (golangci/golangci-lint-action@v9)
         with:
-          version: v2.13.2
+          version: v2.14.0
       - name: Go vet
         run: go vet ./...
 
@@ -71,7 +71,7 @@ jobs:
           go-version-file: go.mod
           cache: true
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
       - name: Scan reachable dependencies
         run: govulncheck ./...
 
@@ -110,19 +110,19 @@ jobs:
         with:
           persist-credentials: false
       - name: Set up Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7 (actions/setup-node@v7)
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7 (actions/setup-node@v7)
         with:
-          node-version: 26.8.2
+          node-version: 26.11.1
           cache: npm
       - name: Build packaged assets
         run: |
           npm ci --ignore-scripts
           npm test
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4 (docker/setup-buildx-action@v4)
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4 (docker/setup-buildx-action@v4)
         with:
-          version: v0.37.0
-          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8
+          version: v0.38.0
+          driver-opts: image=moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
       - name: Assert published Compose is image-only
         env:
           CONFIG_USER: ci-user
@@ -137,7 +137,7 @@ jobs:
             exit 1
           fi
       - name: Build the runtime image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7 (docker/build-push-action@v7)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7 (docker/build-push-action@v7)
         with:
           context: .
           platforms: ${{ matrix.platform }}
@@ -152,7 +152,7 @@ jobs:
       - name: Scan the runtime image before merge
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0 (aquasecurity/trivy-action@v0)
         with:
-          version: v0.74.0
+          version: v0.75.0
           image-ref: whois:ci
           format: table
           severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL

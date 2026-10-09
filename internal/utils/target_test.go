@@ -47,6 +47,12 @@ func TestNormalizeTarget(t *testing.T) {
 		{name: "reject label", input: "bad_label.example", kind: model.TargetKindUnknown, valid: false},
 		{name: "reject trailing root on single label", input: "0.", kind: model.TargetKindUnknown, valid: false},
 		{name: "accept fully qualified domain", input: "Example.COM.", kind: model.TargetKindDomain, normalized: "example.com", valid: true},
+		{name: "reject url port zero", input: "https://example.com:0/", kind: model.TargetKindUnknown, valid: false},
+		{name: "reject url port overflow", input: "https://example.com:65536/", kind: model.TargetKindUnknown, valid: false},
+		{name: "reject empty url port", input: "https://example.com:/", kind: model.TargetKindUnknown, valid: false},
+		{name: "reject zero padded port zero", input: "example.com:000", kind: model.TargetKindUnknown, valid: false},
+		{name: "reject ipv6 url port zero", input: "https://[2001:db8::1]:0/", kind: model.TargetKindUnknown, valid: false},
+		{name: "accept maximum url port", input: "https://example.com:65535/", kind: model.TargetKindDomain, normalized: "example.com:65535", valid: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
