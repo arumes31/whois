@@ -108,8 +108,9 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 	e := echo.New()
 	e.HideBanner = true
 	e.IPExtractor = echo.ExtractIPDirect()
+	e.SchemeExtractor = echo.ExtractSchemeDirect()
 	trustedNetworks := parseTrustedNetworks(cfg.TrustedProxies)
-	if cfg.TrustProxy {
+	if cfg.TrustProxy || cfg.UseCloudflare {
 		trustOptions := []echo.TrustOption{
 			echo.TrustLoopback(false),
 			echo.TrustLinkLocal(false),
@@ -118,7 +119,10 @@ func NewServer(cfg *config.Config) (*echo.Echo, func(context.Context) error) {
 		for _, network := range trustedNetworks {
 			trustOptions = append(trustOptions, echo.TrustIPRange(network))
 		}
-		e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOptions...)
+		e.SchemeExtractor = echo.ExtractSchemeFromHeaders(trustOptions...)
+		if cfg.TrustProxy {
+			e.IPExtractor = echo.ExtractIPFromXFFHeader(trustOptions...)
+		}
 	}
 	if cfg.UseCloudflare {
 		baseExtractor := e.IPExtractor

@@ -253,6 +253,81 @@ func TestNewServer(t *testing.T) {
 	})
 }
 
+func TestNewServerSchemeHonorsConfiguredProxyTrust(t *testing.T) {
+	t.Setenv("SECRET_KEY", "test-secret")
+	t.Setenv("ENVIRONMENT", "development")
+	t.Setenv("AUTO_UPDATE_DATABASES", "false")
+	t.Chdir("../..")
+	utils.InitLogger()
+
+	for _, mode := range []struct {
+		name          string
+		trustProxy    bool
+		useCloudflare bool
+	}{
+		{name: "direct"},
+		{name: "trusted proxy", trustProxy: true},
+		{name: "Cloudflare", useCloudflare: true},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			cfg, err := config.LoadConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.RedisPort = "1"
+			cfg.TrustProxy = mode.trustProxy
+			cfg.UseCloudflare = mode.useCloudflare
+			cfg.TrustedProxies = "203.0.113.0/24"
+			e, closeServer := NewServer(cfg)
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := closeServer(ctx); err != nil {
+					t.Errorf("close server: %v", err)
+				}
+			})
+
+			for _, tc := range []struct {
+				name          string
+				remoteAddress string
+				directTLS     bool
+				trusted       bool
+			}{
+				{name: "configured public proxy", remoteAddress: "203.0.113.10:4321", trusted: true},
+				{name: "untrusted public client", remoteAddress: "198.51.100.10:4321"},
+				{name: "untrusted private client", remoteAddress: "10.0.0.1:4321"},
+				{name: "untrusted loopback client", remoteAddress: "127.0.0.1:4321"},
+				{name: "direct TLS", remoteAddress: "198.51.100.10:4321", directTLS: true},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					url := "http://example.com/livez"
+					if tc.directTLS {
+						url = "https://example.com/livez"
+					}
+					req := httptest.NewRequest(http.MethodGet, url, nil)
+					req.RemoteAddr = tc.remoteAddress
+					req.Header.Set("X-Forwarded-Proto", "https")
+					rec := httptest.NewRecorder()
+					wantScheme := "http"
+					if tc.directTLS || tc.trusted && (mode.trustProxy || mode.useCloudflare) {
+						wantScheme = "https"
+					}
+					if got := e.NewContext(req, rec).Scheme(); got != wantScheme {
+						t.Errorf("scheme = %q, want %q", got, wantScheme)
+					}
+					e.ServeHTTP(rec, req)
+					if rec.Code != http.StatusOK {
+						t.Fatalf("status = %d, want 200", rec.Code)
+					}
+					if got := rec.Header().Get(echo.HeaderStrictTransportSecurity); (got != "") != (wantScheme == "https") {
+						t.Errorf("Strict-Transport-Security = %q for scheme %q", got, wantScheme)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestTrustedProxyNetworksNormalizeBareAddresses(t *testing.T) {
 	networks := parseTrustedNetworks("127.0.0.1,0:0:0:0:0:0:0:1,192.0.2.0/24")
 	for _, address := range []string{"127.0.0.1", "::1", "192.0.2.10"} {
