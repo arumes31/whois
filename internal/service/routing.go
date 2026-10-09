@@ -66,8 +66,10 @@ func NewRoutingService() *RoutingService {
 
 func (s *RoutingService) Lookup(ctx context.Context, target string) (result model.RoutingInfo) {
 	query := strings.TrimSpace(target)
-	if len(query) >= 2 && strings.EqualFold(query[:2], "AS") && !strings.ContainsAny(query, ".:/") {
-		return s.lookupASN(ctx, query)
+	if len(query) >= 2 && strings.EqualFold(query[:2], "AS") {
+		if _, err := parseASNNumber(query[2:]); err == nil {
+			return s.lookupASN(ctx, query)
+		}
 	}
 	result = model.RoutingInfo{
 		Query: query, Status: "skipped", Source: "RIPEstat / RIPE RIS", SnapshotCadenceHours: 8,

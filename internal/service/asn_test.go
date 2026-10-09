@@ -153,11 +153,11 @@ func TestASNLookupInvalidInputsDoNotRequestProvider(t *testing.T) {
 		t.Fatal("invalid ASN reached provider")
 		return nil, nil
 	})
-	for _, target := range []string{"AS0", "AS4294967296", "AS-1", "AS+1", "AS1.5", "AS 3333", "AS", "AS１２３", "example.com", "https://AS3333"} {
+	for _, target := range []string{"AS0", "AS4294967296", "AS-1", "AS+1", "AS1.5", "AS 3333", "AS", "AS１２３", "asus", "assets.example", "example.com", "https://AS3333"} {
 		t.Run(target, func(t *testing.T) {
 			result := s.Lookup(context.Background(), target)
-			if result.Status != "skipped" && result.Status != "error" {
-				t.Fatalf("invalid ASN accepted: %+v", result)
+			if result.Status != "skipped" || result.Reason == "" || result.Error != "" {
+				t.Fatalf("non-ASN input reported as a provider result: %+v", result)
 			}
 		})
 	}
