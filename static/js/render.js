@@ -5,6 +5,7 @@ const SERVICE_LABELS = {
   target: 'TARGET PROFILE',
   geo: 'GEO LOCATION',
   whois: 'WHOIS DATA',
+  routing: 'BGP ROUTING',
   dns: 'DNS RECORDS',
   subdomains: 'SUBDOMAIN DISCOVERY',
   portscan: 'PORT SCAN',
@@ -188,6 +189,36 @@ function renderWhois(data) {
     return openDetails('whois', 'success', preLines([String(data)]));
   }
   return openDetails('whois', 'error', `<div style="color:var(--phos-50)">No WHOIS data returned.</div>`);
+}
+
+function renderRouting(data) {
+  if (!data || !['answer', 'no_announcement'].includes(data.status) || data.error) {
+    return errorDetails('routing', `Routing lookup unavailable. ${data?.error || 'No usable provider response was returned.'}`);
+  }
+  let body = `<h3 class="registration-title">${data.status === 'answer' ? 'Routing announcement' : 'No announcement observed'}</h3>`;
+  body += kvRow('IP address', data.ip || data.query);
+  if (data.status === 'answer') {
+    const asns = Array.isArray(data.origin_asns)
+      ? data.origin_asns.filter(asn => Number.isInteger(asn) && asn > 0 && asn <= 4294967295) : [];
+    body += kvRow('Announced prefix', data.prefix || 'Not provided');
+    body += kvRow('Origin ASNs', asns.length ? asns.map(asn => `AS${asn}`).join(', ') : 'Not provided');
+  } else {
+    body += '<p class="result-note">No announcement was found in this snapshot. This does not establish that the IP is unreachable.</p>';
+  }
+  body += kvRow('Provider', data.source || 'Not provided', { copy: false });
+  if (typeof data.fetched_at === 'string' && !Number.isNaN(Date.parse(data.fetched_at))) {
+    const retrieved = new Date(data.fetched_at).toISOString().replace('T', ' ').replace('.000Z', ' UTC');
+    body += `<dl class="kv"><dt>Retrieved</dt><dd><time datetime="${escapeHTML(data.fetched_at)}">${escapeHTML(retrieved)}</time></dd></dl>`;
+  }
+  try {
+    const url = new URL(data.source_url);
+    if (url.protocol === 'https:' && url.hostname === 'stat.ripe.net' && !url.username && !url.password) {
+      body += `<p class="registration-provenance"><a href="${escapeHTML(url.href)}" target="_blank" rel="noopener noreferrer" aria-label="Routing provider response (opens in a new tab)">Provider response</a></p>`;
+    }
+  } catch { /* A missing or invalid provider URL has no link. */ }
+  body += '<p class="result-note">RIPE RIS snapshots update every 8 hours; this is not a live routing check. Retrieved time records when this app fetched the response, not when BGP changed.</p>';
+  body += '<p class="result-note">Routing announcements do not establish allocation ownership or physical location. See registration and Geo location separately.</p>';
+  return openDetails('routing', 'success', body);
 }
 
 function dnsEvidenceNote(detail) {
@@ -423,6 +454,7 @@ export function renderService(service, data, target, section, evidence) {
     case 'target': return renderTarget(data);
     case 'geo': return renderGeo(data);
     case 'whois': return renderWhois(data);
+    case 'routing': return renderRouting(data);
     case 'dns': return renderDns(data, evidence);
     case 'subdomains': return renderSubdomains(data);
     case 'portscan': return renderPortscan(data);

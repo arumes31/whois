@@ -83,8 +83,11 @@ func validateSessionToken(token, secretKey string) bool {
 }
 
 type Handler struct {
-	Storage     *storage.Storage
-	DNS         *service.DNSService
+	Storage *storage.Storage
+	DNS     *service.DNSService
+	Routing interface {
+		Lookup(context.Context, string) model.RoutingInfo
+	}
 	AppConfig   *config.Config
 	Upgrader    websocket.Upgrader
 	targetSem   chan struct{}
@@ -141,6 +144,10 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 		wsByIP:      make(map[string]int),
 		maxWSConns:  maxWSConns,
 		maxWSPerIP:  maxWSPerIP,
+	}
+
+	if cfg.EnableRouting {
+		h.Routing = service.NewRoutingService()
 	}
 
 	h.Upgrader = websocket.Upgrader{
@@ -381,6 +388,7 @@ func (h *Handler) Index(c *echo.Context) error {
 		sslEnabled := c.FormValue("ssl") != "" && h.AppConfig.EnableSSL
 		httpEnabled := c.FormValue("http") != "" && h.AppConfig.EnableHTTP
 		geoEnabled := c.FormValue("geo") != "" && viewConfig.EnableGeo
+		routingEnabled := c.FormValue("routing") != "" && h.AppConfig.EnableRouting
 
 		items := strings.FieldsFunc(ipsDomains, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' })
 		if len(items) > maxQueryTargets {
@@ -391,7 +399,7 @@ func (h *Handler) Index(c *echo.Context) error {
 		for _, item := range items {
 			trimmed := strings.TrimSpace(item)
 			info := utils.NormalizeTarget(trimmed)
-			if info.Valid && info.Networkable && utils.IsValidTarget(info.Normalized) {
+			if info.Valid && ((info.Networkable && utils.IsValidTarget(info.Normalized)) || routingEnabled) {
 				identity := info.Scheme + "|" + info.Normalized
 				if _, exists := seenItems[identity]; !exists {
 					if len(cleanedItems) >= maxQueryTargets {
@@ -417,7 +425,7 @@ func (h *Handler) Index(c *echo.Context) error {
 				case h.targetSem <- struct{}{}:
 					defer func() { <-h.targetSem }()
 				}
-				res := h.queryItem(c.Request().Context(), target, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
+				res := h.queryItem(c.Request().Context(), target, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled, routingEnabled)
 				mu.Lock()
 				results[target] = res
 				mu.Unlock()
@@ -433,22 +441,23 @@ func (h *Handler) Index(c *echo.Context) error {
 		}
 
 		return c.Render(http.StatusOK, "index.html", map[string]interface{}{
-			"results":       results,
-			"ordered_items": cleanedItems,
-			"whois_enabled": whoisEnabled,
-			"dns_enabled":   dnsEnabled,
-			"ct_enabled":    ctEnabled,
-			"ssl_enabled":   sslEnabled,
-			"http_enabled":  httpEnabled,
-			"geo_enabled":   geoEnabled,
-			"real_ip":       realIP,
-			"auto_expand":   true,
-			"stats":         stats,
-			"config":        viewConfig,
-			"geo_available": viewConfig.EnableGeo,
-			"mac_available": service.MACDatabaseAvailable(),
-			"current_path":  c.Request().URL.Path,
-			"csrf":          c.Get(middleware.DefaultCSRFConfig.ContextKey),
+			"results":         results,
+			"ordered_items":   cleanedItems,
+			"whois_enabled":   whoisEnabled,
+			"dns_enabled":     dnsEnabled,
+			"ct_enabled":      ctEnabled,
+			"ssl_enabled":     sslEnabled,
+			"http_enabled":    httpEnabled,
+			"geo_enabled":     geoEnabled,
+			"routing_enabled": routingEnabled,
+			"real_ip":         realIP,
+			"auto_expand":     true,
+			"stats":           stats,
+			"config":          viewConfig,
+			"geo_available":   viewConfig.EnableGeo,
+			"mac_available":   service.MACDatabaseAvailable(),
+			"current_path":    c.Request().URL.Path,
+			"csrf":            c.Get(middleware.DefaultCSRFConfig.ContextKey),
 		})
 	}
 
@@ -588,6 +597,12 @@ func (h *Handler) exportCSV(c *echo.Context, results map[string]model.QueryResul
 			{"Target", data.Target}, {"WHOIS", data.Whois}, {"DNS", data.DNS},
 			{"CT", data.CT}, {"SSL", data.SSL}, {"HTTP", data.HTTP}, {"Geo", data.Geo},
 		}
+		if data.Routing != nil {
+			rows = append(rows, struct {
+				name string
+				data interface{}
+			}{"Routing", data.Routing})
+		}
 		for _, row := range rows {
 			if row.data == nil {
 				continue
@@ -618,18 +633,30 @@ func spreadsheetSafe(value string) string {
 	return value
 }
 
-func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled bool) model.QueryResult {
+func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled, routingEnabled bool) model.QueryResult {
+	routingEnabled = routingEnabled && h.AppConfig.EnableRouting
 	cacheKey := fmt.Sprintf("query:%s:%v:%v:%v:%v:%v:%v", item, dnsEnabled, whoisEnabled, ctEnabled, sslEnabled, httpEnabled, geoEnabled)
+	if routingEnabled {
+		cacheKey += ":routing"
+	}
 
 	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
 		var res model.QueryResult
 		if json.Unmarshal([]byte(cached), &res) == nil &&
-			(!dnsEnabled || service.DNSCacheTTL(res.DNSDetails, time.Now(), 10*time.Minute) > 0) {
+			(!dnsEnabled || service.DNSCacheTTL(res.DNSDetails, time.Now(), 10*time.Minute) > 0) &&
+			(!routingEnabled || service.RoutingCacheTTL(res.Routing, time.Now(), 10*time.Minute) > 0) {
 			return res
 		}
 	}
 
-	targetInfo := utils.EnrichTarget(ctx, item)
+	targetInfo := utils.NormalizeTarget(item)
+	if routingEnabled && (!targetInfo.Networkable || !utils.IsValidTarget(targetInfo.Normalized)) {
+		res := model.QueryResult{Target: targetInfo}
+		routing := h.Routing.Lookup(ctx, item)
+		res.Routing = &routing
+		return res
+	}
+	targetInfo = utils.EnrichTarget(ctx, item)
 	res := model.QueryResult{Target: targetInfo}
 	isIP := targetInfo.Kind == model.TargetKindIPv4 || targetInfo.Kind == model.TargetKindIPv6
 	hostTarget := targetInfo.Host
@@ -671,7 +698,9 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 				cacheable = false
 				return
 			}
-			h.recordDNSHistory(ctx, hostTarget, d, nil)
+			if service.DNSProfileComplete(details, isIP) {
+				h.recordDNSHistory(ctx, hostTarget, d, nil)
+			}
 		})
 	}
 
@@ -723,10 +752,20 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 		})
 	}
 
+	if routingEnabled {
+		run(func() {
+			routing := h.Routing.Lookup(ctx, item)
+			res.Routing = &routing
+		})
+	}
+
 	wg.Wait()
 	cacheTTL := 10 * time.Minute
 	if dnsEnabled {
 		cacheTTL = service.DNSCacheTTL(res.DNSDetails, time.Now(), cacheTTL)
+	}
+	if routingEnabled {
+		cacheTTL = service.RoutingCacheTTL(res.Routing, time.Now(), cacheTTL)
 	}
 	if ctx.Err() == nil && cacheable && cacheTTL > 0 {
 		_ = h.Storage.SetCache(ctx, cacheKey, res, cacheTTL)
@@ -773,36 +812,6 @@ func (h *Handler) Scan(c *echo.Context) error {
 		"remote_ip": c.RealIP(),
 		"result":    res,
 	})
-}
-
-func (h *Handler) DNSLookup(c *echo.Context) error {
-	domain := strings.TrimSpace(c.FormValue("domain"))
-	rtype := strings.ToUpper(c.FormValue("type"))
-	if rtype == "" {
-		rtype = "A"
-	}
-
-	targetInfo := utils.NormalizeTarget(domain)
-	if !targetInfo.Valid || !targetInfo.Networkable {
-		return c.HTML(http.StatusBadRequest, "<div class='alert-err'>Error: invalid DNS target</div>")
-	}
-	isIP := targetInfo.Kind == model.TargetKindIPv4 || targetInfo.Kind == model.TargetKindIPv6
-	results, err := h.DNS.LookupType(c.Request().Context(), targetInfo.Host, rtype, isIP)
-	if err != nil {
-		return c.HTML(http.StatusBadRequest, fmt.Sprintf("<div class='alert-err'>Error: %v</div>", html.EscapeString(err.Error())))
-	}
-
-	if len(results) == 0 {
-		return c.HTML(http.StatusOK, fmt.Sprintf("<div class='alert-ok'>No %s records found for %s</div>", html.EscapeString(rtype), html.EscapeString(domain)))
-	}
-
-	htmlRes := fmt.Sprintf("<div class='dns-type'>%s RECORDS FOR %s</div><div class='dns-values'>", html.EscapeString(rtype), html.EscapeString(domain))
-	for _, res := range results {
-		htmlRes += fmt.Sprintf("<div class='clickable-record'>%s</div>", html.EscapeString(res))
-	}
-	htmlRes += "</div>"
-
-	return c.HTML(http.StatusOK, htmlRes)
 }
 
 func (h *Handler) MacLookup(c *echo.Context) error {

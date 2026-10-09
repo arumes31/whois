@@ -421,6 +421,103 @@ function resultSection(service) {
   };
 }
 
+function testOptionalRoutingSelection() {
+  const previousDocument = globalThis.document;
+  const previousStorage = window.localStorage;
+  let saved = null;
+  const boxes = Object.fromEntries([...store.moduleIds(), 'routing'].map(id => [`cfg-${id}`, { checked: false, disabled: false }]));
+  boxes['cfg-routing'].disabled = true;
+  window.localStorage = { getItem: () => saved, setItem: (_key, value) => { saved = value; } };
+  globalThis.document = {
+    getElementById: id => boxes[id] || null,
+    dispatchEvent() {},
+  };
+  try {
+    assert.equal(store.readModuleConfig().routing, false, 'server-disabled routing is unavailable');
+    saved = JSON.stringify({ routing: true });
+    store.loadSettings();
+    assert.equal(boxes['cfg-routing'].checked, false, 'saved selection cannot bypass the server flag');
+    store.applyPreset('full');
+    assert.equal(store.readModuleConfig().routing, false);
+    assert.equal(store.readModuleConfig().route, true, 'traceroute remains an independent module');
+    boxes['cfg-routing'].disabled = false;
+    assert.equal(store.readModuleConfig().routing, false, 'enabling the server does not opt in the browser');
+    for (const [preset, expected] of [
+      ['standard', ['whois', 'dns', 'ssl', 'http', 'geo']],
+      ['web', ['ssl', 'http', 'ct', 'geo']],
+      ['dns', ['dns', 'trace', 'subdomains']],
+    ]) {
+      store.applyPreset(preset);
+      assert.deepEqual(Object.entries(store.readModuleConfig()).filter(([key, value]) => key !== 'ports' && value).map(([key]) => key).sort(), expected.sort());
+    }
+    store.applyPreset('full');
+    assert.equal(store.readModuleConfig().routing, true);
+    assert.equal(store.readModuleConfig().route, true);
+    assert.equal(JSON.parse(saved).routing, true, 'explicit browser selection is persisted');
+  } finally {
+    globalThis.document = previousDocument;
+    window.localStorage = previousStorage;
+  }
+}
+
+function testRoutingResults() {
+  const evidence = {
+    query: '1.1.1.1', ip: '1.1.1.1', status: 'answer', prefix: '1.1.1.0/24',
+    origin_asns: [13335, 13336], source: 'RIPEstat / RIPE RIS',
+    source_url: 'https://stat.ripe.net/data/network-info/data.json?resource=1.1.1.1',
+    fetched_at: '2026-10-09T12:30:00Z', snapshot_cadence_hours: 8,
+  };
+  const answer = renderService('routing', evidence);
+  assert.match(answer, /BGP ROUTING/);
+  for (const text of ['Announced prefix', '1.1.1.0/24', 'Origin ASNs', 'AS13335', 'AS13336', 'RIPEstat / RIPE RIS', 'Retrieved', '2026-10-09 12:30:00 UTC']) {
+    assert.ok(answer.includes(text), text);
+  }
+  assert.match(answer, /8 hours/);
+  assert.match(answer, /not a live routing check/);
+  assert.match(answer, /allocation ownership or physical location/);
+  assert.doesNotMatch(answer, /TRACEROUTE/);
+
+  for (const [name, data, outcome, failed] of [
+    ['answer', evidence, 'clean', false],
+    ['empty', { ...evidence, status: 'no_announcement', prefix: undefined, origin_asns: [] }, 'clean', false],
+    ['skipped', { status: 'skipped', reason: 'Routing requires a public literal IP address.' }, 'completed_with_skips', false],
+    ['unavailable', { status: 'error', error: 'RIPEstat request timed out' }, 'findings', true],
+  ]) {
+    const target = `${name}.routing.test`;
+    const section = resultSection('routing');
+    const card = terminalCard(target, section);
+    globalThis.document = {
+      getElementById() { return null; },
+      querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; },
+    };
+    store.beginScan(target, { requestID: target, identity: `|${target}`, config: { routing: true }, total: 1 });
+    assert.equal(cards.routeMessage({ type: 'result', request_id: target, target, service: 'routing', data }), true);
+    cards.routeMessage({ type: 'done', request_id: target, target, service: 'routing' });
+    cards.routeMessage({ type: 'all_done', request_id: target, target });
+    const scan = store.getScan(target);
+    assert.equal(scan.outcome, outcome);
+    assert.equal(scan.failures.has('routing'), failed);
+    assert.equal(scan.findings.size, 0);
+    assert.deepEqual(store.getResults(target).routing, data);
+    assert.deepEqual(store.getAllResultsData().find(result => result.target === target).services.routing, data, 'export preserves provider evidence and retrieval time');
+    if (name === 'empty') {
+      assert.match(section.innerHTML, /No announcement observed/);
+      assert.match(section.innerHTML, /does not establish that the IP is unreachable/);
+      assert.doesNotMatch(section.innerHTML, /MODULE FAULT|lookup unavailable/i);
+    }
+    if (name === 'unavailable') {
+      assert.match(section.innerHTML, /Routing lookup unavailable/);
+      assert.match(section.innerHTML, /RIPEstat request timed out/);
+      assert.doesNotMatch(section.innerHTML, /No announcement observed/);
+    }
+  }
+  const unsafe = '<img src=x onerror=alert(1)>';
+  const html = renderService('routing', { ...evidence, prefix: unsafe, origin_asns: [unsafe], source: unsafe, source_url: 'javascript:alert(1)', fetched_at: unsafe });
+  assert.doesNotMatch(html, /<img|href="javascript:|datetime="<img/);
+  assert.match(html, /&lt;img/);
+  assert.match(renderService('routing', null), /data-status="error"/);
+}
+
 function testTargetQueryPolicy() {
   const cases = [
     {
@@ -613,6 +710,8 @@ testCanonicalTargets();
 testGenerationState();
 testCompletionSummary();
 testErrorRendering();
+testOptionalRoutingSelection();
+testRoutingResults();
 testTargetQueryPolicy();
 testSkippedModuleOutcome();
 testUntrustedServiceRendering();

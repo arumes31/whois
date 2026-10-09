@@ -3,12 +3,13 @@ package service
 import (
 	"context"
 	"net"
+	"whois/internal/model"
 	"whois/internal/storage"
 	"whois/internal/utils"
 )
 
 type DNSInterface interface {
-	Lookup(ctx context.Context, target string, isIP bool) (map[string]interface{}, error)
+	LookupDetailed(ctx context.Context, target string, isIP bool) (map[string]interface{}, model.DNSDetails, error)
 }
 
 type MonitorService struct {
@@ -31,9 +32,13 @@ func (m *MonitorService) RunCheck(ctx context.Context, item string) {
 	utils.Log.Info("running scheduled check", utils.Field("item", item))
 
 	isIP := net.ParseIP(item) != nil
-	dnsResult, err := m.DNS.Lookup(ctx, item, isIP)
+	dnsResult, details, err := m.DNS.LookupDetailed(ctx, item, isIP)
 	if err != nil {
 		utils.Log.Warn("scheduled DNS check failed", utils.Field("item", item), utils.Field("error", err.Error()))
+		return
+	}
+	if !DNSProfileComplete(details, isIP) {
+		utils.Log.Warn("scheduled DNS check incomplete; history not saved", utils.Field("item", item))
 		return
 	}
 	if err := m.Storage.AddDNSHistory(ctx, item, dnsResult); err != nil {

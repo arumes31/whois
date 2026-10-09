@@ -13,6 +13,11 @@ import (
 	"github.com/miekg/dns"
 )
 
+var dnsProfileTypes = [...]uint16{
+	dns.TypeA, dns.TypeAAAA, dns.TypeCNAME, dns.TypeNS, dns.TypeTXT, dns.TypeMX,
+	dns.TypeCAA, dns.TypeSOA, dns.TypeSRV, dns.TypeDS, dns.TypeDNSKEY,
+}
+
 // LookupStreamDetailed emits an outcome for every requested query, including
 // failures and negative answers. Callbacks may run concurrently.
 func (s *DNSService) LookupStreamDetailed(ctx context.Context, target string, isIP bool, callback func(string, model.DNSQueryDetail)) error {
@@ -25,8 +30,7 @@ func (s *DNSService) LookupStreamDetailed(ctx context.Context, target string, is
 	if isIP {
 		jobs = append(jobs, queryJob{"PTR", target, dns.TypePTR})
 	} else {
-		for _, qtype := range []uint16{dns.TypeA, dns.TypeAAAA, dns.TypeCNAME, dns.TypeNS, dns.TypeTXT, dns.TypeMX,
-			dns.TypeCAA, dns.TypeSOA, dns.TypeSRV, dns.TypeDS, dns.TypeDNSKEY} {
+		for _, qtype := range dnsProfileTypes {
 			jobs = append(jobs, queryJob{dns.TypeToString[qtype], target, qtype})
 		}
 		jobs = append(jobs, queryJob{"DMARC", "_dmarc." + target, dns.TypeTXT})
@@ -201,4 +205,30 @@ func DNSCacheTTL(details model.DNSDetails, now time.Time, maximum time.Duration)
 		}
 	}
 	return remaining
+}
+
+// DNSProfileComplete reports whether every query in a detailed lookup completed
+// with an answer or a negative response. Failed queries cannot establish that
+// records disappeared, so their partial profile must not become DNS history.
+func DNSProfileComplete(details model.DNSDetails, isIP bool) bool {
+	complete := func(detail model.DNSQueryDetail) bool {
+		switch detail.Status {
+		case "answer", "nxdomain", "nodata":
+			return true
+		default:
+			return false
+		}
+	}
+	if isIP {
+		return len(details) == 1 && complete(details["PTR"])
+	}
+	if len(details) != len(dnsProfileTypes)+1 || !complete(details["DMARC"]) {
+		return false
+	}
+	for _, qtype := range dnsProfileTypes {
+		if !complete(details[dns.TypeToString[qtype]]) {
+			return false
+		}
+	}
+	return true
 }

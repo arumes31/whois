@@ -83,12 +83,12 @@ func TestQueryItemDNSCacheUsesEvidenceTTL(t *testing.T) {
 			store := setupMiniredisStorage(t)
 			h := NewHandler(store, &config.Config{MaxTargetConcurrency: 1, MaxServiceConcurrency: 1})
 			h.DNS = service.NewDNSService(resolver, "")
-			first := h.queryItem(context.Background(), "evidence.example.test", true, false, false, false, false, false)
+			first := h.queryItem(context.Background(), "evidence.example.test", true, false, false, false, false, false, false)
 			if len(first.DNSDetails) != 12 || first.DNS["A"] == nil || first.DNS["error"] != nil {
 				t.Fatalf("query evidence/legacy result = %+v", first)
 			}
 			before := queries.Load()
-			second := h.queryItem(context.Background(), "evidence.example.test", true, false, false, false, false, false)
+			second := h.queryItem(context.Background(), "evidence.example.test", true, false, false, false, false, false, false)
 			if (queries.Load() == before) != tc.wantCache {
 				t.Fatalf("query count before/after = %d/%d, want cache %v", before, queries.Load(), tc.wantCache)
 			}
@@ -162,7 +162,7 @@ func TestQueryItemKeepsDNSRecordsReturnedWithCancellation(t *testing.T) {
 	}
 	t.Cleanup(func() { service.DNSLookupFunc = previous })
 	h := NewHandler(setupMiniredisStorage(t), &config.Config{})
-	result := h.queryItem(context.Background(), "evidence.example.test", true, false, false, false, false, false)
+	result := h.queryItem(context.Background(), "evidence.example.test", true, false, false, false, false, false, false)
 	if result.DNS["A"] == nil || result.DNS["error"] != context.Canceled.Error() {
 		t.Fatalf("partial DNS records lost on cancellation: %+v", result.DNS)
 	}
