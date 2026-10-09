@@ -186,6 +186,13 @@ function canonicalIPPrefix(value) {
 
 function canonicalHostname(value) {
   let host = String(value);
+  if (/[^\x00-\x7f]/.test(host)) {
+    if (/[\s/\\?#@:%]/.test(host)) return null;
+    try {
+      // A nonnumeric suffix applies browser IDNA without legacy IPv4 coercion.
+      host = new URL(`http://${host}.invalid`).hostname.slice(0, -'.invalid'.length);
+    } catch { return null; }
+  }
   if (host.endsWith('.')) host = host.slice(0, -1);
   if (!host || host.length > 253 || !host.includes('.')) return null;
   const labels = host.split('.');

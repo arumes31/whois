@@ -3,13 +3,14 @@ package model
 type DNSResult map[string]interface{}
 
 type QueryResult struct {
-	Target interface{} `json:"target,omitempty"`
-	Whois  interface{} `json:"whois"`
-	DNS    DNSResult   `json:"dns"`
-	CT     interface{} `json:"ct"`
-	SSL    interface{} `json:"ssl,omitempty"`
-	HTTP   interface{} `json:"http,omitempty"`
-	Geo    interface{} `json:"geo,omitempty"`
+	Target     interface{} `json:"target,omitempty"`
+	Whois      interface{} `json:"whois"`
+	DNS        DNSResult   `json:"dns"`
+	DNSDetails DNSDetails  `json:"dns_details,omitempty"`
+	CT         interface{} `json:"ct"`
+	SSL        interface{} `json:"ssl,omitempty"`
+	HTTP       interface{} `json:"http,omitempty"`
+	Geo        interface{} `json:"geo,omitempty"`
 }
 
 type TargetKind string
@@ -63,6 +64,7 @@ type CertificateInfo struct {
 	NotBefore          string   `json:"not_before"`
 	NotAfter           string   `json:"not_after"`
 	DNSNames           []string `json:"dns_names,omitempty"`
+	IPAddresses        []string `json:"ip_addresses,omitempty"`
 	FingerprintSHA256  string   `json:"fingerprint_sha256"`
 	PublicKeyAlgorithm string   `json:"public_key_algorithm"`
 	SignatureAlgorithm string   `json:"signature_algorithm"`
@@ -70,31 +72,37 @@ type CertificateInfo struct {
 }
 
 type SSLInfo struct {
-	Issuer            string            `json:"issuer"`
-	Subject           string            `json:"subject"`
-	Expiry            string            `json:"expiry"`
-	DaysLeft          int               `json:"days_left"`
-	Protocol          string            `json:"protocol"`
-	CipherSuite       string            `json:"cipher_suite"`
-	Verified          bool              `json:"verified"`
-	HostnameValid     bool              `json:"hostname_valid"`
-	SelfSigned        bool              `json:"self_signed"`
-	Expired           bool              `json:"expired"`
-	ExpiringSoon      bool              `json:"expiring_soon"`
-	SANs              []string          `json:"sans,omitempty"`
-	Chain             []CertificateInfo `json:"chain,omitempty"`
-	FingerprintSHA256 string            `json:"fingerprint_sha256,omitempty"`
-	SupportedVersions []string          `json:"supported_versions,omitempty"`
-	ALPN              string            `json:"alpn,omitempty"`
-	OCSPStapled       bool              `json:"ocsp_stapled"`
-	OCSPStatus        string            `json:"ocsp_status,omitempty"`
-	SCTCount          int               `json:"sct_count"`
-	Score             int               `json:"score"`
-	Grade             string            `json:"grade,omitempty"`
-	Issues            []string          `json:"issues,omitempty"`
-	PEM               string            `json:"pem,omitempty"`
-	VerificationError string            `json:"verification_error,omitempty"`
-	Error             string            `json:"error,omitempty"`
+	Issuer                string            `json:"issuer"`
+	Subject               string            `json:"subject"`
+	Expiry                string            `json:"expiry"`
+	DaysLeft              int               `json:"days_left"`
+	Protocol              string            `json:"protocol"`
+	CipherSuite           string            `json:"cipher_suite"`
+	Verified              bool              `json:"verified"`
+	HostnameValid         bool              `json:"hostname_valid"`
+	SelfSigned            bool              `json:"self_signed"`
+	Expired               bool              `json:"expired"`
+	ExpiringSoon          bool              `json:"expiring_soon"`
+	SANs                  []string          `json:"sans,omitempty"`
+	IPSANs                []string          `json:"ip_sans,omitempty"`
+	Chain                 []CertificateInfo `json:"chain,omitempty"`
+	FingerprintSHA256     string            `json:"fingerprint_sha256,omitempty"`
+	SupportedVersions     []string          `json:"supported_versions,omitempty"`
+	ALPN                  string            `json:"alpn,omitempty"`
+	OCSPStapled           bool              `json:"ocsp_stapled"`
+	OCSPStatus            string            `json:"ocsp_status,omitempty"`
+	OCSPVerified          bool              `json:"ocsp_verified"`
+	OCSPFreshness         string            `json:"ocsp_freshness,omitempty"`
+	OCSPThisUpdate        string            `json:"ocsp_this_update,omitempty"`
+	OCSPNextUpdate        string            `json:"ocsp_next_update,omitempty"`
+	OCSPVerificationError string            `json:"ocsp_verification_error,omitempty"`
+	SCTCount              int               `json:"sct_count"`
+	Score                 int               `json:"score"`
+	Grade                 string            `json:"grade,omitempty"`
+	Issues                []string          `json:"issues,omitempty"`
+	PEM                   string            `json:"pem,omitempty"`
+	VerificationError     string            `json:"verification_error,omitempty"`
+	Error                 string            `json:"error,omitempty"`
 }
 
 type HTTPRedirect struct {

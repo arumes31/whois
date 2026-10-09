@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"sync"
 	"testing"
@@ -512,34 +513,37 @@ func TestStorage_GetDNSHistory_UnmarshalError(t *testing.T) {
 }
 
 func TestStorage_Errors(t *testing.T) {
-	mr, err := miniredis.Run()
-	if err != nil {
-		t.Fatal(err)
-	}
-	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	unavailable := errors.New("test Redis connection unavailable")
+	client := redis.NewClient(&redis.Options{
+		Addr: "127.0.0.1:0", MaxRetries: -1, DialerRetries: 1,
+		// A closed listener releases its port, which another parallel Redis
+		// fixture can reuse. Inject failure before any network connection.
+		Dialer: func(context.Context, string, string) (net.Conn, error) {
+			return nil, unavailable
+		},
+	})
+	t.Cleanup(func() { _ = client.Close() })
 	s := &Storage{Client: client}
 	ctx := context.Background()
 
-	mr.Close() // Force connection error
-
-	_, err = s.GetMonitoredItems(ctx)
-	if err == nil {
-		t.Error("Expected error from closed redis")
+	_, err := s.GetMonitoredItems(ctx)
+	if !errors.Is(err, unavailable) {
+		t.Errorf("GetMonitoredItems error = %v; want connection failure", err)
 	}
 
 	_, err = s.GetDNSHistory(ctx, "test")
-	if err == nil {
-		t.Error("Expected error from closed redis in GetDNSHistory")
+	if !errors.Is(err, unavailable) {
+		t.Errorf("GetDNSHistory error = %v; want connection failure", err)
 	}
 
 	_, err = s.GetCache(ctx, "test")
-	if err == nil {
-		t.Error("Expected error from closed redis in GetCache")
+	if !errors.Is(err, unavailable) {
+		t.Errorf("GetCache error = %v; want connection failure", err)
 	}
 
 	_, _, err = s.GetHistoryWithDiffs(ctx, "test")
-	if err == nil {
-		t.Error("Expected error from closed redis in GetHistoryWithDiffs")
+	if !errors.Is(err, unavailable) {
+		t.Errorf("GetHistoryWithDiffs error = %v; want connection failure", err)
 	}
 }
 

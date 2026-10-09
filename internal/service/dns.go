@@ -3,7 +3,6 @@ package service
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"whois/internal/model"
 	"whois/internal/utils"
 
 	"github.com/miekg/dns"
@@ -165,139 +165,18 @@ func (s *DNSService) recordResolverResult(resolver string, err error) {
 }
 
 func (s *DNSService) LookupStream(ctx context.Context, target string, isIP bool, callback func(string, interface{})) error {
-	var wg sync.WaitGroup
-	sem := make(chan struct{}, 5) // Limit to 5 concurrent queries per target
-	var resultMu sync.Mutex
-	var queryErrors []error
-	successfulQueries := 0
-	recordResult := func(name string, err error) {
-		resultMu.Lock()
-		defer resultMu.Unlock()
-		if err != nil {
-			queryErrors = append(queryErrors, fmt.Errorf("%s lookup: %w", name, err))
-			return
+	return s.LookupStreamDetailed(ctx, target, isIP, func(name string, detail model.DNSQueryDetail) {
+		for recordType, records := range DNSRecordResults(name, detail) {
+			callback(recordType, records)
 		}
-		successfulQueries++
-	}
-
-	if isIP {
-		// Reverse Lookup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			select {
-			case <-ctx.Done():
-				return
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			}
-
-			r, err := s.query(ctx, target, dns.TypePTR, true)
-			recordResult("PTR", err)
-			if err == nil && len(r) > 0 {
-				callback("PTR", r)
-			}
-		}()
-	} else {
-		types := []uint16{
-			dns.TypeA, dns.TypeAAAA, dns.TypeCNAME, dns.TypeNS, dns.TypeTXT, dns.TypeMX,
-			dns.TypeCAA, dns.TypeSOA, dns.TypeSRV, dns.TypeDS, dns.TypeDNSKEY,
-		}
-		typeNames := map[uint16]string{
-			dns.TypeA: "A", dns.TypeAAAA: "AAAA", dns.TypeCNAME: "CNAME",
-			dns.TypeNS: "NS", dns.TypeTXT: "TXT", dns.TypeMX: "MX",
-			dns.TypeCAA: "CAA", dns.TypeSOA: "SOA", dns.TypeSRV: "SRV",
-			dns.TypeDS: "DS", dns.TypeDNSKEY: "DNSKEY",
-		}
-
-		for _, t := range types {
-			wg.Add(1)
-			go func(t uint16, name string) {
-				defer wg.Done()
-
-				select {
-				case <-ctx.Done():
-					return
-				case sem <- struct{}{}:
-					defer func() { <-sem }()
-				}
-
-				r, err := s.query(ctx, target, t, false)
-				recordResult(name, err)
-				if err == nil && len(r) > 0 {
-					callback(name, r)
-
-					// Special case for SPF extraction from TXT
-					if t == dns.TypeTXT {
-						var spfs []string
-						for _, txt := range r {
-							clean := strings.Trim(txt, "'\"")
-							if strings.HasPrefix(strings.ToLower(clean), "v=spf1") {
-								spfs = append(spfs, clean)
-							}
-						}
-						if len(spfs) > 0 {
-							callback("SPF", spfs)
-						}
-					}
-				}
-			}(t, typeNames[t])
-		}
-
-		// DMARC Lookup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-
-			select {
-			case <-ctx.Done():
-				return
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			}
-
-			r, err := s.query(ctx, "_dmarc."+target, dns.TypeTXT, false)
-			recordResult("DMARC", err)
-			if err == nil && len(r) > 0 {
-				callback("DMARC", r)
-			}
-		}()
-	}
-
-	wg.Wait()
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	resultMu.Lock()
-	defer resultMu.Unlock()
-	if successfulQueries == 0 && len(queryErrors) > 0 {
-		return fmt.Errorf("dns lookup failed: %w", errors.Join(queryErrors...))
-	}
-	return nil
+	})
 }
 
 // LookupType resolves exactly one supported DNS record type. It is used by the
 // focused lookup tool so a single A query does not fan out into a full profile.
 func (s *DNSService) LookupType(ctx context.Context, target, recordType string, isIP bool) ([]string, error) {
-	recordType = strings.ToUpper(strings.TrimSpace(recordType))
-	types := map[string]uint16{
-		"A": dns.TypeA, "AAAA": dns.TypeAAAA, "CNAME": dns.TypeCNAME,
-		"NS": dns.TypeNS, "TXT": dns.TypeTXT, "MX": dns.TypeMX,
-		"CAA": dns.TypeCAA, "SOA": dns.TypeSOA, "SRV": dns.TypeSRV,
-		"DS": dns.TypeDS, "DNSKEY": dns.TypeDNSKEY, "PTR": dns.TypePTR,
-	}
-	queryType, ok := types[recordType]
-	if !ok {
-		return nil, fmt.Errorf("unsupported DNS record type %q", recordType)
-	}
-	if isIP != (queryType == dns.TypePTR) {
-		if isIP {
-			return nil, fmt.Errorf("only PTR lookups apply to IP addresses")
-		}
-		return nil, fmt.Errorf("PTR lookups require an IP address")
-	}
-	return s.query(ctx, target, queryType, isIP)
+	detail, err := s.LookupTypeDetailed(ctx, target, recordType, isIP)
+	return dnsDetailValues(detail), err
 }
 
 // DiscoverSubdomains performs a brute-force search for common subdomains
@@ -470,114 +349,8 @@ func (s *DNSService) Trace(ctx context.Context, target string) ([]string, error)
 }
 
 func (s *DNSService) query(ctx context.Context, target string, qtype uint16, isReverse bool) ([]string, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	queryName := dns.Fqdn(target)
-	if isReverse && !strings.HasSuffix(target, ".arpa.") {
-		var err error
-		queryName, err = dns.ReverseAddr(target)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if _, valid := dns.IsDomainName(queryName); !valid {
-		return nil, fmt.Errorf("invalid DNS name %q", target)
-	}
-	// Reject invalid caller input before recording any resolver health results.
-	candidates := s.resolverCandidates()
-	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no dns resolvers configured")
-	}
-	var resolverErrors []string
-	for _, resolver := range candidates {
-		result, err := s.queryResolver(ctx, resolver, queryName, qtype)
-		if err == nil {
-			s.recordResolverResult(resolver, nil)
-			return result, nil
-		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		s.recordResolverResult(resolver, err)
-		resolverErrors = append(resolverErrors, resolver+": "+err.Error())
-	}
-	return nil, fmt.Errorf("all resolvers failed: %s", strings.Join(resolverErrors, "; "))
-}
-
-func (s *DNSService) queryResolver(ctx context.Context, resolver, queryName string, qtype uint16) ([]string, error) {
-	m := new(dns.Msg)
-	m.SetQuestion(queryName, qtype)
-	m.SetEdns0(4096, false)
-
-	var in *dns.Msg
-	var err error
-
-	if strings.HasPrefix(resolver, "http://") || strings.HasPrefix(resolver, "https://") {
-		// DoH Query
-		in, err = s.dohQuery(ctx, resolver, m)
-	} else {
-		// Standard DNS
-		srv := dnsResolverAddress(resolver)
-		c := new(dns.Client)
-		c.Timeout = 5 * time.Second
-		in, err = exchangeDNSContext(ctx, c, m, srv)
-		if err == nil && in != nil && in.Truncated {
-			c.Net = "tcp"
-			in, err = exchangeDNSContext(ctx, c, m, srv)
-		}
-	}
-
-	if err != nil {
-		return nil, err
-	}
-	if in == nil {
-		return nil, fmt.Errorf("no response from resolver")
-	}
-	if in.Rcode != dns.RcodeSuccess && in.Rcode != dns.RcodeNameError {
-		return nil, fmt.Errorf("resolver returned %s", dns.RcodeToString[in.Rcode])
-	}
-
-	var results []string
-	for _, ans := range in.Answer {
-		// Recursive answers may include a CNAME chain before the requested RR.
-		// Keep each result under its actual type (especially A and AAAA).
-		if ans.Header().Rrtype != qtype {
-			continue
-		}
-		switch t := ans.(type) {
-		case *dns.A:
-			results = append(results, t.A.String())
-		case *dns.AAAA:
-			results = append(results, t.AAAA.String())
-		case *dns.CNAME:
-			results = append(results, strings.TrimSuffix(t.Target, "."))
-		case *dns.NS:
-			results = append(results, strings.TrimSuffix(t.Ns, "."))
-		case *dns.PTR:
-			results = append(results, strings.TrimSuffix(t.Ptr, "."))
-		case *dns.MX:
-			results = append(results, fmt.Sprintf("%d %s", t.Preference, dnsServiceTarget(t.Mx)))
-		case *dns.TXT:
-			results = append(results, strings.Join(t.Txt, ""))
-		case *dns.SOA:
-			results = append(results, fmt.Sprintf("%s %s %d %d %d %d %d",
-				strings.TrimSuffix(t.Ns, "."),
-				strings.TrimSuffix(t.Mbox, "."),
-				t.Serial, t.Refresh, t.Retry, t.Expire, t.Minttl))
-		case *dns.CAA:
-			results = append(results, fmt.Sprintf("%d %s %s", t.Flag, t.Tag, t.Value))
-		case *dns.SRV:
-			results = append(results, fmt.Sprintf("%d %d %d %s", t.Priority, t.Weight, t.Port, dnsServiceTarget(t.Target)))
-		default:
-			str := ans.String()
-			parts := strings.Split(str, "\t")
-			if len(parts) > 4 {
-				results = append(results, strings.Join(parts[4:], " "))
-			}
-		}
-	}
-	return results, nil
+	detail, err := s.queryDetailed(ctx, target, qtype, isReverse)
+	return dnsDetailValues(detail), err
 }
 
 // A root target explicitly means no service for MX (RFC 7505) and SRV
@@ -605,16 +378,31 @@ func dnsResolverAddress(resolver string) string {
 func exchangeDNSContext(ctx context.Context, client *dns.Client, message *dns.Msg, resolver string) (*dns.Msg, error) {
 	conn, err := client.DialContext(ctx, resolver)
 	if err != nil {
+		if contextErr := dnsContextErr(ctx); contextErr != nil {
+			return nil, contextErr
+		}
 		return nil, err
 	}
 	defer func() { _ = conn.Close() }()
 	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
 	defer stop()
 	reply, _, err := client.ExchangeWithConnContext(ctx, message, conn)
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
+	if contextErr := dnsContextErr(ctx); contextErr != nil {
+		return nil, contextErr
 	}
 	return reply, err
+}
+
+func dnsContextErr(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	// Socket deadlines may fire before the context timer is scheduled. Treat
+	// an elapsed caller deadline consistently and do not penalize the resolver.
+	if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 func (s *DNSService) dohQuery(ctx context.Context, url string, m *dns.Msg) (*dns.Msg, error) {

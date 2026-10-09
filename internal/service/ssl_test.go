@@ -90,6 +90,9 @@ func TestGetSSLInfo_ReportsCertificate(t *testing.T) {
 	if len(info.Chain) == 0 || info.FingerprintSHA256 == "" || info.PEM == "" {
 		t.Fatalf("certificate details are incomplete: %#v", info)
 	}
+	if !slices.Contains(info.IPSANs, "127.0.0.1") || !slices.Contains(info.Chain[0].IPAddresses, "127.0.0.1") {
+		t.Fatalf("IP SANs missing from local certificate: %#v", info)
+	}
 }
 
 func TestGetSSLInfo_Versions(t *testing.T) {
@@ -128,6 +131,7 @@ func TestScoreTLSRevokedCertificate(t *testing.T) {
 		HostnameValid: true,
 		OCSPStapled:   true,
 		OCSPStatus:    "revoked",
+		OCSPVerified:  true,
 	}
 	leaf := &x509.Certificate{NotAfter: time.Now().Add(90 * 24 * time.Hour)}
 

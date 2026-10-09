@@ -623,7 +623,8 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 
 	if cached, err := h.Storage.GetCache(ctx, cacheKey); err == nil {
 		var res model.QueryResult
-		if json.Unmarshal([]byte(cached), &res) == nil {
+		if json.Unmarshal([]byte(cached), &res) == nil &&
+			(!dnsEnabled || service.DNSCacheTTL(res.DNSDetails, time.Now(), 10*time.Minute) > 0) {
 			return res
 		}
 	}
@@ -659,13 +660,17 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 
 	if dnsEnabled {
 		run(func() {
-			d, err := h.DNS.Lookup(ctx, hostTarget, isIP)
+			d, details, err := h.DNS.LookupDetailed(ctx, hostTarget, isIP)
+			res.DNSDetails = details
+			res.DNS = d
 			if err != nil {
-				res.DNS = model.DNSResult{"error": err.Error()}
+				if res.DNS == nil {
+					res.DNS = make(model.DNSResult)
+				}
+				res.DNS["error"] = err.Error()
 				cacheable = false
 				return
 			}
-			res.DNS = d
 			h.recordDNSHistory(ctx, hostTarget, d, nil)
 		})
 	}
@@ -719,8 +724,12 @@ func (h *Handler) queryItem(ctx context.Context, item string, dnsEnabled, whoisE
 	}
 
 	wg.Wait()
-	if ctx.Err() == nil && cacheable {
-		_ = h.Storage.SetCache(ctx, cacheKey, res, 10*time.Minute)
+	cacheTTL := 10 * time.Minute
+	if dnsEnabled {
+		cacheTTL = service.DNSCacheTTL(res.DNSDetails, time.Now(), cacheTTL)
+	}
+	if ctx.Err() == nil && cacheable && cacheTTL > 0 {
+		_ = h.Storage.SetCache(ctx, cacheKey, res, cacheTTL)
 	}
 	return res
 }

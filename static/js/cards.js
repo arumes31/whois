@@ -522,7 +522,9 @@ function handleResult(msg, scan) {
     };
   }
   const skippedResult = isPlainObject(msg.data) && msg.data.status === 'skipped';
+  const dnsDetails = msg.service === 'dns' && isPlainObject(msg.dns_details) ? msg.dns_details : undefined;
   const hardFailure = !skippedResult && (resultHasError(msg.data)
+    || (dnsDetails && Object.values(dnsDetails).some(detail => detail?.status === 'error'))
     || (msg.service === 'whois' && typeof msg.data === 'string' && /^(?:whois\s+)?error:/i.test(msg.data.trim())));
   scan.skippedServices ??= new Set();
   if (skippedResult) {
@@ -538,9 +540,10 @@ function handleResult(msg, scan) {
   }
   appendLog(target, `Receiving ${serviceLabel(msg.service)} stream...`);
   getResults(target)[msg.service] = msg.data;
+  if (dnsDetails) getResults(target).dns_details = dnsDetails;
 
   if (msg.service === 'ping') destroySectionChart(section);
-  section.innerHTML = renderService(msg.service, msg.data, target, section);
+  section.innerHTML = renderService(msg.service, msg.data, target, section, dnsDetails);
 
   const rendered = section.querySelector('.status-dot')?.getAttribute('data-status');
   if (rendered === 'error' && !scan.failures.has(msg.service)) {

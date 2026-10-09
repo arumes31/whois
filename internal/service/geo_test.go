@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -22,6 +23,19 @@ import (
 func init() {
 	utils.TestInitLogger()
 	utils.SetAllowPrivateIPs(true)
+}
+
+func geoResultJSON(t *testing.T, result *GeoInfo) map[string]interface{} {
+	t.Helper()
+	body, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]interface{}
+	if err := json.Unmarshal(body, &fields); err != nil {
+		t.Fatal(err)
+	}
+	return fields
 }
 
 func TestGetGeoInfo(t *testing.T) {
@@ -71,6 +85,10 @@ func TestGetGeoInfo(t *testing.T) {
 			}
 			if resolverCalls != tt.wantResolverCalls {
 				t.Fatalf("resolver calls = %d, want %d", resolverCalls, tt.wantResolverCalls)
+			}
+			fields := geoResultJSON(t, res)
+			if fields["ip"] != tt.resolvedIP || fields["source"] != "GeoLite2 City (local)" {
+				t.Fatalf("GeoIP JSON must identify the matched address and source: %v", fields)
 			}
 		})
 	}
@@ -326,6 +344,11 @@ func TestGetGeoInfo_Coordinates(t *testing.T) {
 			if result.Lat != tt.wantLat || result.Lon != tt.wantLon || result.Status != "success" {
 				t.Fatalf("GeoIP result = %+v, want coordinates (%v, %v) and success", result, tt.wantLat, tt.wantLon)
 			}
+			fields := geoResultJSON(t, result)
+			wantCoordinates := tt.latitude != nil && tt.longitude != nil
+			if fields["has_coordinates"] != wantCoordinates {
+				t.Fatalf("GeoIP coordinate availability = %v, want %v", fields["has_coordinates"], wantCoordinates)
+			}
 		})
 	}
 }
@@ -346,6 +369,10 @@ func TestGetGeoInfo_UsesNextAddressWhenRecordMissing(t *testing.T) {
 	result, err := getGeoInfo(context.Background(), "example.test", resolve, lookup)
 	if err != nil || result == nil || result.CountryCode != "AT" {
 		t.Fatalf("GeoIP fallback returned result=%+v, error=%v; want country AT", result, err)
+	}
+	fields := geoResultJSON(t, result)
+	if fields["ip"] != "192.0.2.2" || fields["query"] != "example.test" {
+		t.Fatalf("GeoIP fallback must preserve query and identify the successful second IP: %v", fields)
 	}
 }
 

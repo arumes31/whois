@@ -18,11 +18,12 @@ import (
 )
 
 type WSMessage struct {
-	Type      string      `json:"type"`
-	RequestID string      `json:"request_id,omitempty"`
-	Target    string      `json:"target"`
-	Service   string      `json:"service"`
-	Data      interface{} `json:"data"`
+	Type       string           `json:"type"`
+	RequestID  string           `json:"request_id,omitempty"`
+	Target     string           `json:"target"`
+	Service    string           `json:"service"`
+	Data       interface{}      `json:"data"`
+	DNSDetails model.DNSDetails `json:"dns_details,omitempty"`
 }
 
 type wsQueryConfig struct {
@@ -311,13 +312,16 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 	isIP := targetInfo.Kind == model.TargetKindIPv4 || targetInfo.Kind == model.TargetKindIPv6
 
 	// Helper to send message
-	send := func(serviceName string, data interface{}) {
+	send := func(serviceName string, data interface{}, details ...model.DNSDetails) {
 		msg := WSMessage{
 			Type:      "result",
 			RequestID: requestID,
 			Target:    cardTarget,
 			Service:   serviceName,
 			Data:      data,
+		}
+		if len(details) > 0 {
+			msg.DNSDetails = details[0]
 		}
 		b, _ := json.Marshal(msg)
 		_ = writer.write(websocket.TextMessage, b)
@@ -573,26 +577,37 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			sendLog("Resolving DNS records for " + target)
 
 			dnsData := make(map[string]interface{})
+			dnsDetails := make(model.DNSDetails)
 			var dmu sync.Mutex
 
-			err := h.DNS.LookupStream(ctx, target, isIP, func(rtype string, data interface{}) {
+			err := h.DNS.LookupStreamDetailed(ctx, target, isIP, func(name string, detail model.DNSQueryDetail) {
 				dmu.Lock()
-				dnsData[rtype] = data
+				dnsDetails[name] = detail
+				for recordType, records := range service.DNSRecordResults(name, detail) {
+					dnsData[recordType] = records
+				}
 				// Create a copy for sending to avoid race condition during Marshal
 				msgData := make(map[string]interface{})
 				for k, v := range dnsData {
 					msgData[k] = v
 				}
+				msgDetails := make(model.DNSDetails, len(dnsDetails))
+				for recordType, evidence := range dnsDetails {
+					msgDetails[recordType] = evidence
+				}
 				dmu.Unlock()
-				send("dns", msgData)
+				send("dns", msgData, msgDetails)
 
-				if list, ok := data.([]string); ok && len(list) > 0 {
-					sendLog("Found " + rtype + " record: " + list[0])
+				if detail.Error != "" {
+					sendLog(name + " DNS query failed: " + detail.Error)
+				} else if len(detail.Records) > 0 {
+					sendLog("Found " + name + " record: " + detail.Records[0].Value)
 				}
 			})
 
 			if err != nil {
-				send("dns", map[string]string{"error": err.Error()})
+				dnsData["error"] = err.Error()
+				send("dns", dnsData, dnsDetails)
 				sendLog("DNS Error: " + err.Error())
 			} else {
 				dmu.Lock()
@@ -601,7 +616,7 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 					historyData[recordType] = data
 				}
 				dmu.Unlock()
-				send("dns", historyData)
+				send("dns", historyData, dnsDetails)
 				h.recordDNSHistory(ctx, target, historyData, sendLog)
 			}
 			sendLog("DNS resolution finished for " + target)

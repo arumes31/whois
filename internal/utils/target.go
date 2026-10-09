@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"whois/internal/model"
+
+	"golang.org/x/net/idna"
 )
 
 var asnPattern = regexp.MustCompile(`(?i)^AS([0-9]{1,10})$`)
@@ -113,6 +115,16 @@ func NormalizeTarget(input string) model.TargetInfo {
 	info.Host, info.Port, info.Scheme = host, port, scheme
 
 	canonicalHost := strings.TrimSuffix(host, ".")
+	if _, ipErr := netip.ParseAddr(canonicalHost); ipErr != nil {
+		// Normalize names before classifying them: Unicode digits and separators
+		// can map to an IP literal that must retain its address-policy checks.
+		canonicalHost, err = idna.Lookup.ToASCII(host)
+		if err != nil {
+			info.Error = "invalid target host"
+			return info
+		}
+		canonicalHost = strings.TrimSuffix(canonicalHost, ".")
+	}
 	if addr, err := netip.ParseAddr(canonicalHost); err == nil {
 		addr = addr.Unmap()
 		info.Host = addr.String()
@@ -131,7 +143,7 @@ func NormalizeTarget(input string) model.TargetInfo {
 		return info
 	}
 
-	if !isValidHostname(host) {
+	if !isValidHostname(canonicalHost) {
 		info.Error = "invalid target host"
 		return info
 	}
@@ -192,9 +204,8 @@ func isValidHostname(host string) bool {
 	if len(host) == 0 || len(host) > 253 {
 		return false
 	}
-	host = strings.TrimSuffix(host, ".")
-	// A trailing root label must not be the only dot. Validate the canonical
-	// form so every accepted hostname remains valid after normalization.
+	// NormalizeTarget already removed the one permitted root label. Trimming
+	// again here would accept empty labels and make normalization non-idempotent.
 	if host == "" || !strings.Contains(host, ".") {
 		return false
 	}
