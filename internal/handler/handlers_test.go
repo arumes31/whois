@@ -42,6 +42,9 @@ func init() {
 	service.WhoisFunc = func(_ context.Context, target string, query ...string) (string, error) {
 		return "Domain Name: " + target + "\nRegistrar: MockReg", nil
 	}
+	service.RdapLookupFunc = func(_ context.Context, target string) (service.WhoisInfo, error) {
+		return service.WhoisInfo{Raw: "Domain Name: " + target + "\nRegistrar: MockReg", Registrar: "MockReg", Kind: "domain", Source: "rdap"}, nil
+	}
 	service.GeoAPIURL = "http://localhost:1/"
 }
 

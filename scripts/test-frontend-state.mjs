@@ -90,6 +90,40 @@ function testGenerationState() {
   assert.deepEqual(store.getResults('generation.test'), {});
 }
 
+function testCompletionSummary() {
+  const scan = (outcome, options = {}) => ({
+    status: 'completed', outcome, failures: new Set(), findings: new Set(),
+    skippedServices: new Set(), ...options,
+  });
+  const clean = scan('clean');
+  const blocked = scan('policy_blocked', { status: 'failed', findings: new Set(['target']) });
+  const profile = scan('profile_only');
+  const skipped = scan('completed_with_skips', { skippedServices: new Set(['trace', 'ct']) });
+  const reviewed = scan('findings', {
+    failures: new Set(['ping']), findings: new Set(['dns']), skippedServices: new Set(['trace']),
+  });
+  const cases = [
+    { scans: [clean], phase: 'COMPLETE', text: [/1 target completed without findings/], absent: /skipped|blocked|review/i },
+    { scans: [blocked], phase: 'BLOCKED BY POLICY', text: [/blocked by server policy/, /Active diagnostics did not run/], absent: /finding|completed/i },
+    { scans: [profile], phase: 'PROFILE ONLY', text: [/profile-only target/, /Active diagnostics did not run/], absent: /completed|finding/i },
+    { scans: [skipped], phase: 'COMPLETE · SKIPPED', text: [/completed with skipped modules/], absent: /without findings|All diagnostics/i },
+    { scans: [reviewed], phase: 'COMPLETE · REVIEW', text: [/requiring review/, /1 module failure/, /1 finding/, /also skipped modules/], absent: /without findings|All diagnostics/i },
+    { scans: [scan('request_error', { status: 'failed' }), scan('interrupted', { status: 'interrupted' })],
+      phase: 'COMPLETE · REVIEW', text: [/1 target failed/, /1 target interrupted/], absent: /completed without findings|All diagnostics/i },
+    { scans: [clean, profile, skipped], phase: 'COMPLETE · SKIPPED', text: [/1 target completed without findings/, /1 profile-only target/, /1 target completed with skipped modules/], absent: /All diagnostics|did not run/i },
+    { scans: [clean, blocked, profile, skipped, reviewed], phase: 'COMPLETE · REVIEW',
+      text: [/blocked by server policy/, /profile-only target/, /completed with skipped modules/, /1 module failure/, /1 finding/, /completed without findings/], absent: /All diagnostics|did not run/i },
+    { scans: [scan('findings', { findings: new Set(['dns']) })], phase: 'COMPLETE · REVIEW', text: [/1 finding/], absent: /module failure|without findings/i },
+    { scans: [scan('completed_with_skips')], phase: 'COMPLETE · SKIPPED', text: [/skipped modules/], absent: /All diagnostics/i },
+  ];
+  for (const testCase of cases) {
+    const summary = store.summarizeScanCompletion(testCase.scans);
+    assert.equal(summary.phase, testCase.phase);
+    for (const pattern of testCase.text) assert.match(summary.detail, pattern);
+    assert.doesNotMatch(summary.detail, testCase.absent);
+  }
+}
+
 function testErrorRendering() {
   const cases = [
     ['whois', 'WHOIS error: timeout', 'timeout'],
@@ -353,6 +387,7 @@ function terminalCard(target, section) {
   const rescan = {};
   return {
     dataset: { target },
+    getAttribute(name) { return name === 'data-target' ? target : null; },
     querySelector(selector) {
       if (selector === '.result-card__progress i') return progressBar;
       if (selector === '.result-card__progress') return progress;
@@ -361,9 +396,113 @@ function terminalCard(target, section) {
       if (selector === '[data-card-action="rescan"]') return rescan;
       return null;
     },
-    querySelectorAll(selector) { return selector === '.service-section' ? [section] : []; },
+    querySelectorAll(selector) { return selector === '.service-section' ? [section].flat() : []; },
     setAttribute() {},
   };
+}
+
+function resultSection(service) {
+  return {
+    dataset: { service },
+    innerHTML: '<div class="skel"></div>',
+    classList: { add() {}, remove() {} },
+    querySelector(selector) {
+      if (selector === '.status-dot') {
+        return { getAttribute: () => /data-status="([^"]+)"/.exec(this.innerHTML)?.[1] };
+      }
+      return selector.includes('.skel') && this.innerHTML.includes('class="skel"') ? {} : null;
+    },
+    querySelectorAll() { return []; },
+  };
+}
+
+function testTargetQueryPolicy() {
+  const cases = [
+    {
+      name: 'blocked', valid: true, networkable: true, query_allowed: false,
+      query_restriction: 'Network queries are disabled by server policy for documentation addresses.',
+      status: 'failed', outcome: 'policy_blocked', badge: 'BLOCKED BY POLICY',
+    },
+    {
+      name: 'profile', valid: true, networkable: false, query_allowed: false,
+      status: 'completed', outcome: 'profile_only', badge: 'PROFILE ONLY',
+    },
+    {
+      name: 'legacy', valid: true, networkable: true,
+      status: 'completed', outcome: 'clean', badge: 'COMPLETE',
+    },
+    {
+      name: 'missing restriction', valid: true, networkable: true, query_allowed: false,
+      status: 'completed', outcome: 'clean', badge: 'COMPLETE',
+    },
+    {
+      name: 'allowed with note', valid: true, networkable: true, query_allowed: true,
+      query_restriction: 'Informational note, not a policy block.',
+      status: 'completed', outcome: 'clean', badge: 'COMPLETE',
+    },
+    {
+      name: 'invalid', valid: false, networkable: false, query_allowed: false,
+      status: 'failed', outcome: 'invalid_target', badge: 'INVALID TARGET',
+    },
+  ];
+  for (const testCase of cases) {
+    const target = `${testCase.name}.policy.test`;
+    const profile = resultSection('target');
+    const dns = resultSection('dns');
+    const card = terminalCard(target, [profile, dns]);
+    globalThis.document = {
+      getElementById() { return null; },
+      querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; },
+    };
+    store.beginScan(target, {
+      requestID: target, identity: `|${target}`, config: { dns: true }, total: 1,
+    });
+    const data = {
+      valid: testCase.valid, networkable: testCase.networkable,
+      query_allowed: testCase.query_allowed, query_restriction: testCase.query_restriction,
+    };
+    cards.routeMessage({ type: 'result', request_id: target, target, service: 'target', data });
+    cards.routeMessage({ type: 'all_done', request_id: target, target });
+    const scan = store.getScan(target);
+    assert.equal(scan.status, testCase.status, `${testCase.name} scan status`);
+    assert.equal(scan.outcome, testCase.outcome, `${testCase.name} scan outcome`);
+    assert.equal(card.querySelector('.status-badge').textContent, testCase.badge);
+    assert.deepEqual(store.getAllResultsData()[0].services.target, data, 'exports retain query policy');
+    if (testCase.outcome === 'policy_blocked') {
+      assert.ok(profile.innerHTML.includes(testCase.query_restriction));
+      assert.match(profile.innerHTML, /data-status="error"/);
+      assert.match(dns.innerHTML, /server policy/);
+    }
+  }
+}
+
+function testSkippedModuleOutcome() {
+  const target = '1.1.1.1';
+  const section = resultSection('trace');
+  const card = terminalCard(target, section);
+  globalThis.document = {
+    getElementById() { return null; },
+    querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; },
+  };
+  store.beginScan(target, {
+    requestID: 'skipped-trace', identity: `|${target}`, config: { trace: true }, total: 1,
+  });
+  const data = { status: 'skipped', reason: 'DNS trace requires a domain name; use DNS for PTR records.' };
+  cards.routeMessage({ type: 'result', request_id: 'skipped-trace', target, service: 'trace', data });
+  assert.match(section.innerHTML, /data-status="skipped"/);
+  assert.ok(section.innerHTML.includes(data.reason));
+  cards.routeMessage({ type: 'done', request_id: 'skipped-trace', target, service: 'trace' });
+  const scan = store.getScan(target);
+  assert.equal(scan.completed, 1);
+  assert.equal(scan.failures.size, 0);
+  assert.equal(scan.findings.size, 0);
+  assert.deepEqual([...scan.skippedServices], ['trace']);
+  cards.routeMessage({ type: 'all_done', request_id: 'skipped-trace', target });
+  assert.equal(scan.outcome, 'completed_with_skips');
+  assert.equal(card.querySelector('.status-badge').textContent, 'COMPLETE · SKIPPED');
+  assert.deepEqual(store.getAllResultsData()[0].services.trace, data);
+  const untrustedReason = renderService('trace', { status: 'skipped', reason: '<img src=x onerror=alert(1)>' });
+  assert.doesNotMatch(untrustedReason, /<img/);
 }
 
 function testUntrustedMessageServices() {
@@ -443,7 +582,10 @@ async function testRetryAfterParsing() {
 
 testCanonicalTargets();
 testGenerationState();
+testCompletionSummary();
 testErrorRendering();
+testTargetQueryPolicy();
+testSkippedModuleOutcome();
 testUntrustedServiceRendering();
 testQueue();
 testMultiTargetTracking();

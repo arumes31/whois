@@ -7,7 +7,7 @@
     "assets:test-build": "node scripts/test-asset-build.mjs",
     "build:assets": "node scripts/minify-js.mjs static templates assets.sha256",
     "minify:js": "node scripts/minify-js.mjs static templates",
-    "test:frontend": "node scripts/test-frontend-state.mjs",
+    "test:frontend": "node scripts/test-frontend-state.mjs && node scripts/test-registration-results.mjs",
     "test": "npm run test:frontend && npm run assets:check && npm run assets:test-build"
   },
   "devDependencies": {

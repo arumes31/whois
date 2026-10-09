@@ -74,6 +74,8 @@ function dmarcRecord(record) {
 /* ---------- individual services ---------- */
 
 function renderTarget(data) {
+  const restriction = data.query_allowed === false && typeof data.query_restriction === 'string'
+    ? data.query_restriction.trim() : '';
   const ips = Array.isArray(data.ips) ? data.ips : [];
   const ipBlocks = ips.map((ip) => {
     const flags = [
@@ -97,8 +99,9 @@ function renderTarget(data) {
     ${data.prefix ? kvRow('PREFIX', data.prefix) : ''}
     ${data.kind ? kvRow('KIND', data.kind) : ''}
     ${ipBlocks}${warnings}
+    ${restriction ? `<div class="findings findings--err"><strong>BLOCKED BY POLICY</strong>${escapeHTML(restriction)}</div>` : ''}
     ${data.error ? `<div class="findings findings--err">${escapeHTML(data.error)}</div>` : ''}`;
-  return openDetails('target', data.valid ? 'success' : 'error', body, { open: true });
+  return openDetails('target', data.valid && !restriction ? 'success' : 'error', body, { open: true });
 }
 
 function renderGeo(data) {
@@ -121,11 +124,53 @@ function renderWhois(data) {
     return errorDetails('whois', data.error);
   }
   if (data && typeof data === 'object') {
-    const body = `
-      ${kvRow('REGISTRAR', data.registrar || 'Unknown')}
-      ${kvRow('CREATED', data.created || 'Unknown')}
-      ${kvRow('EXPIRES', data.expiry || 'Unknown', { hot: true })}
-      ${data.raw ? rawBlock(data.raw) : ''}`;
+    const network = data.network;
+    const isNetwork = data.kind === 'ip' || Boolean(network);
+    let body = `<h3 class="registration-title">${isNetwork ? 'IP network registration' : 'Domain registration'}</h3>`;
+    if (data.source) {
+      const source = String(data.source).toUpperCase();
+      let sourceLink = '';
+      try {
+        const url = new URL(data.source_url);
+        if (['http:', 'https:'].includes(url.protocol) && url.hostname && !url.username && !url.password) {
+          sourceLink = ` · <a href="${escapeHTML(url.href)}" target="_blank" rel="noopener noreferrer" aria-label="Registry response (opens in a new tab)">Registry response</a>`;
+        }
+      } catch { /* A missing or invalid source URL has no link. */ }
+      const queriedAt = data.queried_at && !Number.isNaN(Date.parse(data.queried_at))
+        ? `<time datetime="${escapeHTML(data.queried_at)}">${escapeHTML(new Date(data.queried_at).toISOString().replace('T', ' ').replace('.000Z', ' UTC'))}</time>` : '';
+      body += `<p class="registration-provenance">${escapeHTML(source)}${sourceLink}${queriedAt ? `<br>Retrieved ${queriedAt}` : ''}</p>`;
+    }
+    if (isNetwork) {
+      for (const [label, value] of [
+        ['NETWORK', network?.name], ['HANDLE', network?.handle || data.handle],
+        ['ORGANIZATION', data.organization], ['FIRST ADDRESS', network?.start_address],
+        ['LAST ADDRESS', network?.end_address], ['REGISTRY COUNTRY', network?.country],
+        ['ADDRESS FAMILY', network?.ip_version], ['ALLOCATION TYPE', network?.type],
+      ]) {
+        if (value) body += kvRow(label, value);
+      }
+      if (network?.country) body += '<p class="result-note">Registry country describes the allocation, not the physical location of this IP.</p>';
+    } else {
+      if (data.domain) body += kvRow('DOMAIN', data.domain);
+      body += kvRow('REGISTRAR', data.registrar || 'Not provided');
+      body += kvRow('CREATED', data.created || 'Not provided');
+      body += kvRow('EXPIRES', data.expiry || 'Not provided', { hot: true });
+      if (data.organization) body += kvRow('REGISTRANT', data.organization);
+      if (Array.isArray(data.nameservers) && data.nameservers.length) {
+        body += kvRow('NAMESERVERS', data.nameservers.join('\n'));
+      }
+      if (typeof data.dnssec?.delegation_signed === 'boolean') {
+        body += kvRow('DNSSEC', data.dnssec.delegation_signed ? 'Delegation signed (registry)' : 'Unsigned delegation (registry)');
+        body += '<p class="result-note">Registry declaration; DNSSEC validation has not been performed.</p>';
+      }
+    }
+    if (Array.isArray(data.statuses) && data.statuses.length) body += kvRow('STATUS', data.statuses.join('\n'));
+    for (const contact of Array.isArray(data.abuse_contacts) ? data.abuse_contacts : []) {
+      if (contact.name) body += kvRow('ABUSE CONTACT', contact.name);
+      if (contact.email) body += kvRow('ABUSE EMAIL', contact.email);
+      if (contact.phone) body += kvRow('ABUSE PHONE', contact.phone);
+    }
+    if (data.raw) body += rawBlock(data.raw);
     return openDetails('whois', 'success', body, { open: true });
   }
   if (data) {
@@ -138,9 +183,16 @@ function renderDns(data) {
   if (data && data.error) return errorDetails('dns', data.error);
   if (data && Object.keys(data).length > 0) {
     let inner = '';
+    let hasFindings = false;
     for (const [type, val] of Object.entries(data)) {
       inner += `<div class="dns-type">${escapeHTML(type)}</div><div class="dns-values">`;
       if (Array.isArray(val)) {
+        if (type === 'MX' && val.some((record) => /^0\s+\.$/.test(String(record).trim()))) {
+          hasFindings ||= val.length > 1;
+          inner += `<p class="result-note">${val.length === 1
+            ? 'This domain does not accept email (Null MX).'
+            : 'Null MX conflicts with other MX records; mail delivery policy is invalid.'}</p>`;
+        }
         val.forEach((v) => {
           const record = String(v);
           if (/^v=spf1\b/i.test(record)) inner += spfRecord(record);
@@ -154,7 +206,7 @@ function renderDns(data) {
       }
       inner += '</div>';
     }
-    return openDetails('dns', 'success', inner, { open: true });
+    return openDetails('dns', hasFindings ? 'error' : 'success', inner, { open: true });
   }
   return openDetails('dns', 'success', `<div style="color:var(--phos-50)">No records found.</div>`);
 }
@@ -316,6 +368,9 @@ function renderCt(data) {
 }
 
 export function renderService(service, data, target, section) {
+  if (data && typeof data === 'object' && data.status === 'skipped') {
+    return skippedDetails(service, '', typeof data.reason === 'string' ? data.reason : '');
+  }
   switch (service) {
     case 'target': return renderTarget(data);
     case 'geo': return renderGeo(data);
@@ -337,13 +392,14 @@ export function skeletonHtml() {
   return `<div class="skel" aria-hidden="true"><i style="width:88%"></i><i style="width:64%"></i><i style="width:76%"></i></div>`;
 }
 
-export function skippedDetails(service, reason = '') {
+export function skippedDetails(service, reason = '', explanation = '') {
   const messages = {
     'profile-only': 'Skipped because this target is available for profile inspection only.',
     'invalid-target': 'Skipped because the target is invalid.',
+    'policy-blocked': 'Skipped because network queries for this target are disabled by server policy.',
     failed: 'No result was returned before the diagnostic request failed.',
     interrupted: 'No result was returned before the diagnostic stream was interrupted.',
   };
-  const message = messages[reason] || 'No result was returned by this module.';
-  return openDetails(service, 'skipped', `<div class="module-skipped">${message}</div>`, { open: Boolean(reason) });
+  const message = explanation || messages[reason] || 'No result was returned by this module.';
+  return openDetails(service, 'skipped', `<div class="module-skipped"><strong>SKIPPED</strong> ${escapeHTML(message)}</div>`, { open: Boolean(reason || explanation) });
 }

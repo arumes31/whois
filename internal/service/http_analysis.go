@@ -41,30 +41,7 @@ func GetHTTPInfo(ctx context.Context, target string) *model.HTTPInfo {
 		return &model.HTTPInfo{Error: "invalid target host"}
 	}
 
-	hostPort := targetInfo.Host
-	if targetInfo.Port != "" {
-		hostPort = net.JoinHostPort(targetInfo.Host, targetInfo.Port)
-	}
-
-	type probeCandidate struct {
-		scheme   string
-		insecure bool
-	}
-	candidates := []probeCandidate{{"https", false}, {"https", true}, {"http", false}}
-	switch targetInfo.Scheme {
-	case "https":
-		candidates = candidates[:2]
-	case "http":
-		candidates = candidates[2:]
-	}
-	var probe *httpProbe
-	var err error
-	for _, candidate := range candidates {
-		probe, err = doHTTPProbe(ctx, candidate.scheme+"://"+hostPort, candidate.insecure)
-		if err == nil && probe != nil && probe.response != nil {
-			break
-		}
-	}
+	probe, err := probeHTTPTarget(ctx, targetInfo, doHTTPProbe)
 	if err != nil {
 		return &model.HTTPInfo{Error: fmt.Sprintf("http probe failed: %v", err)}
 	}
@@ -93,6 +70,39 @@ func GetHTTPInfo(ctx context.Context, target string) *model.HTTPInfo {
 	info.RobotsTXT = probeWellKnown(ctx, resp.Request.URL, "/robots.txt")
 	info.SecurityTXT = probeWellKnown(ctx, resp.Request.URL, "/.well-known/security.txt")
 	return info
+}
+
+func probeHTTPTarget(
+	ctx context.Context,
+	target model.TargetInfo,
+	probeURL func(context.Context, string, bool) (*httpProbe, error),
+) (*httpProbe, error) {
+	// JoinHostPort brackets IPv6 literals even when the default port is used.
+	hostPort := net.JoinHostPort(target.Host, target.Port)
+	if target.Port == "" {
+		hostPort = strings.TrimSuffix(hostPort, ":")
+	}
+	type probeCandidate struct {
+		scheme   string
+		insecure bool
+	}
+	candidates := []probeCandidate{{"https", false}, {"https", true}, {"http", false}}
+	switch target.Scheme {
+	case "https":
+		candidates = candidates[:2]
+	case "http":
+		candidates = candidates[2:]
+	}
+	var probe *httpProbe
+	var err error
+	for _, candidate := range candidates {
+		probeTarget := url.URL{Scheme: candidate.scheme, Host: hostPort}
+		probe, err = probeURL(ctx, probeTarget.String(), candidate.insecure)
+		if err == nil && probe != nil && probe.response != nil {
+			break
+		}
+	}
+	return probe, err
 }
 
 func doHTTPProbe(ctx context.Context, targetURL string, insecure bool) (*httpProbe, error) {

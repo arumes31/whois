@@ -5,6 +5,7 @@ import {
 } from './util.js';
 import {
   appendLog, beginScan, getCurrentScans, identityIsInFlight,
+  summarizeScanCompletion,
   readModuleConfig, enabledServiceCount, restoreActivity,
   applyPreset, saveSettings, loadSettings, updateModuleCount, moduleIds,
 } from './store.js';
@@ -31,9 +32,8 @@ function notifyCompletion(scans) {
   let enabled = false;
   try { enabled = window.localStorage.getItem(NOTIFICATION_KEY) === 'true'; } catch { /* unavailable */ }
   if (!enabled || !('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
-  const findings = scans.reduce((count, scan) => count + scan.failures.size + scan.findings.size, 0);
-  new Notification('Network diagnostics complete', {
-    body: `${scans.length} target${scans.length === 1 ? '' : 's'} finished${findings ? ` with ${findings} finding${findings === 1 ? '' : 's'}` : ''}.`,
+  new Notification('Diagnostic queue finished', {
+    body: summarizeScanCompletion(scans).detail,
     tag: 'whois-scan-complete',
   });
 }
@@ -57,9 +57,9 @@ function syncScanLifecycle() {
     phase = 'QUEUED';
     detail = `${queued} target${queued === 1 ? '' : 's'} waiting for the diagnostic uplink.`;
   } else if (scans.length > 0) {
-    const failed = scans.filter((scan) => ['failed', 'interrupted'].includes(scan.status)).length;
-    phase = failed ? 'COMPLETE · REVIEW' : 'COMPLETE';
-    detail = failed ? `${failed} target${failed === 1 ? '' : 's'} needs review; partial results remain exportable.` : 'All diagnostics completed. Results remain available for review and export.';
+    const summary = summarizeScanCompletion(scans);
+    phase = summary.phase;
+    detail = `${summary.detail} Results remain available for review and export.`;
   }
 
   const setText = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };

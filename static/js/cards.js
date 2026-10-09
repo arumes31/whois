@@ -409,9 +409,14 @@ export function routeMessage(msg) {
       notifyScanState();
       const failed = scan.failures.has(msg.service);
       const flagged = scan.findings.has(msg.service);
-      appendLog(scan.target, failed
-        ? `Module ${serviceLabel(msg.service)} failed.`
-        : `Module ${serviceLabel(msg.service)} complete${flagged ? ' (findings)' : ''}.`);
+      const result = getResults(scan.target)[msg.service];
+      if (result?.status === 'skipped') {
+        appendLog(scan.target, `Module ${serviceLabel(msg.service)} skipped: ${result.reason || 'not applicable'}`);
+      } else {
+        appendLog(scan.target, failed
+          ? `Module ${serviceLabel(msg.service)} failed.`
+          : `Module ${serviceLabel(msg.service)} complete${flagged ? ' (findings)' : ''}.`);
+      }
     }
     return Boolean(scan);
   }
@@ -440,6 +445,8 @@ function handleAllDone(scan) {
   const badge = card.querySelector('.status-badge');
   const invalidTarget = scan.targetProfile && !scan.targetProfile.valid;
   const profileOnly = scan.targetProfile?.valid && !scan.targetProfile.networkable;
+  const policyBlocked = scan.targetProfile?.queryAllowed === false && scan.targetProfile.queryRestriction;
+  const skipped = Object.values(getResults(target)).filter((result) => result?.status === 'skipped').length;
   const problems = scan.failures.size + scan.findings.size;
   updateFindingCount(target);
   if (invalidTarget) {
@@ -452,10 +459,16 @@ function handleAllDone(scan) {
     badge.textContent = 'PROFILE ONLY';
     badge.className = 'badge badge--skip status-badge';
     progress.setAttribute('aria-valuetext', 'Profile complete; active modules skipped');
+  } else if (policyBlocked) {
+    setScanStatusByRequestID(scan.requestID, 'failed', 'policy_blocked');
+    badge.textContent = 'BLOCKED BY POLICY';
+    badge.className = 'badge badge--warn status-badge';
+    progress.setAttribute('aria-valuetext', 'Target blocked by server policy; diagnostics were not run');
   } else {
-    setScanStatusByRequestID(scan.requestID, 'completed', problems > 0 ? 'findings' : 'clean');
-    badge.textContent = problems > 0 ? 'COMPLETE · FINDINGS' : 'COMPLETE';
-    badge.className = `badge status-badge ${problems > 0 ? 'badge--warn' : 'badge--ok'}`;
+    const outcome = problems > 0 ? 'findings' : (skipped > 0 ? 'completed_with_skips' : 'clean');
+    setScanStatusByRequestID(scan.requestID, 'completed', outcome);
+    badge.textContent = problems > 0 ? 'COMPLETE · FINDINGS' : (skipped > 0 ? 'COMPLETE · SKIPPED' : 'COMPLETE');
+    badge.className = `badge status-badge ${problems > 0 ? 'badge--warn' : (skipped > 0 ? 'badge--skip' : 'badge--ok')}`;
     progress.setAttribute('aria-valuetext', 'Diagnostics complete');
   }
   card.setAttribute('aria-busy', 'false');
@@ -467,7 +480,7 @@ function handleAllDone(scan) {
   updateCardTiming(card, scan);
   card.querySelectorAll('.service-section').forEach((section) => {
     if (section.querySelector('.skel, .slow-module')) {
-      const reason = invalidTarget ? 'invalid-target' : (profileOnly ? 'profile-only' : '');
+      const reason = invalidTarget ? 'invalid-target' : (profileOnly ? 'profile-only' : (policyBlocked ? 'policy-blocked' : ''));
       section.innerHTML = skippedDetails(section.dataset.service, reason);
     }
   });
@@ -477,6 +490,12 @@ function handleAllDone(scan) {
   } else if (profileOnly) {
     appendLog(target, 'Target profile complete; active diagnostics were skipped.');
     announce(`Target profile completed for ${target}; active diagnostics were skipped.`);
+  } else if (policyBlocked) {
+    appendLog(target, scan.targetProfile.queryRestriction);
+    announce(`Diagnostics blocked for ${target}: ${scan.targetProfile.queryRestriction}`);
+  } else if (skipped > 0 && problems === 0) {
+    appendLog(target, `Diagnostics finished; ${skipped} module(s) skipped because they do not apply to this target.`);
+    announce(`Diagnostics completed for ${target}; ${skipped} modules skipped.`);
   } else {
     appendLog(target, problems > 0 ? `Diagnostics finished with ${problems} finding(s).` : 'All diagnostics finished.');
     announce(problems > 0
@@ -498,10 +517,21 @@ function handleResult(msg, scan) {
     scan.targetProfile = {
       valid: msg.data.valid === true,
       networkable: msg.data.networkable === true,
+      queryAllowed: msg.data.query_allowed,
+      queryRestriction: typeof msg.data.query_restriction === 'string' ? msg.data.query_restriction.trim() : '',
     };
   }
-  const hardFailure = resultHasError(msg.data)
-    || (msg.service === 'whois' && typeof msg.data === 'string' && /^(?:whois\s+)?error:/i.test(msg.data.trim()));
+  const skippedResult = isPlainObject(msg.data) && msg.data.status === 'skipped';
+  const hardFailure = !skippedResult && (resultHasError(msg.data)
+    || (msg.service === 'whois' && typeof msg.data === 'string' && /^(?:whois\s+)?error:/i.test(msg.data.trim())));
+  scan.skippedServices ??= new Set();
+  if (skippedResult) {
+    scan.skippedServices.add(msg.service);
+    scan.failures.delete(msg.service);
+    scan.findings.delete(msg.service);
+  } else {
+    scan.skippedServices.delete(msg.service);
+  }
   if (hardFailure) {
     scan.failures.add(msg.service);
     scan.findings.delete(msg.service);

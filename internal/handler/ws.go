@@ -39,6 +39,12 @@ type wsQueryConfig struct {
 	Ports      string `json:"ports"`
 }
 
+type wsTargetProfile struct {
+	model.TargetInfo
+	QueryAllowed     bool   `json:"query_allowed"`
+	QueryRestriction string `json:"query_restriction,omitempty"`
+}
+
 const (
 	maxWSMessageBytes   = 64 << 10
 	maxWSTargets        = 25
@@ -329,9 +335,23 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 		_ = writer.write(websocket.TextMessage, b)
 	}
 
-	send("target", targetInfo)
-	if !targetInfo.Valid || !targetInfo.Networkable || !utils.IsValidTarget(target) {
+	profile := wsTargetProfile{
+		TargetInfo:   targetInfo,
+		QueryAllowed: targetInfo.Valid && targetInfo.Networkable && utils.IsValidTarget(target),
+	}
+	if targetInfo.Valid && targetInfo.Networkable && !profile.QueryAllowed {
+		profile.QueryRestriction = "Network queries are disabled by server policy for this target."
+		if len(targetInfo.IPs) > 0 {
+			profile.QueryRestriction = "Network queries are disabled by server policy for " +
+				targetInfo.IPs[0].Scope + " addresses."
+		}
+	}
+	send("target", profile)
+	if !profile.QueryAllowed {
 		reason := targetInfo.Error
+		if profile.QueryRestriction != "" {
+			reason = profile.QueryRestriction
+		}
 		if reason == "" {
 			reason = "this target type is profile-only in provider-free mode"
 		}
@@ -393,6 +413,31 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 		}
 		b, _ := json.Marshal(msg)
 		_ = writer.write(websocket.TextMessage, b)
+	}
+	if isIP {
+		for _, module := range []struct {
+			enabled bool
+			name    string
+			reason  string
+		}{
+			{
+				enabled: cfg.Subdomains, name: "subdomains",
+				reason: "Subdomain discovery requires a domain name; it does not apply to IP addresses.",
+			},
+			{
+				enabled: cfg.Trace, name: "trace",
+				reason: "DNS trace requires a domain name; use DNS for IP reverse (PTR) records.",
+			},
+			{
+				enabled: cfg.CT, name: "ct",
+				reason: "Certificate Transparency search requires a domain name; it does not apply to IP addresses.",
+			},
+		} {
+			if module.enabled {
+				send(module.name, map[string]string{"status": "skipped", "reason": module.reason})
+				sendDone(module.name)
+			}
+		}
 	}
 	acquireService := func() bool {
 		select {

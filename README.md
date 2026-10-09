@@ -185,6 +185,10 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 
 Target classification, TLS/HTTP inspection, DNS failover, and port scanning are performed directly by the application and do not require a paid intelligence provider. GeoIP, CT, WHOIS/RDAP, and configured public DNS resolvers remain optional external data sources.
 
+Registration lookups query RDAP first and fall back to WHOIS when RDAP is unavailable or unsupported. Domain results retain registrar, dates, statuses, nameservers and registry DNSSEC declarations. IP results show allocation ranges, network names, organizations and available abuse contacts separately from domain fields. Results include their protocol source, retrieval time and a registry response link when available; raw registration evidence remains expandable. A registry DNSSEC declaration is not a live DNSSEC validation, and an allocation's country is not the IP's physical location.
+
+Scan results distinguish server-policy blocks, profile-only targets and modules that do not apply to an IP address. Those states do not claim a clean diagnostic run. DNS results preserve the `.` target in Null MX and unavailable SRV records; a single `0 .` MX means the domain does not accept email, while a Null MX mixed with other MX records is flagged as an invalid mail policy.
+
 Automatic GeoIP/OUI downloads and periodic updates are enabled by default. Set `AUTO_UPDATE_DATABASES=false` for offline startup and pre-populate the persistent lookup-data volume. An existing explicit `false` remains effective after upgrading. MaxMind downloads require both account variables below and use HTTP Basic Authentication exclusively against MaxMind's HTTPS download endpoint; credentials are never placed in a URL or forwarded across redirects. There is no unauthenticated third-party GeoIP mirror fallback. For a more isolated deployment, also disable unneeded external-source feature flags and point DNS settings at internal resolvers. The application is not fully offline merely because its browser assets are local.
 
 #### 🌍 External API Keys
