@@ -557,7 +557,7 @@ func (s *DNSService) queryResolver(ctx context.Context, resolver, queryName stri
 		case *dns.PTR:
 			results = append(results, strings.TrimSuffix(t.Ptr, "."))
 		case *dns.MX:
-			results = append(results, fmt.Sprintf("%d %s", t.Preference, strings.TrimSuffix(t.Mx, ".")))
+			results = append(results, fmt.Sprintf("%d %s", t.Preference, dnsServiceTarget(t.Mx)))
 		case *dns.TXT:
 			results = append(results, strings.Join(t.Txt, ""))
 		case *dns.SOA:
@@ -568,7 +568,7 @@ func (s *DNSService) queryResolver(ctx context.Context, resolver, queryName stri
 		case *dns.CAA:
 			results = append(results, fmt.Sprintf("%d %s %s", t.Flag, t.Tag, t.Value))
 		case *dns.SRV:
-			results = append(results, fmt.Sprintf("%d %d %d %s", t.Priority, t.Weight, t.Port, strings.TrimSuffix(t.Target, ".")))
+			results = append(results, fmt.Sprintf("%d %d %d %s", t.Priority, t.Weight, t.Port, dnsServiceTarget(t.Target)))
 		default:
 			str := ans.String()
 			parts := strings.Split(str, "\t")
@@ -578,6 +578,15 @@ func (s *DNSService) queryResolver(ctx context.Context, resolver, queryName stri
 		}
 	}
 	return results, nil
+}
+
+// A root target explicitly means no service for MX (RFC 7505) and SRV
+// (RFC 2782). Preserve it instead of rendering an empty hostname.
+func dnsServiceTarget(name string) string {
+	if name == "." {
+		return name
+	}
+	return strings.TrimSuffix(name, ".")
 }
 
 func dnsResolverAddress(resolver string) string {

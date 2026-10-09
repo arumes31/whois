@@ -27,19 +27,48 @@ type targetResolver interface {
 	LookupAddr(context.Context, string) ([]string, error)
 }
 
+// Special-purpose allocations not already identified by netip's private,
+// loopback, link-local, multicast, and unspecified predicates. Reviewed against
+// https://www.iana.org/assignments/iana-ipv4-special-registry/ and
+// https://www.iana.org/assignments/iana-ipv6-special-registry/ on 2026-10-09.
+// "reserved" retains this application's category for non-global destinations;
+// it is not the registry's narrower Reserved-by-Protocol column.
 var specialPrefixes = []struct {
 	prefix netip.Prefix
 	kind   string
 }{
+	{netip.MustParsePrefix("0.0.0.0/8"), "reserved"},
 	{netip.MustParsePrefix("100.64.0.0/10"), "carrier-grade NAT"},
+	{netip.MustParsePrefix("192.0.0.0/24"), "reserved"},
+	{netip.MustParsePrefix("192.0.0.9/32"), "global"},
+	{netip.MustParsePrefix("192.0.0.10/32"), "global"},
 	{netip.MustParsePrefix("192.0.2.0/24"), "documentation"},
+	// RFC 7526 removed the /24's reachability values, not its usability.
+	// Only this more specific allocation is explicitly non-global.
+	{netip.MustParsePrefix("192.88.99.2/32"), "reserved"},
+	{netip.MustParsePrefix("198.18.0.0/15"), "benchmark"},
 	{netip.MustParsePrefix("198.51.100.0/24"), "documentation"},
 	{netip.MustParsePrefix("203.0.113.0/24"), "documentation"},
-	{netip.MustParsePrefix("2001:db8::/32"), "documentation"},
-	{netip.MustParsePrefix("192.0.0.0/24"), "reserved"},
-	{netip.MustParsePrefix("198.18.0.0/15"), "benchmark"},
 	{netip.MustParsePrefix("240.0.0.0/4"), "reserved"},
+	{netip.MustParsePrefix("64:ff9b:1::/48"), "reserved"},
+	{netip.MustParsePrefix("100::/64"), "reserved"},
+	{netip.MustParsePrefix("100:0:0:1::/64"), "reserved"},
+	{netip.MustParsePrefix("2001::/23"), "reserved"},
+	// Teredo has conditional reachability (N/A), not an explicit False.
+	// Retain its existing policy, just as for 6to4 outside this parent block.
+	{netip.MustParsePrefix("2001::/32"), "global"},
+	{netip.MustParsePrefix("2001:1::1/128"), "global"},
+	{netip.MustParsePrefix("2001:1::2/128"), "global"},
+	{netip.MustParsePrefix("2001:1::3/128"), "global"},
+	{netip.MustParsePrefix("2001:2::/48"), "benchmark"},
+	{netip.MustParsePrefix("2001:3::/32"), "global"},
+	{netip.MustParsePrefix("2001:4:112::/48"), "global"},
 	{netip.MustParsePrefix("2001:10::/28"), "reserved"},
+	{netip.MustParsePrefix("2001:20::/28"), "global"},
+	{netip.MustParsePrefix("2001:30::/28"), "global"},
+	{netip.MustParsePrefix("2001:db8::/32"), "documentation"},
+	{netip.MustParsePrefix("3fff::/20"), "documentation"},
+	{netip.MustParsePrefix("5f00::/16"), "reserved"},
 }
 
 // NormalizeTarget recognizes user input and returns a canonical host-oriented target.
@@ -192,17 +221,21 @@ func classifyIP(addr netip.Addr) model.IPMetadata {
 	if addr.Is4() {
 		meta.Version = 4
 	}
+	// More specific allocations override their parent, including public
+	// exceptions inside a non-global block. Table order must not change policy.
+	kind, matchedBits := "", -1
 	for _, item := range specialPrefixes {
-		if item.prefix.Contains(addr) {
-			switch item.kind {
-			case "carrier-grade NAT":
-				meta.IsCGNAT = true
-			case "documentation":
-				meta.IsDocumentation = true
-			default:
-				meta.IsReserved = true
-			}
+		if item.prefix.Bits() > matchedBits && item.prefix.Contains(addr) {
+			kind, matchedBits = item.kind, item.prefix.Bits()
 		}
+	}
+	switch kind {
+	case "carrier-grade NAT":
+		meta.IsCGNAT = true
+	case "documentation":
+		meta.IsDocumentation = true
+	case "reserved", "benchmark":
+		meta.IsReserved = true
 	}
 	if meta.IsPrivate {
 		meta.Scope = "private"
