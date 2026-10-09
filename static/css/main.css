@@ -608,7 +608,11 @@ kbd {
 }
 .service-section details[open] > summary::before { content: '−'; }
 .service-section summary:hover { color: var(--phos-bright); text-shadow: var(--glow); }
-.service-section__body { padding: 2px 2px 16px 19px; font-size: 12px; }
+.service-section__body { padding: 2px 2px 16px 19px; font-size: 14px; }
+.registration-title { margin: 8px 0; font-size: 16px; font-weight: 600; color: var(--phos-bright); }
+.registration-provenance, .result-note { margin: 8px 0 14px; color: var(--phos-70); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.registration-provenance a { text-decoration: underline; text-underline-offset: 3px; }
+.registration-provenance time { font-variant-numeric: tabular-nums; }
 
 .status-dot {
   width: 8px;
@@ -624,8 +628,8 @@ kbd {
 /* key/value readout rows */
 .kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 4px 14px; padding: 4px 0; margin: 0; border-bottom: 1px dashed var(--line); }
 .kv:last-child { border-bottom: 0; }
-.kv dt { font-size: 9px; letter-spacing: 0.2em; color: var(--phos-50); text-transform: uppercase; padding-top: 2px; }
-.kv dd { margin: 0; color: var(--phos); word-break: break-word; }
+.kv dt { font-size: 11px; letter-spacing: 0.1em; color: var(--phos-70); text-transform: uppercase; padding-top: 2px; }
+.kv dd { margin: 0; color: var(--phos); word-break: break-word; white-space: pre-line; }
 
 .clickable-record { position: relative; transition: background 0.12s ease; padding: 0 2px; overflow-wrap: anywhere; }
 .clickable-record:hover, .clickable-record:focus-within { background: var(--phos-15); }
@@ -960,6 +964,8 @@ kbd {
   .config-grid { grid-template-columns: minmax(0, 1fr) !important; }
 }
 @media (max-width: 640px) {
+  .service-section__body { font-size: 16px; padding-left: 2px; }
+  .registration-provenance, .result-note { font-size: 14px; }
   .app-shell { padding: 0 14px 80px; }
   .app-header__inner { padding: 12px 14px; flex-wrap: wrap; }
   .telemetry { grid-template-columns: repeat(2, 1fr); }

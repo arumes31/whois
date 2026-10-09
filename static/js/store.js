@@ -59,6 +59,7 @@ export function beginScan(target, {
     completedServices: new Set(),
     failures: new Set(),
     findings: new Set(),
+    skippedServices: new Set(),
     status: 'queued',
     outcome: '',
     startedAt: new Date().toISOString(),
@@ -88,6 +89,57 @@ export function identityIsInFlight(identity) {
 
 export function getCurrentScans() {
   return [...activeScans.values()];
+}
+
+// Shared terminal-state wording for the workspace summary and notifications.
+export function summarizeScanCompletion(scans) {
+  const counts = { blocked: 0, profile: 0, failed: 0, interrupted: 0, review: 0, skipped: 0, clean: 0 };
+  let moduleFailures = 0;
+  let findings = 0;
+  let reviewWithSkips = 0;
+  for (const scan of scans) {
+    if (!TERMINAL_SCAN_STATES.has(scan.status)) continue;
+    if (scan.outcome === 'policy_blocked') counts.blocked += 1;
+    else if (scan.outcome === 'profile_only') counts.profile += 1;
+    else if (scan.status === 'failed') counts.failed += 1;
+    else if (scan.status === 'interrupted') counts.interrupted += 1;
+    else {
+      const failures = scan.failures?.size || 0;
+      const issues = scan.findings?.size || 0;
+      const hasSkips = scan.skippedServices?.size > 0 || scan.outcome === 'completed_with_skips';
+      if (failures || issues || scan.outcome === 'findings') {
+        counts.review += 1;
+        moduleFailures += failures;
+        findings += issues;
+        if (hasSkips) reviewWithSkips += 1;
+      } else if (hasSkips) counts.skipped += 1;
+      else counts.clean += 1;
+    }
+  }
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  if (!total) return { phase: 'READY', detail: 'No targets have finished.' };
+  const targets = (count) => `${count} target${count === 1 ? '' : 's'}`;
+  const parts = [];
+  if (counts.blocked) parts.push(`${targets(counts.blocked)} blocked by server policy`);
+  if (counts.profile) parts.push(`${counts.profile} profile-only target${counts.profile === 1 ? '' : 's'} (active diagnostics skipped)`);
+  if (counts.failed) parts.push(`${targets(counts.failed)} failed`);
+  if (counts.interrupted) parts.push(`${targets(counts.interrupted)} interrupted`);
+  if (counts.review) {
+    const issues = [];
+    if (moduleFailures) issues.push(`${moduleFailures} module failure${moduleFailures === 1 ? '' : 's'}`);
+    if (findings) issues.push(`${findings} finding${findings === 1 ? '' : 's'}`);
+    parts.push(`${targets(counts.review)} completed requiring review${issues.length ? ` (${issues.join(', ')})` : ''}`);
+  }
+  if (counts.skipped) parts.push(`${targets(counts.skipped)} completed with skipped modules`);
+  if (counts.clean) parts.push(`${targets(counts.clean)} completed without findings`);
+  if (reviewWithSkips) parts.push(`${targets(reviewWithSkips)} requiring review also skipped modules`);
+  let phase = 'COMPLETE';
+  if (counts.blocked === total) phase = 'BLOCKED BY POLICY';
+  else if (counts.profile === total) phase = 'PROFILE ONLY';
+  else if (counts.blocked || counts.failed || counts.interrupted || counts.review) phase = 'COMPLETE · REVIEW';
+  else if (counts.profile || counts.skipped) phase = 'COMPLETE · SKIPPED';
+  const unqueried = counts.blocked + counts.profile === total ? ' Active diagnostics did not run.' : '';
+  return { phase, detail: `${parts.join('; ')}.${unqueried}` };
 }
 
 export function dropScan(target) {

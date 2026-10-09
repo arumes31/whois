@@ -121,6 +121,135 @@ func TestValidWSRequestID(t *testing.T) {
 	}
 }
 
+func TestHandleWSPolicyBlockedTargetRemainsValid(t *testing.T) {
+	h := NewHandler(&storage.Storage{}, &config.Config{EnableDNS: true})
+	ws := dialHandlerWebSocket(t, h)
+	if err := ws.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if err := ws.WriteJSON(map[string]interface{}{
+		"request_id": "blocked-target", "targets": []string{"192.0.2.1"},
+		"config": map[string]bool{"dns": true},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var profile map[string]interface{}
+	for {
+		var msg WSMessage
+		if err := ws.ReadJSON(&msg); err != nil {
+			t.Fatal(err)
+		}
+		if msg.Type == "result" {
+			if msg.Service != "target" {
+				t.Fatalf("blocked target ran diagnostic %q", msg.Service)
+			}
+			profile = msg.Data.(map[string]interface{})
+		}
+		if msg.Type == "all_done" {
+			break
+		}
+	}
+	if profile["valid"] != true || profile["networkable"] != true {
+		t.Fatalf("policy restriction changed syntax/type validity: %#v", profile)
+	}
+	if profile["query_allowed"] != false {
+		t.Fatalf("blocked target query_allowed = %#v, want false", profile["query_allowed"])
+	}
+	restriction, _ := profile["query_restriction"].(string)
+	if !strings.Contains(restriction, "server policy") || !strings.Contains(restriction, "documentation") {
+		t.Fatalf("restriction %q must explain the blocked address scope and server policy", restriction)
+	}
+}
+
+func TestHandleWSIPModulesReportSkipped(t *testing.T) {
+	for _, target := range []string{"1.1.1.1", "2606:4700:4700::1111"} {
+		t.Run(target, func(t *testing.T) {
+			h := NewHandler(&storage.Storage{}, &config.Config{EnableCT: true})
+			ws := dialHandlerWebSocket(t, h)
+			if err := ws.SetReadDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if err := ws.WriteJSON(map[string]interface{}{
+				"request_id": "ip-modules", "targets": []string{target},
+				"config": map[string]bool{"trace": true, "ct": true, "subdomains": true},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			skipped := make(map[string]bool)
+			done := make(map[string]bool)
+			for {
+				var msg WSMessage
+				if err := ws.ReadJSON(&msg); err != nil {
+					t.Fatal(err)
+				}
+				if msg.Type == "result" && msg.Service == "target" {
+					profile, ok := msg.Data.(map[string]interface{})
+					if !ok || profile["query_allowed"] != true {
+						t.Fatalf("public IP profile must allow applicable modules: %#v", msg.Data)
+					}
+				}
+				if msg.Type == "result" && msg.Service != "target" {
+					data, ok := msg.Data.(map[string]interface{})
+					if !ok || data["status"] != "skipped" {
+						t.Fatalf("IP module %q returned %#v, want explicit skipped status", msg.Service, msg.Data)
+					}
+					reason, _ := data["reason"].(string)
+					if !strings.Contains(reason, "domain name") {
+						t.Fatalf("IP module %q skip reason %q must explain domain-only applicability", msg.Service, reason)
+					}
+					skipped[msg.Service] = true
+				}
+				if msg.Type == "done" {
+					if !skipped[msg.Service] {
+						t.Fatalf("module %q completed before its skipped explanation", msg.Service)
+					}
+					done[msg.Service] = true
+				}
+				if msg.Type == "all_done" {
+					break
+				}
+			}
+			for _, service := range []string{"trace", "ct", "subdomains"} {
+				if !skipped[service] || !done[service] {
+					t.Errorf("IP module %q missing skipped result or completion: skipped=%v, done=%v", service, skipped, done)
+				}
+			}
+		})
+	}
+}
+
+func TestHandleWSProfileOnlyTargetsAreNotPolicyBlocked(t *testing.T) {
+	for _, target := range []string{"192.0.2.0/24", "AS13335"} {
+		t.Run(target, func(t *testing.T) {
+			h := NewHandler(&storage.Storage{}, &config.Config{EnableDNS: true})
+			ws := dialHandlerWebSocket(t, h)
+			if err := ws.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			if err := ws.WriteJSON(map[string]interface{}{
+				"request_id": "profile-only", "targets": []string{target},
+				"config": map[string]bool{"dns": true},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			var msg WSMessage
+			if err := ws.ReadJSON(&msg); err != nil {
+				t.Fatal(err)
+			}
+			profile, ok := msg.Data.(map[string]interface{})
+			if msg.Type != "result" || msg.Service != "target" || !ok {
+				t.Fatalf("expected target profile first, got %#v", msg)
+			}
+			if profile["valid"] != true || profile["networkable"] != false || profile["query_allowed"] != false {
+				t.Fatalf("unexpected profile-only target properties: %#v", profile)
+			}
+			if _, exists := profile["query_restriction"]; exists {
+				t.Fatalf("profile-only target must not claim a server policy restriction: %#v", profile)
+			}
+		})
+	}
+}
+
 func TestHandleWSRequestIDsDoNotCross(t *testing.T) {
 	tests := []struct {
 		name         string
