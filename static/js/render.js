@@ -223,7 +223,13 @@ function renderRouting(data) {
 
 function dnsEvidenceNote(detail) {
   if (!detail) return '';
-  const outcomes = {answer: 'ANSWER', nxdomain: 'NXDOMAIN — name does not exist', nodata: 'NODATA — no records of this type', error: 'LOOKUP FAILED'};
+  const hasAlias = (Array.isArray(detail.aliases) && detail.aliases.length > 0)
+    || (detail.query_type === 'CNAME' && Array.isArray(detail.records) && detail.records.length > 0);
+  const outcomes = {
+    answer: 'ANSWER',
+    nxdomain: hasAlias ? 'NXDOMAIN — alias target does not exist' : 'NXDOMAIN — queried name does not exist',
+    nodata: 'NODATA — no records of this type', error: 'LOOKUP FAILED',
+  };
   let html = `<p class="result-note"><strong>${escapeHTML(outcomes[detail.status] || detail.status || 'Unknown outcome')}</strong>`;
   if (detail.query_name) html += `<br>${escapeHTML(detail.query_name)} · ${escapeHTML(detail.query_type || '')}`;
   if (detail.rcode) html += ` · ${escapeHTML(detail.rcode)}`;
