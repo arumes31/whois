@@ -10,6 +10,10 @@ import * as cards from '../static/js/cards.js';
 
 function testCanonicalTargets() {
   const cases = [
+    ['bücher.de', '|xn--bcher-kva.de'],
+    ['https://WWW.BÜCHER.DE:443/path', 'https|www.xn--bcher-kva.de:443'],
+    ['１２７。０。０。１', '|127.0.0.1'],
+    ['０１２７。０。０。１', '|0127.0.0.1'],
     ['Example.COM.', '|example.com'],
     ['192.0.2.129/24', 'prefix|192.0.2.0/24'],
     ['192.0.2.1/0', 'prefix|0.0.0.0/0'],
@@ -39,6 +43,7 @@ function testCanonicalTargets() {
   ];
   cases.forEach(([input, expected]) => assert.equal(canonicalTargetIdentity(input), expected, input));
   assert.equal(splitTargets('Example.com, example.COM.').length, 1);
+  assert.equal(splitTargets('bücher.de, xn--bcher-kva.de').length, 1);
   assert.equal(splitTargets('2001:db8::1, 2001:0db8:0:0:0:0:0:1').length, 1);
   assert.equal(splitTargets('192.0.2.129/24, 192.0.2.1/24').length, 1);
   assert.equal(splitTargets('[192.0.2.1], 192.0.2.1').length, 1);
@@ -504,6 +509,30 @@ function testSkippedModuleOutcome() {
   const untrustedReason = renderService('trace', { status: 'skipped', reason: '<img src=x onerror=alert(1)>' });
   assert.doesNotMatch(untrustedReason, /<img/);
 }
+
+function testDNSEvidenceSurvivesStreamingAndExport() {
+  const target = 'partial-dns.test';
+  const section = resultSection('dns');
+  const card = terminalCard(target, section);
+  globalThis.document = {
+    getElementById() { return null; },
+    querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; },
+  };
+  store.beginScan(target, {requestID: target, identity: `|${target}`, config: {dns: true}, total: 1});
+  const dns_details = {A: {status: 'answer'}, AAAA: {status: 'error', error: 'resolver timed out'}};
+  const data = {A: ['1.1.1.1']};
+  cards.routeMessage({type: 'result', request_id: target, target, service: 'dns', data, dns_details});
+  cards.routeMessage({type: 'done', request_id: target, target, service: 'dns'});
+  cards.routeMessage({type: 'all_done', request_id: target, target});
+  assert.equal(store.getScan(target).failures.has('dns'), true);
+  assert.match(section.innerHTML, /resolver timed out/);
+  assert.match(section.innerHTML, /1\.1\.1\.1/);
+  assert.deepEqual(store.getResults(target).dns, data);
+  assert.deepEqual(store.getResults(target).dns_details, dns_details);
+  assert.deepEqual(store.getAllResultsData().find(result => result.target === target).services.dns_details, dns_details);
+}
+
+testDNSEvidenceSurvivesStreamingAndExport();
 
 function testUntrustedMessageServices() {
   const target = 'untrusted-service.test';

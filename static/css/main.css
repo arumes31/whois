@@ -1198,7 +1198,7 @@ progress::-moz-progress-bar { background: var(--phos); box-shadow: var(--glow); 
   .results-actions { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 5px; mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent); }
   .results-actions .btn { flex: none; min-height: 42px; }
   .results-actions .shortcut-hint { display: none; }
-  .result-card__head { position: sticky; top: 55px; z-index: 5; background: rgba(3, 7, 3, .98); }
+  .result-card__head { position: static; background: rgba(3, 7, 3, .98); }
   .result-card__handle { display: none; }
   .result-card__target { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 78vw; }
   .result-card__target:focus, .result-card__target:hover { white-space: normal; overflow-wrap: anywhere; }

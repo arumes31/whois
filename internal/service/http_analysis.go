@@ -244,6 +244,8 @@ func safeHTTPTransport(insecure bool) *http.Transport {
 }
 
 func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityCheck, map[string]string, []string, int) {
+	cspPolicies := parseCSPPolicies(resp.Header.Values("Content-Security-Policy"))
+	hasFrameAncestors, restrictedFraming, framePolicy := cspFrameAncestors(cspPolicies)
 	headers := []struct{ name, guidance string }{
 		{"Strict-Transport-Security", "enable HSTS on HTTPS responses"},
 		{"Content-Security-Policy", "define a restrictive content security policy"},
@@ -268,27 +270,53 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 	}
 	for _, header := range headers {
 		value, status := resp.Header.Get(header.name), "pass"
+		if header.name == "Content-Security-Policy" {
+			value = strings.Join(resp.Header.Values(header.name), ", ")
+		}
 		legacy[header.name] = value
 		if header.name == "Strict-Transport-Security" && !isHTTPS {
 			status = "not-applicable"
 			if value == "" {
 				legacy[header.name] = "Not applicable on HTTP"
 			}
+		} else if header.name == "X-Frame-Options" && hasFrameAncestors {
+			// Enforced frame-ancestors supersedes XFO, including when XFO is
+			// stricter. CSP3 section 6.4.2.2 requires scoring the active policy.
+			status = "not-applicable"
+			header.guidance = "enforced CSP frame-ancestors controls framing; X-Frame-Options is ignored"
+			if value == "" {
+				legacy[header.name] = "Not required (CSP frame-ancestors)"
+			}
 		} else if value == "" {
 			legacy[header.name], status = "Not Set", "missing"
 			score -= 10
 			issues = append(issues, header.name+" is not set")
-		} else if problem := invalidSecurityHeader(header.name, value); problem != "" {
+		} else if problem := invalidSecurityHeader(header.name, value, cspPolicies); problem != "" {
 			status = "warning"
 			score -= 8
 			issues = append(issues, problem)
 		}
 		checks = append(checks, model.SecurityCheck{Name: header.name, Status: status, Value: value, Guidance: header.guidance})
 	}
-	if csp := resp.Header.Get("Content-Security-Policy"); strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
+	if hasFrameAncestors {
+		status := "pass"
+		if !restrictedFraming {
+			status = "warning"
+			score -= 10
+			issues = append(issues, "CSP frame-ancestors does not provide a restrictive framing policy")
+		}
+		checks = append(checks, model.SecurityCheck{
+			Name: "Framing protection", Status: status, Value: framePolicy,
+			Guidance: "use frame-ancestors 'none', 'self', or an explicit trusted host allowlist",
+		})
+	}
+	if cspAllowsUnsafeScript(cspPolicies) {
 		score -= 10
 		issues = append(issues, "content security policy allows unsafe script execution")
-		checks = append(checks, model.SecurityCheck{Name: "CSP quality", Status: "warning", Value: csp, Guidance: "remove unsafe-inline and unsafe-eval where possible"})
+		checks = append(checks, model.SecurityCheck{
+			Name: "CSP quality", Status: "warning", Value: strings.Join(resp.Header.Values("Content-Security-Policy"), ", "),
+			Guidance: "restrict the effective script directives; use nonces or hashes instead of unrestricted inline scripts and avoid unsafe-eval",
+		})
 	}
 	if isHTTPS && strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "text/html") && mixedContentPattern.MatchString(body) {
 		score -= 8
@@ -316,7 +344,122 @@ func inspectHTTPSecurity(resp *http.Response, body string) ([]model.SecurityChec
 
 var mixedContentPattern = regexp.MustCompile(`(?i)(?:src|href)\s*=\s*["']http://`)
 
-func invalidSecurityHeader(name, value string) string {
+type cspPolicy map[string][]string
+
+// CSP3 sections 2.2.1 and 4.1.2: duplicate directives keep their first value,
+// while separate enforced policies all apply. Report-only headers are excluded.
+func parseCSPPolicies(headers []string) []cspPolicy {
+	var policies []cspPolicy
+	for _, header := range headers {
+		for _, serialized := range strings.Split(header, ",") {
+			policy := make(cspPolicy)
+			for _, directive := range strings.Split(serialized, ";") {
+				fields := strings.FieldsFunc(directive, func(r rune) bool {
+					return r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\f'
+				})
+				if len(fields) == 0 {
+					continue
+				}
+				name := strings.ToLower(fields[0])
+				if _, exists := policy[name]; !exists {
+					policy[name] = fields[1:]
+				}
+			}
+			policies = append(policies, policy)
+		}
+	}
+	return policies
+}
+
+func (policy cspPolicy) sources(directives ...string) ([]string, bool) {
+	for _, directive := range directives {
+		if sources, ok := policy[directive]; ok {
+			return sources, true
+		}
+	}
+	return nil, false
+}
+
+func cspContains(sources []string, keyword string) bool {
+	for _, source := range sources {
+		if strings.EqualFold(source, keyword) {
+			return true
+		}
+	}
+	return false
+}
+
+var cspNonceOrHash = regexp.MustCompile(`(?i)^'(?:nonce-|sha(?:256|384|512)-)[a-z0-9+/_-]+={0,2}'$`)
+
+func cspAllowsInline(sources []string) bool {
+	if !cspContains(sources, "'unsafe-inline'") || cspContains(sources, "'strict-dynamic'") {
+		return false
+	}
+	for _, source := range sources {
+		if cspNonceOrHash.MatchString(source) {
+			return false
+		}
+	}
+	return true
+}
+
+func cspAllowsUnsafeScript(policies []cspPolicy) bool {
+	// Inline element/attribute checks have distinct fallback paths. Eval uses
+	// script-src/default-src only (CSP3 sections 6.1.10 and 6.8.3).
+	for _, directives := range [][]string{
+		{"script-src-elem", "script-src", "default-src"},
+		{"script-src-attr", "script-src", "default-src"},
+		{"script-src", "default-src"},
+	} {
+		isEval := directives[0] == "script-src"
+		allowed, explicit := true, false
+		for _, policy := range policies {
+			sources, exists := policy.sources(directives...)
+			if !exists {
+				continue
+			}
+			if isEval {
+				unsafe := cspContains(sources, "'unsafe-eval'")
+				allowed, explicit = allowed && unsafe, explicit || unsafe
+			} else {
+				allowed = allowed && cspAllowsInline(sources)
+				explicit = explicit || cspContains(sources, "'unsafe-inline'")
+			}
+		}
+		if allowed && explicit {
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	cspBroadAncestor = regexp.MustCompile(`(?i)^(?:[a-z][a-z0-9+.-]*:|(?:[a-z][a-z0-9+.-]*://)?\*(?::(?:[0-9]+|\*))?(?:/.*)?)$`)
+	cspAncestorHost  = regexp.MustCompile(`(?i)^(?:[a-z][a-z0-9+.-]*://)?(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.?(?::(?:[0-9]+|\*))?(?:/[^;,]*)?$`)
+)
+
+func cspFrameAncestors(policies []cspPolicy) (present, restricted bool, value string) {
+	var values []string
+	for _, policy := range policies {
+		sources, exists := policy["frame-ancestors"]
+		if !exists {
+			continue
+		}
+		present = true
+		values = append(values, "frame-ancestors "+strings.Join(sources, " "))
+		// An empty source list blocks every ancestor. Any enforced restrictive
+		// policy is sufficient, because all policies must permit an ancestor.
+		limited, broad := len(sources) == 0, false
+		for _, source := range sources {
+			broad = broad || cspBroadAncestor.MatchString(source)
+			limited = limited || strings.EqualFold(source, "'none'") || strings.EqualFold(source, "'self'") || cspAncestorHost.MatchString(source)
+		}
+		restricted = restricted || (limited && !broad)
+	}
+	return present, restricted, strings.Join(values, ", ")
+}
+
+func invalidSecurityHeader(name, value string, cspPolicies []cspPolicy) string {
 	lower := strings.ToLower(strings.TrimSpace(value))
 	switch name {
 	case "Strict-Transport-Security":
@@ -340,9 +483,12 @@ func invalidSecurityHeader(name, value string) string {
 			return "X-Frame-Options must be DENY or SAMEORIGIN"
 		}
 	case "Content-Security-Policy":
-		if !strings.Contains(lower, "default-src") {
-			return "Content-Security-Policy should define default-src"
+		for _, policy := range cspPolicies {
+			if _, exists := policy["default-src"]; exists {
+				return ""
+			}
 		}
+		return "Content-Security-Policy should define default-src"
 	}
 	return ""
 }

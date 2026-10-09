@@ -1,13 +1,17 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha1" // #nosec G505 -- OCSP ResponderID key hashes are SHA-1 by RFC 6960.
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -55,6 +59,7 @@ func GetSSLInfo(ctx context.Context, target string) *model.SSLInfo {
 		DaysLeft: daysLeft, Protocol: tlsVersionName(state.Version), CipherSuite: tls.CipherSuiteName(state.CipherSuite),
 		Verified: verified, HostnameValid: hostnameErr == nil, SelfSigned: selfSigned, Expired: now.After(leaf.NotAfter),
 		ExpiringSoon: daysLeft >= 0 && daysLeft < 30, SANs: append([]string(nil), leaf.DNSNames...),
+		IPSANs:            certificateIPs(leaf),
 		FingerprintSHA256: certificateFingerprint(leaf), ALPN: state.NegotiatedProtocol,
 		OCSPStapled: len(state.OCSPResponse) > 0, SCTCount: len(state.SignedCertificateTimestamps),
 		VerificationError: verificationErr,
@@ -64,7 +69,7 @@ func GetSSLInfo(ctx context.Context, target string) *model.SSLInfo {
 		info.PEM += string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}))
 	}
 	if info.OCSPStapled {
-		info.OCSPStatus = parseOCSPStatus(state.OCSPResponse, state.PeerCertificates)
+		inspectOCSP(info, state.OCSPResponse, state.PeerCertificates, now)
 	} else {
 		info.OCSPStatus = "not stapled"
 	}
@@ -100,8 +105,17 @@ func certificateInfo(cert *x509.Certificate) model.CertificateInfo {
 		Subject: cert.Subject.String(), Issuer: cert.Issuer.String(), SerialNumber: cert.SerialNumber.String(),
 		NotBefore: cert.NotBefore.Format(time.RFC3339), NotAfter: cert.NotAfter.Format(time.RFC3339),
 		DNSNames: append([]string(nil), cert.DNSNames...), FingerprintSHA256: certificateFingerprint(cert),
+		IPAddresses:        certificateIPs(cert),
 		PublicKeyAlgorithm: cert.PublicKeyAlgorithm.String(), SignatureAlgorithm: cert.SignatureAlgorithm.String(), IsCA: cert.IsCA,
 	}
+}
+
+func certificateIPs(cert *x509.Certificate) []string {
+	ips := make([]string, 0, len(cert.IPAddresses))
+	for _, ip := range cert.IPAddresses {
+		ips = append(ips, ip.String())
+	}
+	return ips
 }
 
 func certificateFingerprint(cert *x509.Certificate) string {
@@ -114,24 +128,107 @@ func certificateFingerprint(cert *x509.Certificate) string {
 	return strings.Join(parts, ":")
 }
 
-func parseOCSPStatus(raw []byte, chain []*x509.Certificate) string {
+func inspectOCSP(info *model.SSLInfo, raw []byte, chain []*x509.Certificate, now time.Time) {
+	info.OCSPFreshness = "unknown"
 	if len(chain) < 2 {
-		return "stapled (issuer unavailable)"
+		info.OCSPStatus = "stapled (issuer unavailable)"
+		info.OCSPVerificationError = "the certificate issuer was not supplied by the server"
+		return
 	}
-	response, err := ocsp.ParseResponseForCert(raw, chain[0], chain[1])
+	leaf, issuer := chain[0], chain[1]
+	response, err := ocsp.ParseResponseForCert(raw, leaf, issuer)
 	if err != nil {
-		return "stapled (unparseable)"
+		info.OCSPStatus = "stapled (unparseable)"
+		info.OCSPVerificationError = "the OCSP response could not be parsed or its signature is invalid"
+		return
 	}
 	switch response.Status {
 	case ocsp.Good:
-		return "good"
+		info.OCSPStatus = "good"
 	case ocsp.Revoked:
-		return "revoked"
+		info.OCSPStatus = "revoked"
 	case ocsp.Unknown:
-		return "unknown"
+		info.OCSPStatus = "unknown"
 	default:
-		return "server failure"
+		info.OCSPStatus = "server failure"
 	}
+	if !response.ThisUpdate.IsZero() {
+		info.OCSPThisUpdate = response.ThisUpdate.Format(time.RFC3339)
+	}
+	if !response.NextUpdate.IsZero() {
+		info.OCSPNextUpdate = response.NextUpdate.Format(time.RFC3339)
+	}
+	// RFC 6960 sections 3.2 and 4.2.2.1 require a reliable validity interval.
+	// An omitted nextUpdate does not supply an expiry; do not invent one.
+	switch {
+	case response.ThisUpdate.IsZero(), !response.NextUpdate.IsZero() && response.NextUpdate.Before(response.ThisUpdate):
+		info.OCSPFreshness = "invalid"
+	case response.ThisUpdate.After(now):
+		info.OCSPFreshness = "future"
+	case !response.NextUpdate.IsZero() && !response.NextUpdate.After(now):
+		info.OCSPFreshness = "stale"
+	case !response.NextUpdate.IsZero():
+		info.OCSPFreshness = "current"
+	}
+	if err := authorizeOCSPSigner(response, leaf, issuer, now); err != nil {
+		info.OCSPVerificationError = err.Error()
+		return
+	}
+	info.OCSPVerified = true
+}
+
+func authorizeOCSPSigner(response *ocsp.Response, leaf, issuer *x509.Certificate, now time.Time) error {
+	if !bytes.Equal(leaf.RawIssuer, issuer.RawSubject) || leaf.CheckSignatureFrom(issuer) != nil {
+		return fmt.Errorf("the supplied OCSP issuer did not issue the target certificate")
+	}
+	signer := issuer
+	if response.Certificate != nil && !bytes.Equal(response.Certificate.Raw, issuer.Raw) {
+		signer = response.Certificate
+		// ParseResponseForCert verifies signatures, but delegated authorization
+		// and certificate validity still need RFC 6960 section 4.2.2.2 checks.
+		if !bytes.Equal(signer.RawIssuer, issuer.RawSubject) || signer.CheckSignatureFrom(issuer) != nil {
+			return fmt.Errorf("the OCSP signer was not issued directly by the certificate issuer")
+		}
+		if !slices.Contains(signer.ExtKeyUsage, x509.ExtKeyUsageOCSPSigning) {
+			return fmt.Errorf("the delegated signer certificate does not permit OCSP signing")
+		}
+		roots := x509.NewCertPool()
+		roots.AddCert(issuer)
+		if _, err := signer.Verify(x509.VerifyOptions{
+			Roots: roots, CurrentTime: now, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageOCSPSigning},
+		}); err != nil {
+			return fmt.Errorf("delegated OCSP signer authorization failed: %w", err)
+		}
+		// RFC 5280 section 4.2.1.12 permits digitalSignature and/or
+		// contentCommitment (nonRepudiation) for delegated OCSP signing.
+		if signer.KeyUsage != 0 && signer.KeyUsage&(x509.KeyUsageDigitalSignature|x509.KeyUsageContentCommitment) == 0 {
+			return fmt.Errorf("the delegated OCSP signer certificate does not permit signing responses")
+		}
+	}
+	if now.Before(signer.NotBefore) || now.After(signer.NotAfter) {
+		return fmt.Errorf("the OCSP signer certificate is outside its validity period")
+	}
+	if !ocspResponderMatches(response, signer) {
+		return fmt.Errorf("the OCSP responder identity does not match the signing certificate")
+	}
+	return nil
+}
+
+func ocspResponderMatches(response *ocsp.Response, signer *x509.Certificate) bool {
+	if len(response.RawResponderName) > 0 {
+		return bytes.Equal(response.RawResponderName, signer.RawSubject)
+	}
+	var publicKeyInfo struct {
+		Algorithm asn1.RawValue
+		PublicKey asn1.BitString
+	}
+	if _, err := asn1.Unmarshal(signer.RawSubjectPublicKeyInfo, &publicKeyInfo); err != nil {
+		return false
+	}
+	// RFC 6960 section 4.2.1 defines KeyHash as SHA-1 of subjectPublicKey,
+	// excluding its tag, length and unused-bit count.
+	keyHash := sha1.Sum(publicKeyInfo.PublicKey.RightAlign()) // #nosec G401 -- protocol-defined identity hash, not a signature.
+	return bytes.Equal(response.ResponderKeyHash, keyHash[:])
 }
 
 func probeTLSVersions(ctx context.Context, host, port string) []string {
@@ -205,7 +302,25 @@ func scoreTLS(info *model.SSLInfo, leaf *x509.Certificate, cipherSuite uint16) (
 	if !info.OCSPStapled && len(leaf.OCSPServer) > 0 {
 		addIssue(3, "OCSP response is not stapled")
 	}
-	if info.OCSPStatus == "revoked" {
+	if info.OCSPStapled && !info.OCSPVerified {
+		addIssue(10, "OCSP response signature or signer authorization could not be verified")
+	}
+	if info.OCSPVerified {
+		switch info.OCSPFreshness {
+		case "stale":
+			addIssue(5, "stapled OCSP response is stale")
+		case "future":
+			addIssue(5, "stapled OCSP response is not yet valid")
+		case "invalid":
+			addIssue(5, "stapled OCSP response has an invalid validity interval")
+		case "unknown":
+			addIssue(3, "stapled OCSP response has no nextUpdate; freshness cannot be confirmed")
+		}
+		if info.OCSPStatus == "unknown" {
+			addIssue(3, "OCSP responder reported unknown certificate status")
+		}
+	}
+	if info.OCSPStatus == "revoked" && info.OCSPVerified {
 		addIssue(100, "certificate has been revoked")
 	}
 	if score < 0 {

@@ -106,13 +106,15 @@ function renderTarget(data) {
 
 function renderGeo(data) {
   if (!data || data.error) {
-    return openDetails('geo', 'error', `<div style="color:var(--phos-50)">Geo data unavailable — install a local GeoLite2 City database to enable this module.</div>`);
+    return errorDetails('geo', data?.error || 'Geo data unavailable.');
   }
   const body = `
     ${kvRow('LOCATION', `${data.city || 'Unknown city'}, ${data.country || ''}`)}
-    ${kvRow('IP ADDRESS', data.query)}
+    ${data.query && data.query !== data.ip ? kvRow('TARGET', data.query) : ''}
+    ${data.ip ? kvRow('IP ADDRESS', data.ip) : ''}
     ${data.timezone ? kvRow('TIMEZONE', data.timezone) : ''}
-    ${kvRow('COORDINATES', `${data.lat}, ${data.lon}`)}`;
+    ${data.has_coordinates === true ? kvRow('COORDINATES', `${data.lat}, ${data.lon}`) : ''}
+    <p class="result-note">Location is estimated from ${escapeHTML(data.source || 'the local database')}; it is not a device's precise location.</p>`;
   return openDetails('geo', 'success', body);
 }
 
@@ -151,6 +153,10 @@ function renderWhois(data) {
       }
       if (network?.country) body += '<p class="result-note">Registry country describes the allocation, not the physical location of this IP.</p>';
     } else {
+      if (data.query && data.domain && data.query.toLowerCase().replace(/\.$/, '') !== data.domain.toLowerCase().replace(/\.$/, '')) {
+        body += kvRow('TARGET', data.query);
+        body += '<p class="result-note">Registration belongs to the registered domain below; host diagnostics still use your original target.</p>';
+      }
       if (data.domain) body += kvRow('DOMAIN', data.domain);
       body += kvRow('REGISTRAR', data.registrar || 'Not provided');
       body += kvRow('CREATED', data.created || 'Not provided');
@@ -161,6 +167,11 @@ function renderWhois(data) {
       }
       if (typeof data.dnssec?.delegation_signed === 'boolean') {
         body += kvRow('DNSSEC', data.dnssec.delegation_signed ? 'Delegation signed (registry)' : 'Unsigned delegation (registry)');
+      }
+      if (typeof data.dnssec?.zone_signed === 'boolean') {
+        body += kvRow('ZONE SIGNED', data.dnssec.zone_signed ? 'Yes (registry)' : 'No (registry)');
+      }
+      if (typeof data.dnssec?.delegation_signed === 'boolean' || typeof data.dnssec?.zone_signed === 'boolean') {
         body += '<p class="result-note">Registry declaration; DNSSEC validation has not been performed.</p>';
       }
     }
@@ -179,13 +190,39 @@ function renderWhois(data) {
   return openDetails('whois', 'error', `<div style="color:var(--phos-50)">No WHOIS data returned.</div>`);
 }
 
-function renderDns(data) {
-  if (data && data.error) return errorDetails('dns', data.error);
-  if (data && Object.keys(data).length > 0) {
+function dnsEvidenceNote(detail) {
+  if (!detail) return '';
+  const outcomes = {answer: 'ANSWER', nxdomain: 'NXDOMAIN — name does not exist', nodata: 'NODATA — no records of this type', error: 'LOOKUP FAILED'};
+  let html = `<p class="result-note"><strong>${escapeHTML(outcomes[detail.status] || detail.status || 'Unknown outcome')}</strong>`;
+  if (detail.query_name) html += `<br>${escapeHTML(detail.query_name)} · ${escapeHTML(detail.query_type || '')}`;
+  if (detail.rcode) html += ` · ${escapeHTML(detail.rcode)}`;
+  if (detail.resolver) html += `<br>Resolver ${escapeHTML(detail.resolver)}${detail.transport ? ` (${escapeHTML(detail.transport.toUpperCase())})` : ''}`;
+  if (detail.observed_at && !Number.isNaN(Date.parse(detail.observed_at))) {
+    html += `<br>Observed ${escapeHTML(new Date(detail.observed_at).toISOString().replace('T', ' ').replace('.000Z', ' UTC'))}`;
+  }
+  if (detail.negative_ttl !== undefined) html += `<br>Negative-cache TTL ${escapeHTML(detail.negative_ttl)} s at observation`;
+  if (detail.error) html += `<br>${escapeHTML(detail.error)}`;
+  html += '</p>';
+  for (const alias of Array.isArray(detail.aliases) ? detail.aliases : []) {
+    html += `<p class="result-note">CNAME ${escapeHTML(alias.name)} → ${escapeHTML(alias.value)} · TTL ${escapeHTML(alias.ttl)} s</p>`;
+  }
+  return html;
+}
+
+function renderDns(data, evidence = {}) {
+  if (data?.error && Object.keys(evidence).length === 0) return errorDetails('dns', data.error);
+  const types = [...new Set([...Object.keys(data || {}), ...Object.keys(evidence)])].filter(type => type !== 'error');
+  if (types.length > 0) {
     let inner = '';
-    let hasFindings = false;
-    for (const [type, val] of Object.entries(data)) {
+    let hasFindings = Boolean(data?.error);
+    if (data?.error) inner += `<div class="findings findings--err">${escapeHTML(data.error)}</div>`;
+    if (Object.keys(evidence).length) inner += '<p class="result-note">TTL values are seconds remaining when observed. DNSSEC signatures have not been validated by this application.</p>';
+    for (const type of types) {
+      const val = data?.[type] || [];
+      const detail = evidence[type];
+      hasFindings ||= detail?.status === 'error';
       inner += `<div class="dns-type">${escapeHTML(type)}</div><div class="dns-values">`;
+      inner += dnsEvidenceNote(detail);
       if (Array.isArray(val)) {
         if (type === 'MX' && val.some((record) => /^0\s+\.$/.test(String(record).trim()))) {
           hasFindings ||= val.length > 1;
@@ -198,6 +235,8 @@ function renderDns(data) {
           if (/^v=spf1\b/i.test(record)) inner += spfRecord(record);
           else if (/^v=dmarc1\b/i.test(record)) inner += dmarcRecord(record);
           else inner += `<div class="dns-record"><span class="clickable-record">${escapeHTML(record)}</span>${/^(?:[a-z0-9-]+\.)+[a-z]{2,}\.?$/i.test(record) ? queryButton(record.replace(/\.$/, '')) : ''}</div>`;
+          const records = Array.isArray(detail?.records) ? detail.records.filter(rr => rr.value === record) : [];
+          for (const rr of records) inner += `<div class="result-note">${escapeHTML(rr.name)} · TTL ${escapeHTML(rr.ttl)} s</div>`;
         });
       } else if (type === 'Subdomains') {
         inner += `<div style="color:var(--phos-50)">Found ${Object.keys(val).length} prefixes</div>`;
@@ -208,7 +247,7 @@ function renderDns(data) {
     }
     return openDetails('dns', hasFindings ? 'error' : 'success', inner, { open: true });
   }
-  return openDetails('dns', 'success', `<div style="color:var(--phos-50)">No records found.</div>`);
+  return openDetails('dns', 'success', '<p class="result-note">No records returned. This response does not include an authoritative absence reason.</p>');
 }
 
 function renderSubdomains(data) {
@@ -298,7 +337,7 @@ function renderTrace(data) {
 function renderSsl(data) {
   if (data.error) return errorDetails('ssl', data.error);
   const score = Number(data.score);
-  const failed = score < 60;
+  const failed = score < 60 || (data.issues || []).length > 0;
   const flags = [
     data.verified ? '<span class="chip chip--ok">TRUSTED CHAIN</span>' : '<span class="chip chip--bad">UNTRUSTED CHAIN</span>',
     data.hostname_valid ? '<span class="chip chip--ok">HOSTNAME VALID</span>' : '<span class="chip chip--bad">HOSTNAME MISMATCH</span>',
@@ -313,10 +352,18 @@ function renderSsl(data) {
     ${kvRow('ISSUER', data.issuer)}
     ${kvRow('EXPIRY', `${String(data.expiry || '').split('T')[0]} (${data.days_left} days)`, { hot: true })}
     ${kvRow('VERSIONS', (data.supported_versions || []).join(', '))}
-    ${kvRow('OCSP / SCT / ALPN', `${data.ocsp_status || 'n/a'} · ${data.sct_count} · ${data.alpn || 'n/a'}`, { copy: false })}
+    ${kvRow('DNS IDENTITIES', (data.sans || []).join(', ') || 'Not provided')}
+    ${data.ip_sans?.length ? kvRow('IP IDENTITIES', data.ip_sans.join(', ')) : ''}
+    ${kvRow('OCSP (reported)', data.ocsp_status || 'Not provided', { copy: false })}
+    ${data.ocsp_freshness ? kvRow('OCSP FRESHNESS', data.ocsp_freshness, { copy: false }) : ''}
+    ${typeof data.ocsp_verified === 'boolean' && data.ocsp_freshness ? kvRow('OCSP SIGNER', data.ocsp_verified ? 'Signature and signer authorized' : 'Not verified', { copy: false }) : ''}
+    ${data.ocsp_this_update ? kvRow('OCSP THIS UPDATE', data.ocsp_this_update) : ''}
+    ${data.ocsp_next_update ? kvRow('OCSP NEXT UPDATE', data.ocsp_next_update) : ''}
+    ${data.ocsp_verification_error ? `<p class="result-note">${escapeHTML(data.ocsp_verification_error)}</p>` : ''}
+    ${kvRow('SCT / ALPN', `${data.sct_count ?? 0} · ${data.alpn || 'n/a'}`, { copy: false })}
     ${data.verification_error ? `<div class="findings findings--err"><strong>VERIFICATION ERROR</strong>${escapeHTML(data.verification_error)}</div>` : ''}
     ${issues ? `<div class="findings"><strong>ATTENTION NEEDED</strong><ul>${issues}</ul></div>` : '<div class="findings findings--ok"><strong>POSTURE</strong>No immediate TLS issues detected.</div>'}
-    <details style="margin-top:8px"><summary><small>CERTIFICATE CHAIN &amp; SANS</small></summary><pre class="raw-block">${escapeHTML(JSON.stringify({ chain: data.chain, sans: data.sans }, null, 2))}</pre></details>
+    <details style="margin-top:8px"><summary><small>CERTIFICATE CHAIN &amp; SANS</small></summary><pre class="raw-block">${escapeHTML(JSON.stringify({ chain: data.chain, sans: data.sans, ip_sans: data.ip_sans }, null, 2))}</pre></details>
     ${data.pem ? `<details style="margin-top:6px"><summary><small>PEM CERTIFICATE</small></summary><pre class="raw-block">${escapeHTML(data.pem)}</pre></details>` : ''}`;
   return openDetails('ssl', failed ? 'error' : 'success', body);
 }
@@ -324,11 +371,12 @@ function renderSsl(data) {
 function renderHttp(data) {
   if (data.error) return errorDetails('http', data.error);
   const score = Number(data.score);
-  const failed = score < 60;
+  const failed = score < 60 || (data.issues || []).length > 0;
   let securityRows = '';
   for (const [header, val] of Object.entries(data.security || {})) {
     const isSet = val !== 'Not Set';
-    securityRows += `<dl class="kv"><dt>${escapeHTML(header)}</dt><dd><span class="chip ${isSet ? 'chip--ok' : 'chip--bad'}">${isSet ? 'SET' : 'MISSING'}</span>${isSet ? ` <span class="clickable-record">${escapeHTML(val)}</span>` : ''}</dd></dl>`;
+    const notApplicable = /^Not (?:required|applicable)\b/.test(val);
+    securityRows += `<dl class="kv"><dt>${escapeHTML(header)}</dt><dd><span class="chip ${notApplicable ? '' : isSet ? 'chip--ok' : 'chip--bad'}">${notApplicable ? 'N/A' : isSet ? 'SET' : 'MISSING'}</span>${isSet ? ` <span class="clickable-record">${escapeHTML(val)}</span>` : ''}</dd></dl>`;
   }
   const issues = (data.issues || []).map((i) => `<li>${escapeHTML(i)}</li>`).join('');
   const redirects = (data.redirects || [])
@@ -336,7 +384,7 @@ function renderHttp(data) {
   const cookies = (data.cookies || [])
     .map((c) => `<li><strong>${escapeHTML(c.name)}</strong> · ${c.secure ? 'Secure' : 'not Secure'} · ${c.http_only ? 'HttpOnly' : 'no HttpOnly'} · SameSite=${escapeHTML(c.same_site || 'n/a')}</li>`).join('');
   const checks = (data.security_checks || []).map((check) => {
-    const tone = check.status === 'pass' ? 'chip--ok' : (check.status === 'warning' ? 'chip--warn' : 'chip--bad');
+    const tone = check.status === 'pass' ? 'chip--ok' : check.status === 'not-applicable' ? '' : (check.status === 'warning' ? 'chip--warn' : 'chip--bad');
     return `<li><span class="chip ${tone}">${escapeHTML(check.status)}</span> <strong>${escapeHTML(check.name)}</strong>${check.guidance ? ` — ${escapeHTML(check.guidance)}` : ''}</li>`;
   }).join('');
   const statusOk = String(data.status || '').startsWith('2');
@@ -367,7 +415,7 @@ function renderCt(data) {
   return openDetails('ct', 'success', `<div style="color:var(--phos-50)">No subdomains found in CT logs.</div>`);
 }
 
-export function renderService(service, data, target, section) {
+export function renderService(service, data, target, section, evidence) {
   if (data && typeof data === 'object' && data.status === 'skipped') {
     return skippedDetails(service, '', typeof data.reason === 'string' ? data.reason : '');
   }
@@ -375,7 +423,7 @@ export function renderService(service, data, target, section) {
     case 'target': return renderTarget(data);
     case 'geo': return renderGeo(data);
     case 'whois': return renderWhois(data);
-    case 'dns': return renderDns(data);
+    case 'dns': return renderDns(data, evidence);
     case 'subdomains': return renderSubdomains(data);
     case 'portscan': return renderPortscan(data);
     case 'ping': return renderPing(data, target, section);

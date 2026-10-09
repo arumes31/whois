@@ -26,6 +26,7 @@ import (
 )
 
 type WhoisInfo struct {
+	Query         string                `json:"query,omitempty"`
 	Raw           string                `json:"raw"`
 	Registrar     string                `json:"registrar,omitempty"`
 	Expiry        string                `json:"expiry,omitempty"`
@@ -199,6 +200,8 @@ func Whois(ctx context.Context, target string) interface{} {
 	if !utils.IsValidTarget(target) {
 		return "Error: invalid target for WHOIS"
 	}
+	query := target
+	target = registrationTarget(utils.NormalizeTarget(target).Host)
 	if err := ctx.Err(); err != nil {
 		return fmt.Sprintf("WHOIS error: %v", err)
 	}
@@ -207,6 +210,7 @@ func Whois(ctx context.Context, target string) interface{} {
 		return fmt.Sprintf("WHOIS error: %v", err)
 	}
 	if rdapErr == nil && strings.TrimSpace(info.Raw) != "" {
+		info.Query = query
 		return info
 	}
 	if errors.Is(rdapErr, errRegistrationNotFound) {
@@ -357,7 +361,7 @@ func Whois(ctx context.Context, target string) interface{} {
 	if strings.TrimSpace(raw) == "" {
 		return "WHOIS error: no usable registration data returned by WHOIS"
 	}
-	info = WhoisInfo{Raw: raw, Source: "whois", QueriedAt: time.Now().UTC().Format(time.RFC3339), Kind: "domain"}
+	info = WhoisInfo{Query: query, Raw: raw, Source: "whois", QueriedAt: time.Now().UTC().Format(time.RFC3339), Kind: "domain"}
 	if net.ParseIP(target) != nil {
 		info.Kind = "ip"
 		return info

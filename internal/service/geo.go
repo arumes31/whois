@@ -37,21 +37,24 @@ var (
 const maxMindCityDownloadURL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&suffix=tar.gz"
 
 type GeoInfo struct {
-	Country      string  `json:"country"`
-	CountryCode  string  `json:"countryCode"`
-	CountryEmoji string  `json:"country_emoji"`
-	RegionName   string  `json:"regionName"`
-	City         string  `json:"city"`
-	Zip          string  `json:"zip"`
-	Lat          float64 `json:"lat"`
-	Lon          float64 `json:"lon"`
-	Timezone     string  `json:"timezone"`
-	ISP          string  `json:"isp"`
-	Org          string  `json:"org"`
-	AS           string  `json:"as"`
-	Query        string  `json:"query"`
-	Status       string  `json:"status"`
-	Message      string  `json:"message,omitempty"`
+	Country        string  `json:"country"`
+	CountryCode    string  `json:"countryCode"`
+	CountryEmoji   string  `json:"country_emoji"`
+	RegionName     string  `json:"regionName"`
+	City           string  `json:"city"`
+	Zip            string  `json:"zip"`
+	Lat            float64 `json:"lat"`
+	Lon            float64 `json:"lon"`
+	Timezone       string  `json:"timezone"`
+	ISP            string  `json:"isp"`
+	Org            string  `json:"org"`
+	AS             string  `json:"as"`
+	Query          string  `json:"query"`
+	IP             string  `json:"ip"`
+	HasCoordinates bool    `json:"has_coordinates"`
+	Source         string  `json:"source"`
+	Status         string  `json:"status"`
+	Message        string  `json:"message,omitempty"`
 }
 
 var (
@@ -413,7 +416,8 @@ func getGeoInfo(ctx context.Context, target string, resolve geoResolverFunc, loo
 			lookupErr = errors.New("GeoIP resolver returned an invalid IP address")
 			continue
 		}
-		record, err := lookup(ip.Unmap())
+		ip = ip.Unmap()
+		record, err := lookup(ip)
 		if err != nil {
 			lookupErr = err
 			continue
@@ -427,8 +431,8 @@ func getGeoInfo(ctx context.Context, target string, resolve geoResolverFunc, loo
 		if len(record.Subdivisions) > 0 {
 			regionName = record.Subdivisions[0].Names.English
 		}
-		// Preserve the existing numeric response when the database omits a
-		// coordinate; an explicitly stored zero is also a valid coordinate.
+		// Keep legacy numeric fields while exposing presence separately, since
+		// an absent coordinate and an explicitly stored zero are different.
 		var latitude, longitude float64
 		if record.Location.Latitude != nil {
 			latitude = *record.Location.Latitude
@@ -438,17 +442,20 @@ func getGeoInfo(ctx context.Context, target string, resolve geoResolverFunc, loo
 		}
 
 		return &GeoInfo{
-			Country:      record.Country.Names.English,
-			CountryCode:  record.Country.ISOCode,
-			CountryEmoji: getFlagEmoji(record.Country.ISOCode),
-			RegionName:   regionName,
-			City:         record.City.Names.English,
-			Zip:          record.Postal.Code,
-			Lat:          latitude,
-			Lon:          longitude,
-			Timezone:     record.Location.TimeZone,
-			Status:       "success",
-			Query:        target,
+			Country:        record.Country.Names.English,
+			CountryCode:    record.Country.ISOCode,
+			CountryEmoji:   getFlagEmoji(record.Country.ISOCode),
+			RegionName:     regionName,
+			City:           record.City.Names.English,
+			Zip:            record.Postal.Code,
+			Lat:            latitude,
+			Lon:            longitude,
+			Timezone:       record.Location.TimeZone,
+			Status:         "success",
+			Query:          target,
+			IP:             ip.String(),
+			HasCoordinates: record.Location.HasCoordinates(),
+			Source:         "GeoLite2 City (local)",
 		}, nil
 	}
 
