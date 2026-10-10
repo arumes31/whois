@@ -3,15 +3,14 @@ package model
 type DNSResult map[string]interface{}
 
 type QueryResult struct {
-	Target     interface{}  `json:"target,omitempty"`
-	Whois      interface{}  `json:"whois"`
-	DNS        DNSResult    `json:"dns"`
-	DNSDetails DNSDetails   `json:"dns_details,omitempty"`
-	CT         interface{}  `json:"ct"`
-	SSL        interface{}  `json:"ssl,omitempty"`
-	HTTP       interface{}  `json:"http,omitempty"`
-	Geo        interface{}  `json:"geo,omitempty"`
-	Routing    *RoutingInfo `json:"routing,omitempty"`
+	Target     interface{} `json:"target,omitempty"`
+	Whois      interface{} `json:"whois"`
+	DNS        DNSResult   `json:"dns"`
+	DNSDetails DNSDetails  `json:"dns_details,omitempty"`
+	CT         interface{} `json:"ct"`
+	SSL        interface{} `json:"ssl,omitempty"`
+	HTTP       interface{} `json:"http,omitempty"`
+	Geo        interface{} `json:"geo,omitempty"`
 }
 
 type TargetKind string
@@ -22,7 +21,6 @@ const (
 	TargetKindIPv4    TargetKind = "ipv4"
 	TargetKindIPv6    TargetKind = "ipv6"
 	TargetKindCIDR    TargetKind = "cidr"
-	TargetKindASN     TargetKind = "asn"
 )
 
 type IPMetadata struct {
@@ -50,7 +48,6 @@ type TargetInfo struct {
 	Kind         TargetKind   `json:"kind"`
 	Prefix       string       `json:"prefix,omitempty"`
 	Subnet       *SubnetInfo  `json:"subnet,omitempty"`
-	ASN          uint32       `json:"asn,omitempty"`
 	Valid        bool         `json:"valid"`
 	Networkable  bool         `json:"networkable"`
 	ResolutionMS int64        `json:"resolution_ms"`

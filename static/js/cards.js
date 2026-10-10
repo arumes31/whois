@@ -12,11 +12,10 @@ import {
 } from './store.js';
 import { renderService, skeletonHtml, skippedDetails, serviceLabel } from './render.js';
 
-const SERVICE_ORDER = ['target', 'geo', 'whois', 'routing', 'dns', 'subdomains', 'portscan', 'ping', 'route', 'trace', 'ssl', 'http', 'ct'];
+const SERVICE_ORDER = ['target', 'geo', 'whois', 'dns', 'subdomains', 'portscan', 'ping', 'route', 'trace', 'ssl', 'http', 'ct'];
 
 function targetType(target) {
   const value = String(target).trim();
-  if (/^AS\d+$/i.test(value)) return 'ASN';
   if (/^[a-z][a-z\d+.-]*:\/\//i.test(value)) return 'URL';
   if (value.includes('/')) return 'CIDR';
   if (/^(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?$/.test(value) || value.includes(':')) return 'IP';
@@ -444,8 +443,7 @@ function handleAllDone(scan) {
   const badge = card.querySelector('.status-badge');
   const invalidTarget = scan.targetProfile && !scan.targetProfile.valid;
   const localCalculation = scan.targetProfile?.valid && scan.targetProfile.kind === 'cidr' && scan.targetProfile.hasSubnet;
-  const asnLookup = scan.targetProfile?.kind === 'asn' && scan.targetProfile.routingAllowed === true && scan.config.routing === true;
-  const profileOnly = scan.targetProfile?.valid && !scan.targetProfile.networkable && !localCalculation && !asnLookup;
+  const profileOnly = scan.targetProfile?.valid && !scan.targetProfile.networkable && !localCalculation;
   const policyBlocked = scan.targetProfile?.queryAllowed === false && scan.targetProfile.queryRestriction;
   const skipped = Object.values(getResults(target)).filter((result) => result?.status === 'skipped').length;
   const problems = scan.failures.size + scan.findings.size;
@@ -473,7 +471,7 @@ function handleAllDone(scan) {
   } else {
     const outcome = problems > 0 ? 'findings' : (skipped > 0 ? 'completed_with_skips' : 'clean');
     setScanStatusByRequestID(scan.requestID, 'completed', outcome);
-    badge.textContent = problems > 0 ? 'COMPLETE · FINDINGS' : (skipped > 0 ? 'COMPLETE · SKIPPED' : (asnLookup ? 'ASN LOOKUP COMPLETE' : 'COMPLETE'));
+    badge.textContent = problems > 0 ? 'COMPLETE · FINDINGS' : (skipped > 0 ? 'COMPLETE · SKIPPED' : 'COMPLETE');
     badge.className = `badge status-badge ${problems > 0 ? 'badge--warn' : (skipped > 0 ? 'badge--skip' : 'badge--ok')}`;
     progress.setAttribute('aria-valuetext', 'Diagnostics complete');
   }
@@ -528,7 +526,6 @@ function handleResult(msg, scan) {
       networkable: msg.data.networkable === true,
       kind: msg.data.kind,
       hasSubnet: isPlainObject(msg.data.subnet),
-      routingAllowed: msg.data.routing_allowed === true,
       queryAllowed: msg.data.query_allowed,
       queryRestriction: typeof msg.data.query_restriction === 'string' ? msg.data.query_restriction.trim() : '',
     };
@@ -536,7 +533,6 @@ function handleResult(msg, scan) {
   const skippedResult = isPlainObject(msg.data) && msg.data.status === 'skipped';
   const dnsDetails = msg.service === 'dns' && isPlainObject(msg.dns_details) ? msg.dns_details : undefined;
   const hardFailure = !skippedResult && (resultHasError(msg.data)
-    || (msg.service === 'routing' && msg.data?.asn?.prefixes?.status === 'error')
     || (dnsDetails && Object.values(dnsDetails).some(detail => detail?.status === 'error'))
     || (msg.service === 'whois' && typeof msg.data === 'string' && /^(?:whois\s+)?error:/i.test(msg.data.trim())));
   scan.skippedServices ??= new Set();

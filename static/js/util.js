@@ -278,11 +278,8 @@ export function canonicalTargetIdentity(value) {
   const raw = String(value || '').trim();
   if (!raw) return '';
 
-  const asn = /^as0*([0-9]+)$/i.exec(raw);
-  if (asn) {
-    const number = BigInt(asn[1]);
-    if (number > 0n && number <= 0xffffffffn) return `asn|AS${number}`;
-  }
+  // Unsupported AS-number input must not become a hostname identity.
+  if (/^AS\d+$/i.test(raw)) return `invalid|${raw}`;
 
   const prefix = canonicalIPPrefix(raw);
   if (prefix) return `prefix|${prefix}`;

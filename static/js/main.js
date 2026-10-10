@@ -100,7 +100,7 @@ function startQuery() {
   const error = document.getElementById('targetError');
   const targets = splitTargets(input.value);
   if (targets.length === 0) {
-    error.textContent = 'Enter at least one domain, IP address, CIDR, ASN, or URL.';
+    error.textContent = 'Enter at least one domain, IP address, CIDR, or URL.';
     input.setAttribute('aria-invalid', 'true');
     input.focus();
     return;
@@ -111,9 +111,16 @@ function startQuery() {
     input.focus();
     return;
   }
+  if (targets.some(target => /^AS\d+$/i.test(target))) {
+    error.textContent = 'ASN lookup is not supported. Enter a domain, IP address, CIDR, or URL.';
+    input.setAttribute('aria-invalid', 'true');
+    input.focus();
+    announce(error.textContent);
+    return;
+  }
   const config = readModuleConfig();
   if (targets.some(target => planTargetScan(target, config).total === 0)) {
-    error.textContent = 'Select a diagnostic module for non-CIDR targets. CIDRs can be calculated without a module; ASN lookups use BGP ROUTING.';
+    error.textContent = 'Select a diagnostic module for non-CIDR targets. CIDRs can be calculated without a module.';
     announce(error.textContent);
     return;
   }

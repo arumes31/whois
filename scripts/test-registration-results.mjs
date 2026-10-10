@@ -110,21 +110,4 @@ assert.match(subnet6, /340282366920938463463374607431768211456/);
 assert.doesNotMatch(subnet6, /<dt>Broadcast|<dt>Netmask|<dt>Usable/);
 inspect(parseFragment(renderService('target', { valid: true, subnet: { ...subnet4, notes: ['<script>bad()</script>'] } })));
 
-const asnInfo = { status: 'answer', source: 'RIPEstat / RIPE RIS', fetched_at: '2026-10-09T12:00:00Z',
-  asn: { number: 13335, holder: 'Example network', announced: false, min_peers_seeing: 10,
-    overview_start: '2026-10-09T08:00:00Z', overview_end: '2026-10-09T12:00:00Z',
-    prefixes: { status: 'answer', items: Array.from({length: 102}, (_, n) => `11.0.${n}.0/24`), period_start: '2026-10-08T12:00:00Z', period_end: '2026-10-09T12:00:00Z', fetched_at: '2026-10-09T12:00:01Z', source_url: 'https://stat.ripe.net/data/announced-prefixes/data.json?resource=AS13335' } } };
-const asnHtml = renderService('routing', asnInfo);
-for (const text of ['AS13335', 'Example network', '10 RIS', 'does not establish inactivity', 'Observed prefixes', '102', 'Browse first 100', 'export', 'last 24 hours', '2026-10-08 12:00:00 UTC']) assert.ok(asnHtml.includes(text), text);
-assert.match(asnHtml, /<details><summary>Browse first 100 of 102 prefixes/);
-assert.match(asnHtml, /11\.0\.99\.0\/24/);
-assert.doesNotMatch(asnHtml, /11\.0\.100\.0\/24|8 hours|currently announced/);
-const prefixError = renderService('routing', { ...asnInfo, asn: { ...asnInfo.asn, prefixes: { status: 'error', error: 'Prefix request failed' } } });
-assert.match(prefixError, /Example network/);
-assert.match(prefixError, /Prefix request failed/);
-assert.match(prefixError, /data-status="error"/);
-const emptyPrefixes = renderService('routing', { ...asnInfo, asn: { ...asnInfo.asn, prefixes: { ...asnInfo.asn.prefixes, items: [] } } });
-assert.match(emptyPrefixes, /No prefixes observed during this period/);
-assert.doesNotMatch(emptyPrefixes, /MODULE FAULT/);
-inspect(parseFragment(renderService('routing', { ...asnInfo, asn: { ...asnInfo.asn, holder: '<img src=x>', prefixes: { ...asnInfo.asn.prefixes, items: ['<script>bad()</script>'] } } })));
-console.log('Subnet and ASN evidence rendering passed.');
+console.log('Subnet evidence rendering passed.');

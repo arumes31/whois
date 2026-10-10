@@ -45,7 +45,6 @@
         <dl class="config-facts">
           <div><dt>WHOIS</dt><dd><span class="chip {{ if .config.EnableWhois }}chip--ok{{ else }}chip--warn{{ end }}">{{ if .config.EnableWhois }}ENABLED{{ else }}DISABLED{{ end }}</span></dd></div>
           <div><dt>DNS</dt><dd><span class="chip {{ if .config.EnableDNS }}chip--ok{{ else }}chip--warn{{ end }}">{{ if .config.EnableDNS }}ENABLED{{ else }}DISABLED{{ end }}</span></dd></div>
-          <div><dt>BGP routing (RIPEstat)</dt><dd><span class="chip {{ if .config.EnableRouting }}chip--ok{{ else }}chip--warn{{ end }}">{{ if .config.EnableRouting }}ENABLED{{ else }}DISABLED{{ end }}</span></dd></div>
           <div><dt>TLS / HTTP</dt><dd><span class="chip {{ if and .config.EnableSSL .config.EnableHTTP }}chip--ok{{ else }}chip--warn{{ end }}">{{ if and .config.EnableSSL .config.EnableHTTP }}ENABLED{{ else }}PARTIAL{{ end }}</span></dd></div>
         </dl>
       </section>

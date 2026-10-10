@@ -11,27 +11,21 @@ import (
 	"time"
 
 	"whois/internal/config"
-	"whois/internal/model"
 )
 
 func TestProfileAndBlockedTargetsNeverRunHostDiagnostics(t *testing.T) {
 	for _, target := range []string{"192.168.1.23/24", "2001:db8::1/64", "AS13335", "127.0.0.1", "8.8.8.8/33"} {
-		for _, enabled := range []bool{false, true} {
-			h := NewHandler(setupMiniredisStorage(t), &config.Config{EnableRouting: enabled})
-			stub := &routingLookupStub{result: model.RoutingInfo{Status: "answer"}}
-			h.Routing = stub
-			result := h.queryItem(context.Background(), target, true, true, true, true, true, true, true)
+		t.Run(target, func(t *testing.T) {
+			h := NewHandler(setupMiniredisStorage(t), &config.Config{})
+			result := h.queryItem(context.Background(), target, true, true, true, true, true, true)
 			if result.DNS != nil || result.Whois != nil || result.CT != nil || result.HTTP != nil || result.SSL != nil || result.Geo != nil {
 				t.Fatalf("host diagnostics ran for %s: %+v", target, result)
 			}
-			if (result.Routing != nil) != enabled {
-				t.Fatalf("routing opt-in not respected: %+v", result)
-			}
-		}
+		})
 	}
 }
 
-func TestIndexExportsSubnetWithoutRouting(t *testing.T) {
+func TestIndexExportsLocalSubnet(t *testing.T) {
 	e, _ := setupTestEcho()
 	h := NewHandler(setupMiniredisStorage(t), &config.Config{})
 	form := url.Values{"ips_and_domains": {"192.168.1.23/24,2001:db8::1/64"}, "export": {"json"}}
@@ -54,47 +48,53 @@ func TestIndexExportsSubnetWithoutRouting(t *testing.T) {
 	}
 }
 
-func TestWebSocketASNReportsRoutingCapability(t *testing.T) {
-	for _, enabled := range []bool{false, true} {
-		for _, requested := range []bool{false, true} {
-			h := NewHandler(setupMiniredisStorage(t), &config.Config{EnableRouting: enabled})
-			stub := &routingLookupStub{result: model.RoutingInfo{Status: "answer"}}
-			h.Routing = stub
+func TestWebSocketIgnoresRemovedRoutingConfiguration(t *testing.T) {
+	useLocalTargetEnrichment(t)
+	for _, target := range []string{"AS13335", "1.1.1.1", "192.168.1.23/24"} {
+		t.Run(target, func(t *testing.T) {
+			h := NewHandler(setupMiniredisStorage(t), &config.Config{})
 			ws := dialHandlerWebSocket(t, h)
 			if err := ws.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 				t.Fatal(err)
 			}
-			if err := ws.WriteJSON(map[string]interface{}{"targets": []string{"AS13335"}, "request_id": "asn", "config": map[string]bool{"routing": requested, "dns": true, "http": true}}); err != nil {
+			if err := ws.WriteJSON(map[string]interface{}{"targets": []string{target}, "request_id": "removed-routing", "config": map[string]bool{"routing": true}}); err != nil {
 				t.Fatal(err)
 			}
-			profileSeen, routingSeen := false, false
+			profileSeen := false
 			for {
 				var message WSMessage
 				if err := ws.ReadJSON(&message); err != nil {
 					t.Fatal(err)
+				}
+				if message.RequestID != "removed-routing" {
+					t.Fatalf("request ID lost: %+v", message)
+				}
+				if message.Service == "routing" {
+					t.Fatalf("removed routing module emitted a message: %+v", message)
 				}
 				if message.Type == "result" {
 					switch message.Service {
 					case "target":
 						profileSeen = true
 						data := message.Data.(map[string]interface{})
-						if data["routing_allowed"] != (enabled && requested) || data["query_allowed"] != false {
-							t.Fatalf("ASN capability incorrectly reported: %+v", data)
+						if _, exists := data["routing_allowed"]; exists {
+							t.Fatalf("removed routing capability still exposed: %+v", data)
 						}
-					case "routing":
-						routingSeen = true
+						if target == "AS13335" && (data["valid"] != false || data["query_allowed"] != false) {
+							t.Fatalf("unsupported ASN accepted: %+v", data)
+						}
 					default:
-						t.Fatalf("host diagnostic ran for ASN: %+v", message)
+						t.Fatalf("obsolete routing option triggered a diagnostic: %+v", message)
 					}
 				}
 				if message.Type == "all_done" {
 					break
 				}
 			}
-			if !profileSeen || routingSeen != (enabled && requested) {
-				t.Fatalf("ASN result lifecycle incomplete: profile=%v routing=%v", profileSeen, routingSeen)
+			if !profileSeen {
+				t.Fatal("missing target profile")
 			}
-		}
+		})
 	}
 }
 

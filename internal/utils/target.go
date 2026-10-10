@@ -16,7 +16,7 @@ import (
 	"golang.org/x/net/idna"
 )
 
-var asnPattern = regexp.MustCompile(`(?i)^AS([0-9]+)$`)
+var unsupportedASNPattern = regexp.MustCompile(`(?i)^AS[0-9]+$`)
 
 const (
 	maxReverseDNSLookups   = 8
@@ -82,17 +82,8 @@ func NormalizeTarget(input string) model.TargetInfo {
 		return info
 	}
 
-	if match := asnPattern.FindStringSubmatch(raw); match != nil {
-		asn, err := strconv.ParseUint(match[1], 10, 32)
-		if err != nil || asn == 0 {
-			info.Error = "invalid autonomous system number"
-			return info
-		}
-		info.Kind = model.TargetKindASN
-		info.ASN = uint32(asn)
-		info.Normalized = fmt.Sprintf("AS%d", asn)
-		info.Valid = true
-		info.Warnings = []string{"ASN provider data is optional; single-host diagnostics do not apply to autonomous systems."}
+	if unsupportedASNPattern.MatchString(raw) {
+		info.Error = "ASN lookup is not supported"
 		return info
 	}
 
