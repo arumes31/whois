@@ -44,7 +44,7 @@ func TestDNSHistorySkipsPartialFailures(t *testing.T) {
 			var run func() model.DNSDetails
 			if mode == "batch" {
 				run = func() model.DNSDetails {
-					return h.queryItem(context.Background(), target, true, false, false, false, false, false, false).DNSDetails
+					return h.queryItem(context.Background(), target, true, false, false, false, false, false).DNSDetails
 				}
 			} else {
 				ws := dialHandlerWebSocket(t, h)

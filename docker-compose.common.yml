@@ -34,7 +34,6 @@ services:
       ENABLE_DNS: "${ENABLE_DNS:-true}"
       ENABLE_CT: "${ENABLE_CT:-true}"
       ENABLE_HTTP: "${ENABLE_HTTP:-true}"
-      ENABLE_ROUTING: "${ENABLE_ROUTING:-false}"
       MAXMIND_LICENSE_KEY: "${MAXMIND_LICENSE_KEY:-}"
       MAXMIND_ACCOUNT_ID: "${MAXMIND_ACCOUNT_ID:-}"
       DNS_SERVERS: "${DNS_SERVERS:-https://cloudflare-dns.com/dns-query,https://dns.google/dns-query,https://dns.quad9.net/dns-query}"

@@ -218,16 +218,23 @@ func TestHandleWSIPModulesReportSkipped(t *testing.T) {
 	}
 }
 
-func TestHandleWSProfileOnlyTargetsAreNotPolicyBlocked(t *testing.T) {
-	for _, target := range []string{"192.0.2.0/24", "AS13335"} {
-		t.Run(target, func(t *testing.T) {
+func TestHandleWSNonNetworkableTargetsAreNotPolicyBlocked(t *testing.T) {
+	for _, tc := range []struct {
+		target string
+		valid  bool
+		error  string
+	}{
+		{target: "192.0.2.0/24", valid: true},
+		{target: "AS13335", error: "ASN lookup is not supported"},
+	} {
+		t.Run(tc.target, func(t *testing.T) {
 			h := NewHandler(&storage.Storage{}, &config.Config{EnableDNS: true})
 			ws := dialHandlerWebSocket(t, h)
 			if err := ws.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
 				t.Fatal(err)
 			}
 			if err := ws.WriteJSON(map[string]interface{}{
-				"request_id": "profile-only", "targets": []string{target},
+				"request_id": "profile-only", "targets": []string{tc.target},
 				"config": map[string]bool{"dns": true},
 			}); err != nil {
 				t.Fatal(err)
@@ -240,11 +247,25 @@ func TestHandleWSProfileOnlyTargetsAreNotPolicyBlocked(t *testing.T) {
 			if msg.Type != "result" || msg.Service != "target" || !ok {
 				t.Fatalf("expected target profile first, got %#v", msg)
 			}
-			if profile["valid"] != true || profile["networkable"] != false || profile["query_allowed"] != false {
-				t.Fatalf("unexpected profile-only target properties: %#v", profile)
+			if profile["valid"] != tc.valid || profile["networkable"] != false || profile["query_allowed"] != false {
+				t.Fatalf("unexpected non-networkable target properties: %#v", profile)
+			}
+			if reason, _ := profile["error"].(string); reason != tc.error {
+				t.Fatalf("target error = %q, want %q", reason, tc.error)
 			}
 			if _, exists := profile["query_restriction"]; exists {
-				t.Fatalf("profile-only target must not claim a server policy restriction: %#v", profile)
+				t.Fatalf("non-networkable target must not claim a server policy restriction: %#v", profile)
+			}
+			for {
+				if err := ws.ReadJSON(&msg); err != nil {
+					t.Fatal(err)
+				}
+				if msg.Type == "result" || msg.Type == "done" {
+					t.Fatalf("non-networkable target started a host diagnostic: %#v", msg)
+				}
+				if msg.Type == "all_done" {
+					break
+				}
 			}
 		})
 	}

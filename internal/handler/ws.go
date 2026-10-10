@@ -36,7 +36,6 @@ type wsQueryConfig struct {
 	Ping       bool   `json:"ping"`
 	Trace      bool   `json:"trace"`
 	Route      bool   `json:"route"`
-	Routing    bool   `json:"routing"`
 	Subdomains bool   `json:"subdomains"`
 	Ports      string `json:"ports"`
 }
@@ -44,7 +43,6 @@ type wsQueryConfig struct {
 type wsTargetProfile struct {
 	model.TargetInfo
 	QueryAllowed     bool   `json:"query_allowed"`
-	RoutingAllowed   bool   `json:"routing_allowed"`
 	QueryRestriction string `json:"query_restriction,omitempty"`
 }
 
@@ -344,8 +342,6 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 	profile := wsTargetProfile{
 		TargetInfo:   targetInfo,
 		QueryAllowed: targetInfo.Valid && targetInfo.Networkable && utils.IsValidTarget(target),
-		RoutingAllowed: targetInfo.Valid && targetInfo.Kind == model.TargetKindASN &&
-			cfg.Routing && h.AppConfig.EnableRouting,
 	}
 	if targetInfo.Valid && targetInfo.Networkable && !profile.QueryAllowed {
 		profile.QueryRestriction = "Network queries are disabled by server policy for this target."
@@ -363,19 +359,9 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 		if reason == "" {
 			reason = "this target type is profile-only in provider-free mode"
 		}
-		if cfg.Routing && h.AppConfig.EnableRouting {
-			send("routing", h.Routing.Lookup(ctx, cardTarget))
-			done := WSMessage{Type: "done", RequestID: requestID, Target: cardTarget, Service: "routing"}
-			payload, _ := json.Marshal(done)
-			_ = writer.write(websocket.TextMessage, payload)
-		}
 		switch {
 		case targetInfo.Valid && targetInfo.Kind == model.TargetKindCIDR:
 			sendLog("Subnet calculation complete. Single-host diagnostics do not apply to CIDR ranges.")
-		case profile.RoutingAllowed:
-			sendLog("ASN lookup complete. Single-host diagnostics do not apply to autonomous systems.")
-		case targetInfo.Valid && targetInfo.Kind == model.TargetKindASN:
-			sendLog("ASN profile complete. Enable BGP / ASN on the server and select it to retrieve provider data.")
 		default:
 			sendLog("Target cannot be queried: " + reason)
 		}
@@ -735,17 +721,6 @@ func (h *Handler) streamQuery(ctx context.Context, writer *wsWriter, target stri
 			}
 			sendDone("geo")
 		}()
-	}
-
-	if cfg.Routing && h.AppConfig.EnableRouting {
-		wg.Go(func() {
-			defer sendDone("routing")
-			if !acquireService() {
-				return
-			}
-			defer releaseService()
-			send("routing", h.Routing.Lookup(ctx, cardTarget))
-		})
 	}
 
 	if cfg.Ports != "" {

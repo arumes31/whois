@@ -7,7 +7,7 @@ import {
 import { renderService, skippedDetails } from '../static/js/render.js';
 import * as store from '../static/js/store.js';
 import * as cards from '../static/js/cards.js';
-import { prepareLookupToolRequest, initModal, openTool, closeModal } from '../static/js/history.js';
+import { prepareSubnetRequest, initModal, openTool, closeModal } from '../static/js/history.js';
 
 function testCanonicalTargets() {
   const cases = [
@@ -431,39 +431,35 @@ function resultSection(service) {
   };
 }
 
-function testOptionalRoutingSelection() {
+
+function testRemovedRoutingIsIgnored() {
   const previousDocument = globalThis.document;
   const previousStorage = window.localStorage;
-  let saved = null;
+  let saved = JSON.stringify({ routing: true, route: true });
   const boxes = Object.fromEntries([...store.moduleIds(), 'routing'].map(id => [`cfg-${id}`, { checked: false, disabled: false }]));
-  boxes['cfg-routing'].disabled = true;
   window.localStorage = { getItem: () => saved, setItem: (_key, value) => { saved = value; } };
-  globalThis.document = {
-    getElementById: id => boxes[id] || null,
-    dispatchEvent() {},
-  };
+  globalThis.document = { getElementById: id => boxes[id] || null, dispatchEvent() {} };
   try {
-    assert.equal(store.readModuleConfig().routing, false, 'server-disabled routing is unavailable');
-    saved = JSON.stringify({ routing: true });
     store.loadSettings();
-    assert.equal(boxes['cfg-routing'].checked, false, 'saved selection cannot bypass the server flag');
+    assert.equal(store.moduleIds().length, 11);
+    assert.equal(store.moduleIds().includes('routing'), false);
+    assert.equal(boxes['cfg-routing'].checked, false, 'saved removed feature is ignored');
+    assert.equal(store.readModuleConfig().route, true, 'traceroute remains available');
+    assert.equal(Object.hasOwn(store.readModuleConfig(), 'routing'), false);
     store.applyPreset('full');
-    assert.equal(store.readModuleConfig().routing, false);
-    assert.equal(store.readModuleConfig().route, true, 'traceroute remains an independent module');
-    boxes['cfg-routing'].disabled = false;
-    assert.equal(store.readModuleConfig().routing, false, 'enabling the server does not opt in the browser');
-    for (const [preset, expected] of [
-      ['standard', ['whois', 'dns', 'ssl', 'http', 'geo']],
-      ['web', ['ssl', 'http', 'ct', 'geo']],
-      ['dns', ['dns', 'trace', 'subdomains']],
-    ]) {
-      store.applyPreset(preset);
-      assert.deepEqual(Object.entries(store.readModuleConfig()).filter(([key, value]) => key !== 'ports' && value).map(([key]) => key).sort(), expected.sort());
-    }
-    store.applyPreset('full');
-    assert.equal(store.readModuleConfig().routing, true);
-    assert.equal(store.readModuleConfig().route, true);
-    assert.equal(JSON.parse(saved).routing, true, 'explicit browser selection is persisted');
+    assert.equal(store.enabledServiceCount(store.readModuleConfig()), 11);
+    assert.equal(Object.hasOwn(JSON.parse(saved), 'routing'), false, 'saved preferences omit removed module');
+    assert.deepEqual(store.planTargetScan('example.com', { dns: true, routing: true }), { config: { dns: true }, total: 1 });
+    assert.equal(store.enabledServiceCount({ routing: true }), 0);
+    const target = 'removed-module.test';
+    const section = resultSection('routing');
+    const card = terminalCard(target, section);
+    globalThis.document = { getElementById() { return null; }, querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; } };
+    store.beginScan(target, { requestID: target, identity: target, config: { dns: true, routing: true }, total: 1 });
+    for (const type of ['result', 'done']) assert.equal(cards.routeMessage({ type, target, request_id: target, service: 'routing', data: { status: 'answer' } }), false);
+    const exported = store.getAllResultsData().find(result => result.target === target);
+    assert.equal(Object.hasOwn(exported.config, 'routing'), false);
+    assert.equal(Object.hasOwn(exported.services, 'routing'), false);
   } finally {
     globalThis.document = previousDocument;
     window.localStorage = previousStorage;
@@ -471,27 +467,21 @@ function testOptionalRoutingSelection() {
 }
 
 function testTargetScanPlan() {
-  const selected = { dns: true, whois: true, routing: true, ports: '' };
+  const selected = { dns: true, whois: true, ports: '' };
   assert.deepEqual(store.planTargetScan('192.168.1.129/24', selected), { config: {}, total: 1 }, 'CIDR calculates locally regardless of selected modules');
   assert.deepEqual(store.planTargetScan('2001:db8::1234/64', {}), { config: {}, total: 1 }, 'IPv6 calculation needs no selected module');
-  assert.deepEqual(store.planTargetScan('AS13335', selected), { config: { routing: true }, total: 1 }, 'ASN only sends the explicitly selected routing request');
-  assert.equal(store.planTargetScan('AS13335', {}).total, 0, 'ASN cannot silently opt into an external lookup');
   assert.equal(store.planTargetScan('example.com', {}).total, 0);
   assert.equal(store.planTargetScan('192.168.1.1/033', {}).total, 0, 'invalid prefixes do not bypass module requirements');
-  assert.deepEqual(store.planTargetScan('example.com', selected), { config: selected, total: 3 });
+  assert.deepEqual(store.planTargetScan('example.com', selected), { config: selected, total: 2 });
 }
 
-function testLookupToolValidation() {
-  assert.deepEqual(prepareLookupToolRequest('subnet', ' 192.168.1.129/24 '), { target: '192.168.1.129/24' }, 'preserve input host bits for calculation');
-  assert.deepEqual(prepareLookupToolRequest('subnet', '2001:db8::1/64'), { target: '2001:db8::1/64' });
-  for (const input of ['example.com', '192.168.1.1', '192.168.1.1/33', '2001:db8::1/129']) assert.ok(prepareLookupToolRequest('subnet', input).error, input);
-  assert.ok(prepareLookupToolRequest('asn', '13335', { routingConsent: true }).error, 'server opt-in required');
-  assert.ok(prepareLookupToolRequest('asn', '13335', { routingEnabled: true }).error, 'explicit browser consent required');
-  for (const input of ['13335', 'AS13335', 'as0013335']) assert.deepEqual(prepareLookupToolRequest('asn', input, { routingEnabled: true, routingConsent: true }), { target: 'AS13335' });
-  for (const input of ['0', '4294967296', 'example.com', '<img src=x>']) assert.ok(prepareLookupToolRequest('asn', input, { routingEnabled: true, routingConsent: true }).error, input);
+function testSubnetToolValidation() {
+  assert.deepEqual(prepareSubnetRequest(' 192.168.1.129/24 '), { target: '192.168.1.129/24' }, 'preserve input host bits for calculation');
+  assert.deepEqual(prepareSubnetRequest('2001:db8::1/64'), { target: '2001:db8::1/64' });
+  for (const input of ['example.com', '192.168.1.1', '192.168.1.1/33', '2001:db8::1/129', 'AS13335']) assert.ok(prepareSubnetRequest(input).error, input);
 }
 
-function testLookupToolDialogOptIn() {
+function testSubnetToolDialog() {
   const previousDocument = globalThis.document;
   const previousHTMLElement = globalThis.HTMLElement;
   const previousFrame = window.requestAnimationFrame;
@@ -500,38 +490,36 @@ function testLookupToolDialogOptIn() {
   window.requestAnimationFrame = () => {};
   const classes = () => ({ add() {}, remove() {}, contains() { return true; } });
   try {
-    for (const [checked, disabled] of [[false, false], [true, false], [true, true]]) {
+    for (const value of ['192.168.1.129/24', '2001:db8::1/64', '192.168.1.1/33']) {
       const sent = [];
       let submit;
       const body = { innerHTML: '' };
-      const input = { value: '13335', focus() {} };
-      const consent = { checked: checked && !disabled };
       const elements = {
-        cfgRouting: { checked, disabled },
         modalBody: body, modalTitle: {}, modalClose: { addEventListener() {} },
         modalBackdrop: { classList: classes(), addEventListener() {}, removeAttribute() {}, setAttribute() {} },
-        toolLookupForm: { addEventListener(_type, callback) { submit = callback; } },
-        toolLookupTarget: input, toolRoutingConsent: consent, toolLookupError: {},
+        toolSubnetForm: { addEventListener(_type, callback) { submit = callback; } },
+        toolSubnetTarget: { value, focus() {} }, toolSubnetError: {},
       };
       globalThis.document = {
-        getElementById(id) { return id === 'cfg-routing' ? elements.cfgRouting : elements[id] || null; },
+        getElementById(id) { return elements[id] || null; },
         activeElement: null, body: { children: [], classList: classes() },
         addEventListener() {}, removeEventListener() {}, dispatchEvent() {},
       };
       window.dispatchEvent = event => sent.push(event);
       initModal();
       openTool('asn');
-      function find(node, id) {
-        if (node.attrs?.some(attr => attr.name === 'id' && attr.value === id)) return node;
-        return (node.childNodes || []).map(child => find(child, id)).find(Boolean);
-      }
-      const checkbox = find(parseFragment(body.innerHTML), 'toolRoutingConsent');
-      assert.equal(checkbox.attrs.some(attr => attr.name === 'checked'), checked && !disabled, 'dialog reuses browser opt-in only when server allows routing');
-      assert.equal(checkbox.attrs.some(attr => attr.name === 'disabled'), disabled);
+      assert.equal(body.innerHTML, '', 'removed ASN tool cannot open');
+      openTool('subnet');
+      assert.match(body.innerHTML, /CALCULATE SUBNET/);
+      assert.doesNotMatch(body.innerHTML, /consent|routing|ASN|checkbox/i);
       submit({ preventDefault() {} });
-      assert.equal(sent.some(event => event.type === 'console:query-target'), checked && !disabled, 'unselected or disabled routing cannot start a provider lookup');
-      if (checked && !disabled) assert.equal(sent.at(-1).detail.target, 'AS13335');
-      else assert.ok(elements.toolLookupError.textContent);
+      if (value.endsWith('/33')) {
+        assert.equal(sent.length, 0);
+        assert.ok(elements.toolSubnetError.textContent);
+      } else {
+        assert.equal(sent.at(-1).type, 'console:query-target');
+        assert.equal(sent.at(-1).detail.target, value);
+      }
       closeModal();
     }
   } finally {
@@ -542,89 +530,20 @@ function testLookupToolDialogOptIn() {
   }
 }
 
-function testSubnetAndASNCompletion() {
-  for (const testCase of [
-    { name: 'subnet', kind: 'cidr', subnet: { cidr: '192.168.1.0/24' }, outcome: 'local_calculation', badge: 'CALCULATED' },
-    { name: 'ASN answer', kind: 'asn', routing_allowed: true, routing: { status: 'answer', asn: { number: 13335, announced: true } }, outcome: 'clean', badge: 'ASN LOOKUP COMPLETE' },
-    { name: 'ASN outage', kind: 'asn', routing_allowed: true, routing: { status: 'error', error: 'Provider unavailable' }, outcome: 'findings', badge: 'COMPLETE · FINDINGS' },
-    { name: 'ASN prefix failure', kind: 'asn', routing_allowed: true, routing: { status: 'answer', asn: { number: 13335, prefixes: { status: 'error', error: 'Prefix request timed out' } } }, outcome: 'findings', badge: 'COMPLETE · FINDINGS' },
-    { name: 'ASN not selected', kind: 'asn', routing_allowed: false, outcome: 'profile_only', badge: 'PROFILE ONLY' },
-  ]) {
-    const target = `${testCase.name}.lifecycle.test`;
-    const profile = resultSection('target');
-    const routing = resultSection('routing');
-    const card = terminalCard(target, [profile, routing]);
-    globalThis.document = { getElementById() { return null; }, querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; } };
-    store.beginScan(target, { requestID: target, identity: target, config: testCase.routing ? { routing: true } : {}, total: 1 });
-    const data = { valid: true, networkable: false, query_allowed: false, kind: testCase.kind, subnet: testCase.subnet, routing_allowed: testCase.routing_allowed };
-    cards.routeMessage({ type: 'result', target, request_id: target, service: 'target', data });
-    if (testCase.routing) cards.routeMessage({ type: 'result', target, request_id: target, service: 'routing', data: testCase.routing });
-    cards.routeMessage({ type: 'all_done', target, request_id: target });
-    const scan = store.getScan(target);
-    assert.equal(scan.outcome, testCase.outcome, testCase.name);
-    assert.equal(card.querySelector('.status-badge').textContent, testCase.badge, testCase.name);
-    assert.equal(scan.completed, 1);
-    assert.deepEqual(store.getResults(target).target, data, 'subnet calculation is retained in exports');
-    if (testCase.name === 'ASN prefix failure') assert.equal(scan.failures.has('routing'), true);
-  }
-}
-
-function testRoutingResults() {
-  const evidence = {
-    query: '1.1.1.1', ip: '1.1.1.1', status: 'answer', prefix: '1.1.1.0/24',
-    origin_asns: [13335, 13336], source: 'RIPEstat / RIPE RIS',
-    source_url: 'https://stat.ripe.net/data/network-info/data.json?resource=1.1.1.1',
-    fetched_at: '2026-10-09T12:30:00Z', snapshot_cadence_hours: 8,
-  };
-  const answer = renderService('routing', evidence);
-  assert.match(answer, /BGP ROUTING/);
-  for (const text of ['Announced prefix', '1.1.1.0/24', 'Origin ASNs', 'AS13335', 'AS13336', 'RIPEstat / RIPE RIS', 'Retrieved', '2026-10-09 12:30:00 UTC']) {
-    assert.ok(answer.includes(text), text);
-  }
-  assert.match(answer, /8 hours/);
-  assert.match(answer, /not a live routing check/);
-  assert.match(answer, /allocation ownership or physical location/);
-  assert.doesNotMatch(answer, /TRACEROUTE/);
-
-  for (const [name, data, outcome, failed] of [
-    ['answer', evidence, 'clean', false],
-    ['empty', { ...evidence, status: 'no_announcement', prefix: undefined, origin_asns: [] }, 'clean', false],
-    ['skipped', { status: 'skipped', reason: 'Routing requires a public literal IP address.' }, 'completed_with_skips', false],
-    ['unavailable', { status: 'error', error: 'RIPEstat request timed out' }, 'findings', true],
-  ]) {
-    const target = `${name}.routing.test`;
-    const section = resultSection('routing');
-    const card = terminalCard(target, section);
-    globalThis.document = {
-      getElementById() { return null; },
-      querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; },
-    };
-    store.beginScan(target, { requestID: target, identity: `|${target}`, config: { routing: true }, total: 1 });
-    assert.equal(cards.routeMessage({ type: 'result', request_id: target, target, service: 'routing', data }), true);
-    cards.routeMessage({ type: 'done', request_id: target, target, service: 'routing' });
-    cards.routeMessage({ type: 'all_done', request_id: target, target });
-    const scan = store.getScan(target);
-    assert.equal(scan.outcome, outcome);
-    assert.equal(scan.failures.has('routing'), failed);
-    assert.equal(scan.findings.size, 0);
-    assert.deepEqual(store.getResults(target).routing, data);
-    assert.deepEqual(store.getAllResultsData().find(result => result.target === target).services.routing, data, 'export preserves provider evidence and retrieval time');
-    if (name === 'empty') {
-      assert.match(section.innerHTML, /No announcement observed/);
-      assert.match(section.innerHTML, /does not establish that the IP is unreachable/);
-      assert.doesNotMatch(section.innerHTML, /MODULE FAULT|lookup unavailable/i);
-    }
-    if (name === 'unavailable') {
-      assert.match(section.innerHTML, /Routing lookup unavailable/);
-      assert.match(section.innerHTML, /RIPEstat request timed out/);
-      assert.doesNotMatch(section.innerHTML, /No announcement observed/);
-    }
-  }
-  const unsafe = '<img src=x onerror=alert(1)>';
-  const html = renderService('routing', { ...evidence, prefix: unsafe, origin_asns: [unsafe], source: unsafe, source_url: 'javascript:alert(1)', fetched_at: unsafe });
-  assert.doesNotMatch(html, /<img|href="javascript:|datetime="<img/);
-  assert.match(html, /&lt;img/);
-  assert.match(renderService('routing', null), /data-status="error"/);
+function testSubnetCompletion() {
+  const target = '192.168.1.129/24';
+  const profile = resultSection('target');
+  const card = terminalCard(target, profile);
+  globalThis.document = { getElementById() { return null; }, querySelectorAll(selector) { return selector === '.result-card' ? [card] : []; } };
+  store.beginScan(target, { requestID: target, identity: target, config: {}, total: 1 });
+  const data = { valid: true, networkable: false, query_allowed: false, kind: 'cidr', subnet: { cidr: '192.168.1.0/24', input_address: '192.168.1.129' } };
+  cards.routeMessage({ type: 'result', target, request_id: target, service: 'target', data });
+  cards.routeMessage({ type: 'all_done', target, request_id: target });
+  const scan = store.getScan(target);
+  assert.equal(scan.outcome, 'local_calculation');
+  assert.equal(card.querySelector('.status-badge').textContent, 'CALCULATED');
+  assert.equal(scan.completed, 1);
+  assert.deepEqual(store.getResults(target).target, data, 'subnet calculation is retained in exports');
 }
 
 function testTargetQueryPolicy() {
@@ -819,12 +738,11 @@ testCanonicalTargets();
 testGenerationState();
 testCompletionSummary();
 testErrorRendering();
-testOptionalRoutingSelection();
+testRemovedRoutingIsIgnored();
 testTargetScanPlan();
-testLookupToolValidation();
-testLookupToolDialogOptIn();
-testSubnetAndASNCompletion();
-testRoutingResults();
+testSubnetToolValidation();
+testSubnetToolDialog();
+testSubnetCompletion();
 testTargetQueryPolicy();
 testSkippedModuleOutcome();
 testUntrustedServiceRendering();

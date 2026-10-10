@@ -53,7 +53,7 @@ export function beginScan(target, {
   return setScan(target, {
     requestID,
     identity,
-    config: { ...config },
+    config: supportedModuleConfig(config),
     total,
     completed: 0,
     completedServices: new Set(),
@@ -353,7 +353,7 @@ export function appendLog(target, message) {
 /* ---------- module settings (persisted on device) ---------- */
 
 const SETTINGS_KEY = 'whois_console_modules';
-const MODULE_IDS = ['whois', 'dns', 'subdomains', 'ssl', 'http', 'geo', 'ct', 'ping', 'trace', 'route', 'routing', 'portscan'];
+const MODULE_IDS = ['whois', 'dns', 'subdomains', 'ssl', 'http', 'geo', 'ct', 'ping', 'trace', 'route', 'portscan'];
 
 const PRESETS = {
   standard: ['whois', 'dns', 'ssl', 'http', 'geo'],
@@ -374,14 +374,18 @@ export function readModuleConfig() {
 }
 
 export function enabledServiceCount(config) {
-  return Object.entries(config).filter(([key, value]) => key !== 'ports' && value).length;
+  return MODULE_IDS.filter(id => config[id] === true).length;
+}
+
+function supportedModuleConfig(config) {
+  return Object.fromEntries(Object.entries(config).filter(([key]) => key === 'ports' || MODULE_IDS.includes(key)));
 }
 
 export function planTargetScan(target, selected) {
   const identity = canonicalTargetIdentity(target);
   if (identity.startsWith('prefix|')) return { config: {}, total: 1 };
-  if (identity.startsWith('asn|') && selected.routing) return { config: { routing: true }, total: 1 };
-  return { config: { ...selected }, total: enabledServiceCount(selected) };
+  const config = supportedModuleConfig(selected);
+  return { config, total: enabledServiceCount(config) };
 }
 
 export function applyPreset(name) {

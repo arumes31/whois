@@ -25,7 +25,6 @@ type Config struct {
 	EnableDNS             bool
 	EnableCT              bool
 	EnableHTTP            bool
-	EnableRouting         bool
 	AutoUpdateDatabases   bool
 	MaxMindLicenseKey     string
 	MaxMindAccountID      string
@@ -72,7 +71,6 @@ func LoadConfig() (*Config, error) {
 		EnableDNS:             getEnvBool("ENABLE_DNS", true),
 		EnableCT:              getEnvBool("ENABLE_CT", true),
 		EnableHTTP:            getEnvBool("ENABLE_HTTP", true),
-		EnableRouting:         getEnvBool("ENABLE_ROUTING", false),
 		AutoUpdateDatabases:   getEnvBool("AUTO_UPDATE_DATABASES", true),
 		MaxMindLicenseKey:     os.Getenv("MAXMIND_LICENSE_KEY"),
 		MaxMindAccountID:      os.Getenv("MAXMIND_ACCOUNT_ID"),
@@ -167,7 +165,7 @@ func isValidAllowedDomain(value string) bool {
 func validateConfiguredValues() error {
 	boolKeys := []string{
 		"TRUST_PROXY", "USE_CLOUDFLARE", "ENABLE_GEO", "ENABLE_SSL", "ENABLE_WHOIS",
-		"ENABLE_DNS", "ENABLE_CT", "ENABLE_HTTP", "ENABLE_ROUTING", "AUTO_UPDATE_DATABASES", "SEO_ENABLED", "WS_SKIP_ORIGIN_CHECK",
+		"ENABLE_DNS", "ENABLE_CT", "ENABLE_HTTP", "AUTO_UPDATE_DATABASES", "SEO_ENABLED", "WS_SKIP_ORIGIN_CHECK",
 		"ALLOW_PRIVATE_IPS", "ALLOW_LOOPBACK_IPS", "ALLOW_LINK_LOCAL_IPS", "ALLOW_DEV_CORS", "SESSION_COOKIE_SECURE",
 	}
 	for _, key := range boolKeys {
