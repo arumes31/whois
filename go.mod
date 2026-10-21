@@ -3,7 +3,7 @@ module whois
 go 1.27.3
 
 require (
-	github.com/alicebob/miniredis/v2 v2.39.0
+	github.com/alicebob/miniredis/v2 v2.40.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/joho/godotenv v1.5.1
