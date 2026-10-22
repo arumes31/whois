@@ -38,7 +38,7 @@ const (
 	maxQueryTargets    = 25
 	sessionTTL         = 12 * time.Hour
 	// Failed configuration logins per client IP before further attempts are
-	// refused until the window, which starts at the first failure, expires.
+	// refused for a full window from the failure that reached the limit.
 	maxLoginFailures   = 10
 	loginFailureWindow = 15 * time.Minute
 	defaultMaxWSConns  = 128
@@ -887,7 +887,7 @@ func (h *Handler) Login(c *echo.Context) error {
 			})
 			return c.Redirect(http.StatusFound, "/config")
 		}
-		failures, err = h.Storage.RecordLoginFailure(ctx, realIP, loginFailureWindow)
+		failures, err = h.Storage.RecordLoginFailure(ctx, realIP, loginFailureWindow, maxLoginFailures)
 		if err != nil {
 			utils.Log.Warn("failed to record login failure", utils.Field("ip", realIP), utils.Field("error", err.Error()))
 		}

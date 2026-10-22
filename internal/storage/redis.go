@@ -188,20 +188,21 @@ func (s *Storage) LoginFailures(ctx context.Context, clientIP string) (int64, er
 	return count, err
 }
 
-// RecordLoginFailure counts a failed configuration login inside a fixed window
-// that starts with the first failure.
-func (s *Storage) RecordLoginFailure(ctx context.Context, clientIP string, window time.Duration) (int64, error) {
-	key := loginFailureKeyPrefix + clientIP
-	count, err := s.Client.Incr(ctx, key).Result()
-	if err != nil {
-		return 0, err
-	}
-	if count == 1 {
-		if err := s.Client.Expire(ctx, key, window).Err(); err != nil {
-			return count, err
-		}
-	}
-	return count, nil
+// recordLoginFailureScript increments the counter and sets its expiry in one
+// step. The window restarts when the threshold is reached, so a lockout always
+// lasts a full window, and a key that somehow lost its TTL is repaired.
+const recordLoginFailureScript = `
+local count = redis.call('INCR', KEYS[1])
+if count == 1 or count >= tonumber(ARGV[2]) or redis.call('PTTL', KEYS[1]) < 0 then
+	redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`
+
+// RecordLoginFailure counts a failed configuration login inside a window that
+// starts with the first failure and restarts once maxFailures is reached.
+func (s *Storage) RecordLoginFailure(ctx context.Context, clientIP string, window time.Duration, maxFailures int64) (int64, error) {
+	return s.Client.Eval(ctx, recordLoginFailureScript, []string{loginFailureKeyPrefix + clientIP}, window.Milliseconds(), maxFailures).Int64()
 }
 
 // ClearLoginFailures resets the failure counter after a successful login.
