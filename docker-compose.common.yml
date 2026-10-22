@@ -12,6 +12,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
       PORT: "5000"
       CONFIG_USER: "${CONFIG_USER:?set CONFIG_USER in .env}"
       CONFIG_PASS: "${CONFIG_PASS:?set CONFIG_PASS in .env}"
@@ -49,6 +50,7 @@ services:
       DNS_HISTORY_TTL_HOURS: "${DNS_HISTORY_TTL_HOURS:-720}"
       SEO_ENABLED: "${SEO_ENABLED:-false}"
       SEO_DOMAIN: "${SEO_DOMAIN:-}"
+      SCANS_REQUIRE_LOGIN: "${SCANS_REQUIRE_LOGIN:-false}"
       ALLOWED_DOMAIN: "${ALLOWED_DOMAIN:-}"
       WS_SKIP_ORIGIN_CHECK: "${WS_SKIP_ORIGIN_CHECK:-false}"
     restart: unless-stopped
@@ -97,6 +99,12 @@ services:
       - "${REDIS_MAXMEMORY:-192mb}"
       - --maxmemory-policy
       - "${REDIS_MAXMEMORY_POLICY:-allkeys-lru}"
+      # An empty value leaves Redis without AUTH for existing deployments.
+      # Set REDIS_PASSWORD in .env to require authentication on app-tier.
+      - --requirepass
+      - "${REDIS_PASSWORD:-}"
+    environment:
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
     security_opt:
       - no-new-privileges:true
     cap_drop:
@@ -117,7 +125,7 @@ services:
     networks:
       - app-tier
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "if [ -n \"$$REDIS_PASSWORD\" ]; then export REDISCLI_AUTH=\"$$REDIS_PASSWORD\"; fi; redis-cli ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 5
