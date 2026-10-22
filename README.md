@@ -77,7 +77,7 @@ Compose binds port 14400 to `127.0.0.1` by default and runs both services with r
 
 Local Compose uses plain HTTP, so `.env.example` sets `SESSION_COOKIE_SECURE=false`. When the browser reaches the application through an HTTPS reverse proxy, set `SESSION_COOKIE_SECURE=true`; otherwise the browser will not send the administrator session cookie. Plain HTTP administration should remain limited to a trusted loopback workstation.
 
-Administrator sessions use signed cookies plus expiring Redis allowlist records. Logout deletes the server-side record, so a copied cookie cannot be replayed afterward. Configuration login and protected configuration routes fail closed with HTTP 503 when Redis is unavailable. Upgrading from a version with stateless sessions requires administrators to sign in again.
+Configuration login attempts are limited to a burst of 5 per client IP (refilling at 5 per minute), and a client is refused for 15 minutes after 10 failed logins. Failed attempts are logged with the client IP. Administrator sessions use signed cookies plus expiring Redis allowlist records. Logout deletes the server-side record, so a copied cookie cannot be replayed afterward. Configuration login and protected configuration routes fail closed with HTTP 503 when Redis is unavailable. Upgrading from a version with stateless sessions requires administrators to sign in again.
 
 ### Run the Published GHCR Image
 
@@ -144,13 +144,14 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 | `SESSION_COOKIE_SECURE` | Send administrator cookies only over HTTPS; local HTTP Compose explicitly sets this false | `true` in production outside Compose |
 | `ALLOW_DEV_CORS` | Force-allow wildcard CORS even in non-development environment | `false` |
 | `CORS_ORIGINS` | Comma-separated cross-origin clients; same-origin use needs no entry | Empty |
-| `TRUSTED_IPS` | CSV of IPs allowed to access `/metrics` | `127.0.0.1,::1,...` |
+| `TRUSTED_IPS` | CSV of IPs/CIDRs allowed to access `/metrics`; widen only to your Prometheus scraper, because NAT or ingress can make external clients appear private | `127.0.0.1,::1` |
 | `TRUSTED_PROXIES` | CSV of proxy IP/CIDR ranges allowed to supply client-IP headers | `127.0.0.1/32,::1/128` |
 | `TRUST_PROXY` | Trust `X-Forwarded-For` headers; enable only behind a trusted proxy | `false` |
 | `USE_CLOUDFLARE` | Use `CF-Connecting-IP` for client identification | `false` |
 | `ALLOW_PRIVATE_IPS` | Permit diagnostics against RFC1918/ULA private ranges | `false` |
 | `ALLOW_LOOPBACK_IPS` | Separately permit loopback targets (development only) | `false` |
 | `ALLOW_LINK_LOCAL_IPS` | Separately permit link-local targets, including metadata ranges | `false` |
+| `SCANS_REQUIRE_LOGIN` | Require administrator login for the port scanner, ping, and traceroute; recommended when the dashboard is reachable beyond loopback | `false` |
 
 #### 📡 DNS & Networking
 | Variable | Description | Default |
@@ -169,6 +170,7 @@ Leave `TRUST_PROXY=false` when port 14400 is reachable directly. Enable it only 
 | `WHOIS_PORT` | Host port published by Compose | `14400` |
 | `REDIS_HOST` | Hostname of the Redis server | `localhost` |
 | `REDIS_PORT` | Port of the Redis server | `6379` |
+| `REDIS_PASSWORD` | Redis AUTH password; Compose also applies it to the bundled Redis with `--requirepass` | Empty (no AUTH) |
 | `REDIS_MAXMEMORY` | Redis data-memory ceiling beneath the container limit | `192mb` |
 | `REDIS_MAXMEMORY_POLICY` | Eviction policy after the Redis memory ceiling is reached | `allkeys-lru` |
 

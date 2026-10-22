@@ -62,6 +62,7 @@ const (
 	dnsHistoryMigrationBatch    = 100
 	dnsHistoryMigrationMaxScans = 4
 	configSessionKeyPrefix      = "config_session:"
+	loginFailureKeyPrefix       = "login_failures:"
 )
 
 // ErrDNSHistoryCapacity indicates that a new target would exceed retention policy.
@@ -135,9 +136,15 @@ return scan[1] .. ":" .. redis.call("SCARD", KEYS[1])
 `
 
 func NewStorage(host, port string) *Storage {
+	return NewStorageWithPassword(host, port, "")
+}
+
+// NewStorageWithPassword connects with Redis AUTH when password is non-empty.
+func NewStorageWithPassword(host, port, password string) *Storage {
 	rdb := redis.NewClient(&redis.Options{
-		Addr: net.JoinHostPort(host, port),
-		DB:   0,
+		Addr:     net.JoinHostPort(host, port),
+		Password: password,
+		DB:       0,
 	})
 	return &Storage{
 		Client:               rdb,
@@ -170,6 +177,36 @@ func (s *Storage) StoreConfigSession(ctx context.Context, token string, ttl time
 		return errors.New("configuration session TTL must be positive")
 	}
 	return s.Client.Set(ctx, configSessionKey(token), "active", ttl).Err()
+}
+
+// LoginFailures returns the failed configuration logins recorded for a client.
+func (s *Storage) LoginFailures(ctx context.Context, clientIP string) (int64, error) {
+	count, err := s.Client.Get(ctx, loginFailureKeyPrefix+clientIP).Int64()
+	if errors.Is(err, redis.Nil) {
+		return 0, nil
+	}
+	return count, err
+}
+
+// RecordLoginFailure counts a failed configuration login inside a fixed window
+// that starts with the first failure.
+func (s *Storage) RecordLoginFailure(ctx context.Context, clientIP string, window time.Duration) (int64, error) {
+	key := loginFailureKeyPrefix + clientIP
+	count, err := s.Client.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if count == 1 {
+		if err := s.Client.Expire(ctx, key, window).Err(); err != nil {
+			return count, err
+		}
+	}
+	return count, nil
+}
+
+// ClearLoginFailures resets the failure counter after a successful login.
+func (s *Storage) ClearLoginFailures(ctx context.Context, clientIP string) error {
+	return s.Client.Del(ctx, loginFailureKeyPrefix+clientIP).Err()
 }
 
 // ConfigSessionActive reports whether a signed token is still registered.

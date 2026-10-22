@@ -37,6 +37,10 @@ const (
 	maxBulkUploadBytes = 2 * 1024 * 1024
 	maxQueryTargets    = 25
 	sessionTTL         = 12 * time.Hour
+	// Failed configuration logins per client IP before further attempts are
+	// refused until the window, which starts at the first failure, expires.
+	maxLoginFailures   = 10
+	loginFailureWindow = 15 * time.Minute
 	defaultMaxWSConns  = 128
 	defaultMaxWSPerIP  = 8
 )
@@ -337,11 +341,7 @@ func (h *Handler) WaitForClose(ctx context.Context) error {
 // === Middleware ===
 func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c *echo.Context) error {
-		sess, _ := c.Cookie("session_id")
-		if sess == nil || sess.Value == "" || !validateSessionToken(sess.Value, os.Getenv("SECRET_KEY")) {
-			return c.Redirect(http.StatusFound, "/login?next="+c.Request().URL.Path)
-		}
-		active, err := h.Storage.ConfigSessionActive(c.Request().Context(), sess.Value)
+		active, err := h.configSessionActive(c)
 		if err != nil {
 			utils.Log.Error("failed to verify config session", utils.Field("error", err.Error()))
 			return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").Wrap(err)
@@ -351,6 +351,24 @@ func (h *Handler) LoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
 		}
 		return next(c)
 	}
+}
+
+// ScanLoginRequired applies LoginRequired only when SCANS_REQUIRE_LOGIN is set.
+func (h *Handler) ScanLoginRequired(next echo.HandlerFunc) echo.HandlerFunc {
+	if !h.AppConfig.ScansRequireLogin {
+		return next
+	}
+	return h.LoginRequired(next)
+}
+
+// configSessionActive reports whether the request carries a signed,
+// unrevoked administrator session cookie.
+func (h *Handler) configSessionActive(c *echo.Context) (bool, error) {
+	sess, _ := c.Cookie("session_id")
+	if sess == nil || sess.Value == "" || !validateSessionToken(sess.Value, os.Getenv("SECRET_KEY")) {
+		return false, nil
+	}
+	return h.Storage.ConfigSessionActive(c.Request().Context(), sess.Value)
 }
 
 func (h *Handler) secureCookie(c *echo.Context) bool {
@@ -464,10 +482,10 @@ func (h *Handler) Index(c *echo.Context) error {
 	})
 }
 
-func (h *Handler) templateConfig() *config.Config {
-	viewConfig := *h.AppConfig
+func (h *Handler) templateConfig() config.TemplateView {
+	viewConfig := h.AppConfig.TemplateView()
 	viewConfig.EnableGeo = viewConfig.EnableGeo && service.GeoDBAvailable()
-	return &viewConfig
+	return viewConfig
 }
 
 func (h *Handler) recordDNSHistory(ctx context.Context, target string, result interface{}, notify func(string)) {
@@ -822,6 +840,19 @@ func (h *Handler) Login(c *echo.Context) error {
 	}
 
 	if c.Request().Method == http.MethodPost {
+		ctx := c.Request().Context()
+		failures, err := h.Storage.LoginFailures(ctx, realIP)
+		if err != nil {
+			// The route-local rate limiter still bounds attempts without Redis.
+			utils.Log.Warn("failed to load login failure count", utils.Field("ip", realIP), utils.Field("error", err.Error()))
+		}
+		if failures >= maxLoginFailures {
+			utils.Log.Warn("configuration login refused after repeated failures", utils.Field("ip", realIP), utils.Field("failures", failures))
+			c.Response().Header().Set("Retry-After", strconv.Itoa(int(loginFailureWindow.Seconds())))
+			pageData["error"] = "Too many failed attempts. Try again later."
+			return c.Render(http.StatusTooManyRequests, "login.html", pageData)
+		}
+
 		user := c.FormValue("username")
 		pass := c.FormValue("password")
 
@@ -840,6 +871,9 @@ func (h *Handler) Login(c *echo.Context) error {
 				utils.Log.Error("failed to register config session", utils.Field("error", err.Error()))
 				return echo.NewHTTPError(http.StatusServiceUnavailable, "Configuration sessions unavailable").Wrap(err)
 			}
+			if err := h.Storage.ClearLoginFailures(ctx, realIP); err != nil {
+				utils.Log.Warn("failed to reset login failure count", utils.Field("ip", realIP), utils.Field("error", err.Error()))
+			}
 			// #nosec G124 -- secureCookie enforces Secure in production and for HTTPS requests.
 			c.SetCookie(&http.Cookie{
 				Name:     "session_id",
@@ -853,6 +887,11 @@ func (h *Handler) Login(c *echo.Context) error {
 			})
 			return c.Redirect(http.StatusFound, "/config")
 		}
+		failures, err = h.Storage.RecordLoginFailure(ctx, realIP, loginFailureWindow)
+		if err != nil {
+			utils.Log.Warn("failed to record login failure", utils.Field("ip", realIP), utils.Field("error", err.Error()))
+		}
+		utils.Log.Warn("failed configuration login", utils.Field("ip", realIP), utils.Field("failures", failures))
 		pageData["error"] = "Invalid credentials"
 		return c.Render(http.StatusOK, "login.html", pageData)
 	}

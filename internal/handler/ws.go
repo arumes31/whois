@@ -112,6 +112,14 @@ func (h *Handler) HandleWS(c *echo.Context) error {
 	if err := h.reserveWebSocket(clientIP); err != nil {
 		return err
 	}
+	activeScansAllowed := true
+	if h.AppConfig.ScansRequireLogin {
+		active, sessionErr := h.configSessionActive(c)
+		if sessionErr != nil {
+			utils.Log.Warn("failed to verify config session for websocket", utils.Field("error", sessionErr.Error()))
+		}
+		activeScansAllowed = active
+	}
 
 	ws, err := h.Upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
@@ -205,6 +213,12 @@ func (h *Handler) HandleWS(c *echo.Context) error {
 			payload, _ := json.Marshal(WSMessage{Type: "error", Service: "system", Data: "invalid request_id"})
 			_ = writer.write(websocket.TextMessage, payload)
 			continue
+		}
+
+		if !activeScansAllowed && (input.Config.Ping || input.Config.Route || input.Config.Ports != "") {
+			input.Config.Ping, input.Config.Route, input.Config.Ports = false, false, ""
+			payload, _ := json.Marshal(WSMessage{Type: "error", RequestID: input.RequestID, Service: "system", Data: "ping, traceroute, and port scans require administrator login"})
+			_ = writer.write(websocket.TextMessage, payload)
 		}
 
 		if len(input.Targets) > maxWSTargets {
