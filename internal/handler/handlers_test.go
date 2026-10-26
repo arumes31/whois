@@ -1328,3 +1328,87 @@ func TestHandlers(t *testing.T) {
 		}
 	})
 }
+
+func TestLoginRefusesClientAfterRepeatedFailures(t *testing.T) {
+	t.Setenv("CONFIG_USER", "admin")
+	t.Setenv("CONFIG_PASS", "correct horse battery staple")
+	t.Setenv("SECRET_KEY", "test-session-signing-key")
+	e, _ := setupTestEcho()
+	store := setupMiniredisStorage(t)
+	h := NewHandler(store, &config.Config{})
+	attempt := func(pass string) *httptest.ResponseRecorder {
+		form := url.Values{"username": {"admin"}, "password": {pass}}
+		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+		req.RemoteAddr = "203.0.113.7:4000"
+		rec := httptest.NewRecorder()
+		if err := h.Login(e.NewContext(req, rec)); err != nil {
+			t.Fatal(err)
+		}
+		return rec
+	}
+
+	for i := 0; i < maxLoginFailures; i++ {
+		if rec := attempt("wrong"); rec.Code != http.StatusOK {
+			t.Fatalf("failed attempt %d returned %d", i+1, rec.Code)
+		}
+	}
+	rec := attempt("correct horse battery staple")
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" {
+		t.Fatalf("login after %d failures returned %d, want 429 with Retry-After", maxLoginFailures, rec.Code)
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("locked-out login issued cookies: %v", cookies)
+	}
+
+	if err := store.ClearLoginFailures(context.Background(), "203.0.113.7"); err != nil {
+		t.Fatal(err)
+	}
+	attempt("wrong")
+	if rec := attempt("correct horse battery staple"); rec.Code != http.StatusFound {
+		t.Fatalf("login after reset returned %d, want 302", rec.Code)
+	}
+	if failures, err := store.LoginFailures(context.Background(), "203.0.113.7"); err != nil || failures != 0 {
+		t.Fatalf("successful login left failures = %d, err %v", failures, err)
+	}
+}
+
+func TestScanLoginRequiredIsOptIn(t *testing.T) {
+	t.Setenv("SECRET_KEY", "test-session-signing-key")
+	e, _ := setupTestEcho()
+	for _, required := range []bool{false, true} {
+		h := NewHandler(setupMiniredisStorage(t), &config.Config{ScansRequireLogin: required})
+		req := httptest.NewRequest(http.MethodGet, "/scanner", nil)
+		rec := httptest.NewRecorder()
+		if err := h.ScanLoginRequired(h.Scanner)(e.NewContext(req, rec)); err != nil {
+			t.Fatal(err)
+		}
+		want := http.StatusOK
+		if required {
+			want = http.StatusFound
+		}
+		if rec.Code != want {
+			t.Fatalf("ScansRequireLogin=%v: status %d, want %d", required, rec.Code, want)
+		}
+	}
+}
+
+func TestTemplateConfigExcludesSecrets(t *testing.T) {
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{
+		ConfigPass: "secret-pass", SecretKey: "secret-key", MaxMindLicenseKey: "secret-license",
+		SEODomain: "example.com", EnableDNS: true,
+	})
+	view := h.templateConfig()
+	encoded, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"secret-pass", "secret-key", "secret-license"} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("template config exposes %q: %s", secret, encoded)
+		}
+	}
+	if view.SEODomain != "example.com" || !view.EnableDNS {
+		t.Fatalf("template config lost public settings: %+v", view)
+	}
+}

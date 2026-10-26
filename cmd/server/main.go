@@ -73,7 +73,7 @@ func main() {
 
 func NewServer(cfg *config.Config) (*http.Server, func(context.Context) error) {
 	// Dependencies
-	store := storage.NewStorage(cfg.RedisHost, cfg.RedisPort)
+	store := storage.NewStorageWithPassword(cfg.RedisHost, cfg.RedisPort, cfg.RedisPassword)
 	store.ConfigureDNSHistory(
 		cfg.DNSHistoryMaxTargets,
 		time.Duration(cfg.DNSHistoryTTLHours)*time.Hour,
@@ -280,7 +280,7 @@ func NewServer(cfg *config.Config) (*http.Server, func(context.Context) error) {
 		errorData := map[string]interface{}{
 			"Code":         code,
 			"Message":      http.StatusText(code),
-			"config":       cfg,
+			"config":       cfg.TemplateView(),
 			"current_path": c.Request().URL.Path,
 			"page_title":   "Request Error",
 			"real_ip":      utils.ExtractIP(c, utils.ProxyConfig{TrustProxy: cfg.TrustProxy, UseCloudflare: cfg.UseCloudflare}),
@@ -302,10 +302,19 @@ func NewServer(cfg *config.Config) (*http.Server, func(context.Context) error) {
 	e.POST("/mac_lookup", h.MacLookup)
 	e.POST("/bulk-upload", h.BulkUpload)
 	e.GET("/ws", h.HandleWS)
+	// Login attempts get a stricter per-IP budget than the global limiter. The
+	// handler additionally refuses clients after repeated failures via Redis.
+	loginLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
+		Store: middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
+			Rate:      5.0 / 60.0,
+			Burst:     5,
+			ExpiresIn: 15 * time.Minute,
+		}),
+	})
 	e.GET("/login", h.Login)
-	e.POST("/login", h.Login)
-	e.GET("/scanner", h.Scanner)
-	e.POST("/scan", h.Scan)
+	e.POST("/login", h.Login, loginLimiter)
+	e.GET("/scanner", h.Scanner, h.ScanLoginRequired)
+	e.POST("/scan", h.Scan, h.ScanLoginRequired)
 	readOnlyDataLimiter := middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Store: middleware.NewRateLimiterMemoryStoreWithConfig(middleware.RateLimiterMemoryStoreConfig{
 			Rate:      2,

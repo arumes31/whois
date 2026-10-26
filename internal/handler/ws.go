@@ -207,6 +207,20 @@ func (h *Handler) HandleWS(c *echo.Context) error {
 			continue
 		}
 
+		// Recheck per request so a logout revokes scans on already-open sockets.
+		if h.AppConfig.ScansRequireLogin && (input.Config.Ping || input.Config.Route || input.Config.Ports != "") {
+			active, sessionErr := h.configSessionActive(c)
+			if sessionErr != nil {
+				utils.Log.Warn("failed to verify config session for websocket", utils.Field("error", sessionErr.Error()))
+				active = false
+			}
+			if !active {
+				input.Config.Ping, input.Config.Route, input.Config.Ports = false, false, ""
+				payload, _ := json.Marshal(WSMessage{Type: "error", RequestID: input.RequestID, Service: "system", Data: "ping, traceroute, and port scans require administrator login"})
+				_ = writer.write(websocket.TextMessage, payload)
+			}
+		}
+
 		if len(input.Targets) > maxWSTargets {
 			payload, _ := json.Marshal(WSMessage{Type: "error", RequestID: input.RequestID, Service: "system", Data: "too many targets; maximum is " + strconv.Itoa(maxWSTargets)})
 			_ = writer.write(websocket.TextMessage, payload)

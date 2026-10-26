@@ -870,3 +870,39 @@ func TestNormalizeData(t *testing.T) {
 		})
 	}
 }
+
+func TestRecordLoginFailureWindow(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(mr.Close)
+	s := &Storage{Client: redis.NewClient(&redis.Options{Addr: mr.Addr()})}
+	ctx := context.Background()
+	key := loginFailureKeyPrefix + "203.0.113.9"
+
+	// Failures at 0s, 25s and 50s: the third reaches the threshold and must
+	// restart the full window instead of expiring 10s later.
+	for i := int64(1); i <= 3; i++ {
+		if i > 1 {
+			mr.FastForward(25 * time.Second)
+		}
+		if count, err := s.RecordLoginFailure(ctx, "203.0.113.9", time.Minute, 3); err != nil || count != i {
+			t.Fatalf("failure %d: count %d, err %v", i, count, err)
+		}
+	}
+	if ttl := mr.TTL(key); ttl != time.Minute {
+		t.Fatalf("lockout TTL %v did not restart at threshold", ttl)
+	}
+
+	// A key that lost its TTL is repaired on the next failure.
+	if err := mr.Set(key, "5"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RecordLoginFailure(ctx, "203.0.113.9", time.Minute, 10); err != nil {
+		t.Fatal(err)
+	}
+	if ttl := mr.TTL(key); ttl <= 0 {
+		t.Fatalf("missing TTL was not repaired: %v", ttl)
+	}
+}
