@@ -123,7 +123,7 @@ jobs:
           TRIVY_PLATFORM: ${{ matrix.platform }}
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4 (github/codeql-action@v4)
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: ${{ always() && hashFiles(format('trivy-results-{0}.sarif', matrix.slug)) != '' }}
         with:
           sarif_file: trivy-results-${{ matrix.slug }}.sarif
