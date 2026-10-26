@@ -73,6 +73,11 @@ var specialPrefixes = []struct {
 	{netip.MustParsePrefix("5f00::/16"), "reserved"},
 }
 
+// RFC 6052 well-known NAT64 prefix. IANA lists it as globally reachable, but a
+// NAT64 gateway forwards it to the embedded IPv4 address, so it inherits that
+// address's classification instead of being treated as a public destination.
+var nat64WellKnownPrefix = netip.MustParsePrefix("64:ff9b::/96")
+
 // NormalizeTarget recognizes user input and returns a canonical host-oriented target.
 func NormalizeTarget(input string) model.TargetInfo {
 	info := model.TargetInfo{Input: input, Kind: model.TargetKindUnknown}
@@ -227,6 +232,12 @@ func isValidHostname(host string) bool {
 
 func classifyIP(addr netip.Addr) model.IPMetadata {
 	addr = addr.Unmap()
+	if nat64WellKnownPrefix.Contains(addr) {
+		raw := addr.As16()
+		meta := classifyIP(netip.AddrFrom4([4]byte(raw[12:16])))
+		meta.Address, meta.Version = addr.String(), 6
+		return meta
+	}
 	meta := model.IPMetadata{
 		Address: addr.String(), Version: 6, IsPrivate: addr.IsPrivate(), IsLoopback: addr.IsLoopback(),
 		IsLinkLocal: addr.IsLinkLocalUnicast() || addr.IsLinkLocalMulticast(), IsMulticast: addr.IsMulticast(),

@@ -1,0 +1,26 @@
+name: Draft Release Notes
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to draft a release for
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: draft-release-${{ github.repository }}
+  cancel-in-progress: false
+jobs:
+  draft:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Draft notes for the existing tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: gh release create "$RELEASE_TAG" --repo "$GH_REPO" --verify-tag --draft --generate-notes
