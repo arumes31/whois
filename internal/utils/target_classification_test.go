@@ -56,6 +56,10 @@ func TestIANASpecialPurposeClassification(t *testing.T) {
 		{"::ffff:0.1.2.3", "reserved"},
 		{"::ffff:10.0.0.1", "private"},
 		{"64:ff9b::808:808", "global"},
+		{"64:ff9b::a00:1", "private"},
+		{"64:ff9b::7f00:1", "loopback"},
+		{"64:ff9b::a9fe:a9fe", "link-local"},
+		{"64:ff9b::6440:1", "carrier-grade NAT"},
 		{"64:ff9b:1::1", "reserved"},
 		{"64:ff9b:2::1", "global"},
 		{"100::1", "reserved"},
@@ -136,6 +140,8 @@ func TestSpecialPurposeOutboundValidation(t *testing.T) {
 		}{
 			{"0.1.2.3", false}, {"3fff::1", false}, {"100::1", false},
 			{"64:ff9b:1::1", false}, {"2001:2::1", false}, {"5f00::1", false},
+			{"64:ff9b::c000:201", false}, {"64:ff9b::808:808", true},
+			{"64:ff9b::a00:1", override}, {"64:ff9b::7f00:1", override},
 			{"192.0.0.9", true}, {"192.0.0.10", true}, {"2001:1::1", true},
 			{"10.0.0.1", override}, {"127.0.0.1", override}, {"fe80::1", override},
 		} {
