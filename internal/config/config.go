@@ -11,6 +11,7 @@ import (
 type Config struct {
 	RedisHost             string
 	RedisPort             string
+	RedisPassword         string
 	Port                  string
 	ConfigUser            string
 	ConfigPass            string
@@ -50,6 +51,36 @@ type Config struct {
 	DNSHistoryMaxTargets  int
 	DNSHistoryTTLHours    int
 	SessionCookieSecure   bool
+	// ScansRequireLogin restricts port scans, ping, and traceroute to
+	// authenticated administrators for publicly reachable deployments.
+	ScansRequireLogin bool
+}
+
+// TemplateView is the subset of Config exposed to HTML templates. It holds no
+// credentials, so template edits cannot accidentally render secrets.
+type TemplateView struct {
+	SEOEnabled  bool
+	SEODomain   string
+	EnableGeo   bool
+	EnableSSL   bool
+	EnableWhois bool
+	EnableDNS   bool
+	EnableCT    bool
+	EnableHTTP  bool
+}
+
+// TemplateView returns the non-secret settings used by HTML templates.
+func (c *Config) TemplateView() TemplateView {
+	return TemplateView{
+		SEOEnabled:  c.SEOEnabled,
+		SEODomain:   c.SEODomain,
+		EnableGeo:   c.EnableGeo,
+		EnableSSL:   c.EnableSSL,
+		EnableWhois: c.EnableWhois,
+		EnableDNS:   c.EnableDNS,
+		EnableCT:    c.EnableCT,
+		EnableHTTP:  c.EnableHTTP,
+	}
 }
 
 func LoadConfig() (*Config, error) {
@@ -57,11 +88,12 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{
 		RedisHost:             getEnv("REDIS_HOST", "localhost"),
 		RedisPort:             getEnv("REDIS_PORT", "6379"),
+		RedisPassword:         os.Getenv("REDIS_PASSWORD"),
 		Port:                  getEnv("PORT", "5000"),
 		ConfigUser:            getEnv("CONFIG_USER", "admin"),
 		ConfigPass:            getEnv("CONFIG_PASS", "admin"),
 		SecretKey:             os.Getenv("SECRET_KEY"),
-		TrustedIPs:            getEnv("TRUSTED_IPS", "127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,100.64.0.0/10"),
+		TrustedIPs:            getEnv("TRUSTED_IPS", "127.0.0.1,::1"),
 		TrustedProxies:        getEnv("TRUSTED_PROXIES", "127.0.0.1/32,::1/128"),
 		TrustProxy:            getEnvBool("TRUST_PROXY", false),
 		UseCloudflare:         getEnvBool("USE_CLOUDFLARE", false),
@@ -96,6 +128,7 @@ func LoadConfig() (*Config, error) {
 		DNSHistoryMaxTargets:  getEnvInt("DNS_HISTORY_MAX_TARGETS", 1000, 1, 100000),
 		DNSHistoryTTLHours:    getEnvInt("DNS_HISTORY_TTL_HOURS", 720, 1, 8760),
 		SessionCookieSecure:   getEnvBool("SESSION_COOKIE_SECURE", environment == "production"),
+		ScansRequireLogin:     getEnvBool("SCANS_REQUIRE_LOGIN", false),
 	}
 
 	if cfg.SecretKey == "" {
@@ -167,6 +200,7 @@ func validateConfiguredValues() error {
 		"TRUST_PROXY", "USE_CLOUDFLARE", "ENABLE_GEO", "ENABLE_SSL", "ENABLE_WHOIS",
 		"ENABLE_DNS", "ENABLE_CT", "ENABLE_HTTP", "AUTO_UPDATE_DATABASES", "SEO_ENABLED", "WS_SKIP_ORIGIN_CHECK",
 		"ALLOW_PRIVATE_IPS", "ALLOW_LOOPBACK_IPS", "ALLOW_LINK_LOCAL_IPS", "ALLOW_DEV_CORS", "SESSION_COOKIE_SECURE",
+		"SCANS_REQUIRE_LOGIN",
 	}
 	for _, key := range boolKeys {
 		if value, ok := os.LookupEnv(key); ok {

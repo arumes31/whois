@@ -20,6 +20,9 @@ env:
   BUILDKIT_IMAGE: moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
   QEMU_IMAGE: tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     name: Full Go CI gate
@@ -125,7 +128,7 @@ jobs:
           TRIVY_PLATFORM: ${{ matrix.platform }}
 
       - name: Upload Trivy scan results
-        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4 (github/codeql-action@v4)
+        uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         if: ${{ always() && hashFiles(format('trivy-results-{0}.sarif', matrix.slug)) != '' }}
         with:
           sarif_file: trivy-results-${{ matrix.slug }}.sarif

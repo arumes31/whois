@@ -960,3 +960,26 @@ func TestWebSocketReservationIsRaceSafeAndPerIPBounded(t *testing.T) {
 	h.releaseWebSocket("192.0.2.1", nil)
 	h.releaseWebSocket("198.51.100.1", nil)
 }
+
+func TestHandleWSStripsActiveScansWithoutLogin(t *testing.T) {
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{ScansRequireLogin: true})
+	ws := dialHandlerWebSocket(t, h)
+	if err := ws.SetReadDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	request := map[string]interface{}{
+		"request_id": "scan:1",
+		"targets":    []string{},
+		"config":     map[string]interface{}{"ping": true, "route": true, "ports": "80"},
+	}
+	if err := ws.WriteJSON(request); err != nil {
+		t.Fatal(err)
+	}
+	var message WSMessage
+	if err := ws.ReadJSON(&message); err != nil {
+		t.Fatal(err)
+	}
+	if message.Type != "error" || message.Service != "system" || !strings.Contains(fmt.Sprint(message.Data), "require administrator login") {
+		t.Fatalf("unauthenticated active scan response = %#v", message)
+	}
+}

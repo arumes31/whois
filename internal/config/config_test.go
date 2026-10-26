@@ -166,6 +166,12 @@ func TestLoadConfigSecurityAndRetentionDefaults(t *testing.T) {
 	if cfg.DNSHistoryMaxTargets != 1000 || cfg.DNSHistoryTTLHours != 720 {
 		t.Fatalf("history defaults = %d/%d, want 1000/720", cfg.DNSHistoryMaxTargets, cfg.DNSHistoryTTLHours)
 	}
+	if cfg.TrustedIPs != "127.0.0.1,::1" {
+		t.Fatalf("metrics trust default = %q, want loopback only", cfg.TrustedIPs)
+	}
+	if cfg.ScansRequireLogin {
+		t.Fatal("scan login requirement unexpectedly enabled by default")
+	}
 }
 
 func TestLoadConfigProductionCookieIsSecureByDefault(t *testing.T) {
