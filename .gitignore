@@ -1,6 +1,8 @@
 # Binaries and executables
 whois.exe
 whois-app
+server
+whois-test-bin
 *.exe
 *.exe~
 *.dll
