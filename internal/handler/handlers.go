@@ -790,7 +790,18 @@ func (h *Handler) Scan(c *echo.Context) error {
 		return c.Render(http.StatusBadRequest, "scan_result.html", map[string]interface{}{"target": info.Normalized, "remote_ip": c.RealIP(), "result": service.ScanResult{Error: []string{err.Error()}}})
 	}
 
-	res := service.ScanPortsStreamWithOptions(c.Request().Context(), info.Normalized, ports, h.scanOptions, nil)
+	// Admit the scan through the shared service semaphore (as the WebSocket
+	// scan path does) so concurrent /scan requests cannot multiply the
+	// per-scan worker pool without an aggregate bound.
+	ctx := c.Request().Context()
+	select {
+	case h.serviceSem <- struct{}{}:
+		defer func() { <-h.serviceSem }()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	res := service.ScanPortsStreamWithOptions(ctx, info.Normalized, ports, h.scanOptions, nil)
 
 	return c.Render(http.StatusOK, "scan_result.html", map[string]interface{}{
 		"target":    info.Normalized,

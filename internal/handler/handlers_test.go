@@ -1412,3 +1412,26 @@ func TestTemplateConfigExcludesSecrets(t *testing.T) {
 		t.Fatalf("template config lost public settings: %+v", view)
 	}
 }
+
+func TestScanWaitsForSharedServiceSlot(t *testing.T) {
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{MaxServiceConcurrency: 1})
+	h.serviceSem <- struct{}{} // occupy the only slot
+	t.Cleanup(func() { <-h.serviceSem })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	f := url.Values{}
+	f.Add("target", "1.1.1.1")
+	f.Add("ports", "80")
+	req := httptest.NewRequest(http.MethodPost, "/scan", strings.NewReader(f.Encode())).WithContext(ctx)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+	rec := httptest.NewRecorder()
+
+	err := h.Scan(echo.New().NewContext(req, rec))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Scan error = %v, want context.DeadlineExceeded while the service slot is held", err)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("Scan rendered a result without acquiring a service slot: %q", rec.Body.String())
+	}
+}
