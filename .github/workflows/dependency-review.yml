@@ -1,6 +1,14 @@
 name: Dependency Review
 on:
   pull_request:
+    # Only dependency manifests (and pinned actions) can change the result.
+    paths:
+      - '**/go.mod'
+      - '**/go.sum'
+      - '**/package.json'
+      - '**/package-lock.json'
+      - '.github/workflows/**'
+      - '.github/actions/**'
 permissions:
   contents: read
 concurrency:
@@ -9,6 +17,7 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

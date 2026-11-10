@@ -3,6 +3,11 @@ name: Minify JS and Publish Docker Image
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
   release:
     types: [published]
   workflow_dispatch:
