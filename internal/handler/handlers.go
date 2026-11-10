@@ -793,15 +793,18 @@ func (h *Handler) Scan(c *echo.Context) error {
 	// Admit the scan through the shared service semaphore (as the WebSocket
 	// scan path does) so concurrent /scan requests cannot multiply the
 	// per-scan worker pool without an aggregate bound.
+	// The slot is released as soon as the scan returns, before rendering, so a
+	// slow client reading the response cannot hold it.
 	ctx := c.Request().Context()
 	select {
 	case h.serviceSem <- struct{}{}:
-		defer func() { <-h.serviceSem }()
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-
-	res := service.ScanPortsStreamWithOptions(ctx, info.Normalized, ports, h.scanOptions, nil)
+	res := func() service.ScanResult {
+		defer func() { <-h.serviceSem }()
+		return service.ScanPortsStreamWithOptions(ctx, info.Normalized, ports, h.scanOptions, nil)
+	}()
 
 	return c.Render(http.StatusOK, "scan_result.html", map[string]interface{}{
 		"target":    info.Normalized,
