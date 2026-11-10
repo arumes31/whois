@@ -93,6 +93,7 @@ type Handler struct {
 	Upgrader    websocket.Upgrader
 	targetSem   chan struct{}
 	serviceSem  chan struct{}
+	scanSem     chan struct{}
 	scanOptions service.ScanOptions
 	wsConnMu    sync.Mutex
 	wsConns     map[*websocket.Conn]struct{}
@@ -134,12 +135,15 @@ func NewHandler(storage *storage.Storage, cfg *config.Config) *Handler {
 	}
 	dnsService := service.NewDNSService(cfg.DNSServers, cfg.BootstrapDNS)
 	dnsService.SetMaxAttempts(cfg.DNSMaxAttempts)
+	// HTTP scans get their own, smaller pool (scanSem) so they cannot take
+	// every service slot away from other diagnostics.
 	h := &Handler{
 		Storage:     storage,
 		DNS:         dnsService,
 		AppConfig:   cfg,
 		targetSem:   make(chan struct{}, targetConcurrency),
 		serviceSem:  make(chan struct{}, serviceConcurrency),
+		scanSem:     make(chan struct{}, max(1, serviceConcurrency/2)),
 		scanOptions: service.ScanOptions{Concurrency: scanConcurrency, MaxPorts: maxScanPorts, ConnectTimeout: 2 * time.Second, BannerTimeout: time.Second},
 		wsConns:     make(map[*websocket.Conn]struct{}),
 		wsByIP:      make(map[string]int),
@@ -790,19 +794,17 @@ func (h *Handler) Scan(c *echo.Context) error {
 		return c.Render(http.StatusBadRequest, "scan_result.html", map[string]interface{}{"target": info.Normalized, "remote_ip": c.RealIP(), "result": service.ScanResult{Error: []string{err.Error()}}})
 	}
 
-	// Admit the scan through the shared service semaphore (as the WebSocket
-	// scan path does) so concurrent /scan requests cannot multiply the
-	// per-scan worker pool without an aggregate bound.
-	// The slot is released as soon as the scan returns, before rendering, so a
-	// slow client reading the response cannot hold it.
+	// Bound concurrent /scan requests so they cannot multiply the per-scan
+	// worker pool. The slot is released before rendering, so a slow client
+	// reading the response cannot hold it.
 	ctx := c.Request().Context()
 	select {
-	case h.serviceSem <- struct{}{}:
+	case h.scanSem <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	res := func() service.ScanResult {
-		defer func() { <-h.serviceSem }()
+		defer func() { <-h.scanSem }()
 		return service.ScanPortsStreamWithOptions(ctx, info.Normalized, ports, h.scanOptions, nil)
 	}()
 

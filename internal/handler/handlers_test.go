@@ -1413,10 +1413,19 @@ func TestTemplateConfigExcludesSecrets(t *testing.T) {
 	}
 }
 
-func TestScanWaitsForSharedServiceSlot(t *testing.T) {
-	h := NewHandler(setupMiniredisStorage(t), &config.Config{MaxServiceConcurrency: 1})
-	h.serviceSem <- struct{}{} // occupy the only slot
-	t.Cleanup(func() { <-h.serviceSem })
+func TestScanWaitsForScanSlot(t *testing.T) {
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{MaxServiceConcurrency: 12})
+	if got := cap(h.scanSem); got != 6 {
+		t.Fatalf("scan slots = %d, want 6 (half of the service slots)", got)
+	}
+	for range cap(h.scanSem) {
+		h.scanSem <- struct{}{} // occupy every scan slot
+	}
+	t.Cleanup(func() {
+		for range cap(h.scanSem) {
+			<-h.scanSem
+		}
+	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
@@ -1429,9 +1438,9 @@ func TestScanWaitsForSharedServiceSlot(t *testing.T) {
 
 	err := h.Scan(echo.New().NewContext(req, rec))
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Scan error = %v, want context.DeadlineExceeded while the service slot is held", err)
+		t.Fatalf("Scan error = %v, want context.DeadlineExceeded while every scan slot is held", err)
 	}
 	if rec.Body.Len() != 0 {
-		t.Fatalf("Scan rendered a result without acquiring a service slot: %q", rec.Body.String())
+		t.Fatalf("Scan rendered a result without acquiring a scan slot: %q", rec.Body.String())
 	}
 }
