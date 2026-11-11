@@ -7,7 +7,7 @@ COPY static ./static
 COPY templates ./templates
 RUN npm run build:assets && npm run assets:check
 
-FROM golang:1.27.3-alpine3.24@sha256:f2c872bcee949b7be9c490efd02b48a8a2fbf947cdf533f1c58525ec9d8170fd AS builder
+FROM golang:1.27.4-alpine3.24@sha256:0a5f7fe796599ff487605987432e7619ae45beeb2fba4c2ce0b907879932aebf AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
