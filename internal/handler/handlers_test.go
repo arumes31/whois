@@ -1412,3 +1412,35 @@ func TestTemplateConfigExcludesSecrets(t *testing.T) {
 		t.Fatalf("template config lost public settings: %+v", view)
 	}
 }
+
+func TestScanWaitsForScanSlot(t *testing.T) {
+	h := NewHandler(setupMiniredisStorage(t), &config.Config{MaxServiceConcurrency: 12})
+	if got := cap(h.scanSem); got != 6 {
+		t.Fatalf("scan slots = %d, want 6 (half of the service slots)", got)
+	}
+	for range cap(h.scanSem) {
+		h.scanSem <- struct{}{} // occupy every scan slot
+	}
+	t.Cleanup(func() {
+		for range cap(h.scanSem) {
+			<-h.scanSem
+		}
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	f := url.Values{}
+	f.Add("target", "1.1.1.1")
+	f.Add("ports", "80")
+	req := httptest.NewRequest(http.MethodPost, "/scan", strings.NewReader(f.Encode())).WithContext(ctx)
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationForm)
+	rec := httptest.NewRecorder()
+
+	err := h.Scan(echo.New().NewContext(req, rec))
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Scan error = %v, want context.DeadlineExceeded while every scan slot is held", err)
+	}
+	if rec.Body.Len() != 0 {
+		t.Fatalf("Scan rendered a result without acquiring a scan slot: %q", rec.Body.String())
+	}
+}
