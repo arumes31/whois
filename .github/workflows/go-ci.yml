@@ -5,10 +5,23 @@ permissions:
 
 on:
   workflow_call:
+  # main is not listed under push: "Minify JS and Publish Docker Image" runs
+  # this workflow as its quality gate on every push to main, so a direct push
+  # trigger would run the full suite twice per merge.
   push:
-    branches: [ test, main ]
+    branches: [ test ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
     branches: [ test, main ]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.github/ISSUE_TEMPLATE/**'
 
 concurrency:
   group: go-ci-${{ github.workflow }}-${{ github.ref }}
