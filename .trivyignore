@@ -1,0 +1,3 @@
+# golang.org/x/crypto/openpgp is flagged as unmaintained (GO-2026-5932). whois does not import it,
+# and go.mod pins the upstream fix commit until a tagged x/crypto release ships. Expires so it gets re-checked.
+GO-2026-5932 exp:2027-02-01
