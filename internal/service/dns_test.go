@@ -27,6 +27,13 @@ func startMockDNSServer(t *testing.T, handler dns.Handler, network string) strin
 		if err != nil {
 			t.Fatalf("failed to listen on udp: %v", err)
 		}
+		// Enlarge the kernel receive buffer so a burst of concurrent queries is
+		// queued rather than silently dropped while the server's single read loop
+		// is behind (notably under the race detector). Dropped query datagrams
+		// otherwise surface to callers as spurious "context deadline exceeded".
+		if udp, ok := pc.(*net.UDPConn); ok {
+			_ = udp.SetReadBuffer(4 << 20)
+		}
 		server := &dns.Server{PacketConn: pc, Handler: handler}
 		go func() { _ = server.ActivateAndServe() }()
 		t.Cleanup(func() { _ = server.Shutdown() })
