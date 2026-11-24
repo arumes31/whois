@@ -12,7 +12,7 @@
   },
   "devDependencies": {
     "parse5": "8.1.1",
-    "terser": "5.51.2"
+    "terser": "5.51.4"
   },
   "engines": {
     "node": ">=26 <27"
