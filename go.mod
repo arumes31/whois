@@ -4,7 +4,7 @@ go 1.27.4
 
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0
-	github.com/gorilla/websocket v1.5.3
+	github.com/gorilla/websocket v1.5.4-0.20240701034025-d67f41855da4
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/joho/godotenv v1.5.1
 	github.com/labstack/echo/v5 v5.4.5
